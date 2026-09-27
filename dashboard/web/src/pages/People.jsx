@@ -2,13 +2,13 @@ import { api } from "../api.js";
 import { fmtTime } from "../format.js";
 import { usePoll } from "../hooks.js";
 import { Empty, ErrorNote, Tag } from "../components/common.jsx";
+import { Panel } from "../components/hud.jsx";
 
 export default function People() {
   const { data: people, error } = usePoll(() => api("/people"), 30000);
   const { data: attempts, error: err2 } = usePoll(() => api("/access-attempts?limit=80"), 15000);
   return (
-    <section className="panel">
-      <h2>Registry</h2>
+    <Panel code="07" title="Personnel registry">
       <p className="muted">
         Managed with <code>docker compose exec alfred python -m orchestrator.identity.admin_cli</code>
       </p>
@@ -23,7 +23,7 @@ export default function People() {
           </div>
         ))}
       </div>
-      <h2>Access attempts</h2>
+      <h3 className="sub">Access attempts</h3>
       {attempts && attempts.length === 0 && <Empty>No attempts recorded.</Empty>}
       <div className="feed">
         {(attempts || []).map((a, i) => (
@@ -34,6 +34,6 @@ export default function People() {
           </div>
         ))}
       </div>
-    </section>
+    </Panel>
   );
 }

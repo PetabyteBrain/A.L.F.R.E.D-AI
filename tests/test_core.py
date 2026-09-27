@@ -294,3 +294,47 @@ def test_plain_http_visits_are_upgraded(monkeypatch):
     assert security._visitor_used_plain_http(via_cf("http"))
     assert not security._visitor_used_plain_http(via_cf("https"))
     assert not security._visitor_used_plain_http(via_cf("http", peer="10.0.0.9"))  # untrusted peer can't trigger it
+
+
+def test_dashboard_can_terminate_live_call(monkeypatch):
+    import json, re, dataclasses
+    from fastapi.testclient import TestClient
+    from orchestrator import call_handler
+    from orchestrator.config import settings
+    from orchestrator.stt_tts.base import Provider, STTStream, TTS
+
+    class SilentSTT(STTStream):
+        async def start(self): pass
+        async def send_audio(self, b): pass
+        async def close(self): pass
+
+    class FakeTTS(TTS):
+        async def stream(self, text):
+            yield bytes([0x10]) * 160
+
+    monkeypatch.setattr(call_handler, "settings", dataclasses.replace(settings, elevenlabs_api_key="x", elevenlabs_voice_id="v"))
+    monkeypatch.setattr(call_handler, "get_provider", lambda: Provider("fake", SilentSTT, FakeTTS()))
+
+    from orchestrator.main import app
+    with TestClient(app) as c:
+        r = c.post("/twilio/voice", data={"From": "+41790000100", "CallSid": "CA99"})
+        sid = re.search(r'name="session_id" value="([^"]+)"', r.text).group(1)
+        token = re.search(r'name="token" value="([^"]+)"', r.text).group(1)
+        with c.websocket_connect("/twilio/stream") as ws:
+            ws.send_text(json.dumps({"event": "start", "start": {"streamSid": "MZ9",
+                                     "customParameters": {"session_id": sid, "token": token}}}))
+            ws.receive_text()  # greeting audio -> call is live
+            assert sid in call_handler.ACTIVE_CALLS
+            assert c.post("/api/login", json={"username": "admin", "password": "correct horse battery"}, headers=CSRF).status_code == 200
+            # friend-level or missing CSRF can't do it
+            assert c.post(f"/api/sessions/{sid}/end").status_code == 403
+            res = c.post(f"/api/sessions/{sid}/end", headers=CSRF)
+            assert res.status_code == 200, res.text
+            assert res.json()["local"] == "stream closed"
+        assert sid not in call_handler.ACTIVE_CALLS
+        assert db.query_one("SELECT status FROM sessions WHERE id=?", (sid,))["status"] == "terminated"
+        assert c.post(f"/api/sessions/{sid}/end", headers=CSRF).status_code == 409
+
+        # a stuck session with no live stream can be cleared too
+        stuck = sessions.start_session(registry.lookup("telegram", "111").id, "call")
+        assert c.post(f"/api/sessions/{stuck}/end", headers=CSRF).json()["local"] == "session closed"

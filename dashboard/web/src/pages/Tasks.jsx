@@ -3,6 +3,7 @@ import { api } from "../api.js";
 import { fmtTime } from "../format.js";
 import { usePoll } from "../hooks.js";
 import { Empty, ErrorNote, Tag } from "../components/common.jsx";
+import { Panel } from "../components/hud.jsx";
 
 export default function Tasks({ isAdmin }) {
   const { data: t, error, reload } = usePoll(() => api("/tasks"), 30000);
@@ -33,14 +34,13 @@ export default function Tasks({ isAdmin }) {
   }
 
   return (
-    <section className="panel">
-      <h2>Tasks</h2>
+    <Panel code="04" title="Task queue">
       {isAdmin && (
         <form className="inline-form" onSubmit={add}>
           <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Task" required maxLength={200} />
           <input value={schedule} onChange={(e) => setSchedule(e.target.value)}
                  placeholder="Schedule (e.g. every Monday 08:00)" maxLength={200} />
-          <button type="submit">Add</button>
+          <button className="btn primary" type="submit">Queue</button>
         </form>
       )}
       <ErrorNote error={error || formError} />
@@ -54,14 +54,14 @@ export default function Tasks({ isAdmin }) {
                 {x.schedule || "no schedule"}{x.next_run_at ? ` · next ${fmtTime(x.next_run_at)}` : ""}
               </div>
             </div>
-            {isAdmin && <button className="ghost small" onClick={() => done(x.id)}>Done</button>}
+            {isAdmin && <button className="btn ghost small" onClick={() => done(x.id)}>Done</button>}
           </div>
         ))}
       </div>
 
       {isAdmin && t && (
         <>
-          <h2>n8n active workflows</h2>
+          <h3 className="sub">n8n · active workflows</h3>
           {t.n8n_error && <Empty>n8n: {t.n8n_error}</Empty>}
           {!t.n8n_error && !(t.n8n || []).length && (
             <Empty>No active n8n workflows{t.n8n ? "" : " (n8n not configured)"}.</Empty>
@@ -79,6 +79,6 @@ export default function Tasks({ isAdmin }) {
           </div>
         </>
       )}
-    </section>
+    </Panel>
   );
 }

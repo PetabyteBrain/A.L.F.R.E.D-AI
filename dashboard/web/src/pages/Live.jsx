@@ -1,8 +1,9 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api } from "../api.js";
 import { firstName, fmtDur } from "../format.js";
 import { usePoll } from "../hooks.js";
 import { Empty, ErrorNote, Tag } from "../components/common.jsx";
+import { ConfirmDialog, Panel, Waveform } from "../components/hud.jsx";
 
 function Tail({ session }) {
   const ref = useRef(null);
@@ -11,39 +12,93 @@ function Tail({ session }) {
   }, [session.tail, session.partial]);
   return (
     <div className="tail" ref={ref}>
-      {session.tail.length === 0 && <div className="p">waiting…</div>}
+      {session.tail.length === 0 && <div className="p">Awaiting input…</div>}
       {session.tail.map((t, i) => (
         <div key={i} className={t.speaker === "user" ? "u" : "a"}>
-          <b>{t.speaker === "user" ? firstName(session.display_name) : "Alfred"}:</b> {t.text}
+          <b>{t.speaker === "user" ? firstName(session.display_name) : "Alfred"}</b>{t.text}
         </div>
       ))}
-      {session.partial && <div className="p">… {session.partial}</div>}
+      {session.partial && <div className="p">› {session.partial}</div>}
     </div>
   );
 }
 
-export default function Live() {
-  const { data, error } = usePoll(() => api("/sessions/active"), 2000);
+function SessionCard({ s, isAdmin, onEnd }) {
+  const isCall = s.channel === "call";
+  const state = s.speaking ? "speaking" : s.busy ? "processing" : isCall ? "listening" : "idle";
   return (
-    <section className="panel">
-      <h2>Active sessions <span className="pulse" aria-hidden="true" /></h2>
+    <article className={`hud live-card ${s.channel} state-${state}`}>
+      <header className="live-head">
+        <div>
+          <div className="live-name">{s.display_name}</div>
+          <div className="live-meta">
+            <Tag>{isCall ? "voice" : "telegram"} · {s.direction}</Tag>
+            <span className="mono">T+{fmtDur(s.duration_s)}</span>
+            <span className="mono dim">idle {fmtDur(s.idle_s)}</span>
+          </div>
+        </div>
+        <div className={`state-chip ${state}`}>{state}</div>
+      </header>
+      {isCall && <Waveform active={s.speaking || Boolean(s.partial)} />}
+      <Tail session={s} />
+      {isAdmin && (
+        <footer className="live-foot">
+          <button className="btn danger small" onClick={() => onEnd(s)}>
+            {isCall ? "Terminate call" : "Close session"}
+          </button>
+        </footer>
+      )}
+    </article>
+  );
+}
+
+export default function Live({ isAdmin }) {
+  const { data, error, reload } = usePoll(() => api("/sessions/active"), 2000);
+  const [target, setTarget] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [endError, setEndError] = useState("");
+  const [notice, setNotice] = useState("");
+
+  async function confirmEnd() {
+    setBusy(true);
+    setEndError("");
+    try {
+      const r = await api(`/sessions/${encodeURIComponent(target.id)}/end`, { method: "POST" });
+      setNotice(target.channel === "call"
+        ? `Call with ${target.display_name} terminated (carrier: ${r.twilio}).`
+        : `Session with ${target.display_name} closed.`);
+      setTarget(null);
+      reload();
+    } catch (e) {
+      setEndError(e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Panel code="02" title="Active sessions" actions={<span className="pulse" aria-hidden="true" />}>
       <ErrorNote error={error} />
-      {data && data.length === 0 && <Empty>No calls or chats in progress.</Empty>}
+      {notice && <div className="notice" role="status" onClick={() => setNotice("")}>{notice}</div>}
+      {data && data.length === 0 && <Empty>No active channels. Standing by.</Empty>}
       <div className="cards">
         {(data || []).map((s) => (
-          <article key={s.id} className={`card ${s.channel}`}>
-            <header>
-              <span className="who">{s.display_name}</span>
-              <span>
-                <Tag>{s.channel === "call" ? "📞 call" : "✈ telegram"} · {s.direction}</Tag>{" "}
-                {s.speaking ? <Tag kind="busy">speaking</Tag> : s.busy ? <Tag kind="busy">thinking</Tag> : null}
-              </span>
-            </header>
-            <div className="meta small">running {fmtDur(s.duration_s)} · idle {fmtDur(s.idle_s)}</div>
-            <Tail session={s} />
-          </article>
+          <SessionCard key={s.id} s={s} isAdmin={isAdmin} onEnd={(x) => { setEndError(""); setTarget(x); }} />
         ))}
       </div>
-    </section>
+      {target && (
+        <ConfirmDialog
+          title={target.channel === "call" ? "Terminate call" : "Close session"}
+          body={target.channel === "call"
+            ? <>Hang up the call with <b>{target.display_name}</b> now? The line is dropped via the carrier; the recording and transcript so far are kept.</>
+            : <>Close the Telegram session with <b>{target.display_name}</b>? Their conversation history is kept.</>}
+          confirmLabel={target.channel === "call" ? "Terminate" : "Close"}
+          busy={busy}
+          error={endError}
+          onConfirm={confirmEnd}
+          onCancel={() => setTarget(null)}
+        />
+      )}
+    </Panel>
   );
 }

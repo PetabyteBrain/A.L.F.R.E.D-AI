@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { api } from "../api.js";
-import { Reactor } from "./common.jsx";
+import { ArcReactor } from "./hud.jsx";
 
 export default function Login({ onLogin }) {
   const [username, setUsername] = useState("");
@@ -17,7 +17,7 @@ export default function Login({ onLogin }) {
       setPassword("");
       onLogin(me);
     } catch (err) {
-      setError(err.status === 401 ? "Invalid credentials" : err.message);
+      setError(err.status === 401 ? "Access denied" : err.message);
     } finally {
       setBusy(false);
     }
@@ -25,21 +25,21 @@ export default function Login({ onLogin }) {
 
   return (
     <section className="login">
-      <form className="login-card" onSubmit={submit}>
-        <Reactor />
-        <h1>ALFRED</h1>
-        <p className="muted">Restricted console</p>
+      <ArcReactor size="xl" />
+      <form className="hud login-card" onSubmit={submit}>
+        <h1 className="wordmark">J.A.R.V.I.S.</h1>
+        <p className="subtitle">Authorization required</p>
         <label>
-          Username
+          <span>Identity</span>
           <input value={username} onChange={(e) => setUsername(e.target.value)}
-                 autoComplete="username" maxLength={100} required autoFocus />
+                 autoComplete="username" maxLength={100} required autoFocus spellCheck={false} />
         </label>
         <label>
-          Password
+          <span>Passphrase</span>
           <input type="password" value={password} onChange={(e) => setPassword(e.target.value)}
                  autoComplete="current-password" maxLength={200} required />
         </label>
-        <button type="submit" disabled={busy}>{busy ? "Signing in…" : "Sign in"}</button>
+        <button className="btn primary" type="submit" disabled={busy}>{busy ? "Verifying…" : "Authenticate"}</button>
         <p className="error" role="alert">{error}</p>
       </form>
     </section>

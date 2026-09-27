@@ -3,6 +3,7 @@ import { api } from "../api.js";
 import { fmtTime } from "../format.js";
 import { usePoll } from "../hooks.js";
 import { Empty, ErrorNote } from "../components/common.jsx";
+import { Panel } from "../components/hud.jsx";
 
 export default function Health({ isAdmin }) {
   const { data, error, reload } = usePoll(() => api("/health"), 15000);
@@ -23,24 +24,20 @@ export default function Health({ isAdmin }) {
   }
 
   return (
-    <section className="panel">
-      <h2>
-        System health{" "}
-        {isAdmin && (
-          <button className="ghost small" onClick={recheck} disabled={busy}>{busy ? "Checking…" : "Re-check now"}</button>
-        )}
-      </h2>
+    <Panel code="06" title="Systems diagnostics" actions={isAdmin && (
+      <button className="btn ghost small" onClick={recheck} disabled={busy}>{busy ? "Scanning…" : "Run diagnostics"}</button>
+    )}>
       <ErrorNote error={error || err} />
       {data && data.length === 0 && <Empty>No checks yet — they run every 5 minutes.</Empty>}
       <div className="health-grid">
         {(data || []).map((h) => (
-          <div className="card" key={h.service}>
-            <div><span className={`dot ${h.ok ? "ok" : "bad"}`} /><b>{h.service}</b></div>
+          <div className={`sys-card ${h.ok ? "ok" : "bad"}`} key={h.service}>
+            <div className="sys-name"><span className="led" />{h.service}<em>{h.ok ? "online" : "fault"}</em></div>
             <div className="muted small">{h.detail}</div>
             <div className="muted tiny">checked {fmtTime(h.checked_at)}</div>
           </div>
         ))}
       </div>
-    </section>
+    </Panel>
   );
 }

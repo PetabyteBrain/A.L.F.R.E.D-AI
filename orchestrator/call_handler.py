@@ -49,6 +49,7 @@ class PendingCall:
 
 _pending: dict[str, PendingCall] = {}
 _stream_connected: set[str] = set()
+ACTIVE_CALLS: dict[str, "CallSession"] = {}
 
 
 # --- helpers -----------------------------------------------------------------------------
@@ -191,6 +192,58 @@ async def health() -> tuple[bool, str]:
         return False, str(e)[:200]
 
 
+async def end_call(session_id: str, *, by_user_id: int | None = None) -> dict:
+    """Hang up a call from the dashboard: Twilio first, then force-close locally if needed.
+
+    Works for live calls, outbound calls still ringing, and "stuck" sessions whose call is
+    already gone but whose DB row is still active (e.g. after a crash or network drop).
+    """
+    row = db.query_one("SELECT channel, status, external_id, user_id FROM sessions WHERE id = ?", (session_id,))
+    if not row or row["channel"] != "call":
+        raise ValueError("Not a call session.")
+    result: dict = {"twilio": "skipped", "local": "none"}
+
+    if row["external_id"] and settings.twilio_enabled:
+        def _hangup() -> str:
+            calls = _twilio_client().calls(row["external_id"])
+            current = calls.fetch().status
+            if current in ("queued", "ringing"):
+                calls.update(status="canceled")
+                return "canceled"
+            if current == "in-progress":
+                calls.update(status="completed")
+                return "completed"
+            return f"already {current}"
+        try:
+            result["twilio"] = await asyncio.to_thread(_hangup)
+        except Exception as e:  # noqa: BLE001 — still force-close locally below
+            log.exception("Twilio hangup failed for %s", session_id)
+            result["twilio"] = f"error: {str(e)[:120]}"
+
+    call = ACTIVE_CALLS.get(session_id)
+    if call is not None:
+        call.end_status = "terminated"
+        with contextlib.suppress(Exception):
+            await call.ws.close(code=1000)
+        for _ in range(50):  # give the stream handler up to 5 s to tear down cleanly
+            if session_id not in ACTIVE_CALLS:
+                break
+            await asyncio.sleep(0.1)
+        if session_id in ACTIVE_CALLS:
+            await call.close()
+        result["local"] = "stream closed"
+
+    _pending.pop(session_id, None)
+    _stream_connected.discard(session_id)
+    still_active = db.query_one("SELECT 1 FROM sessions WHERE id = ? AND status = 'active'", (session_id,))
+    if still_active:
+        sessions.end_session(session_id, status="terminated")
+        result["local"] = "session closed" if result["local"] == "none" else result["local"]
+    db.log_activity("call", f"Call terminated from dashboard (twilio: {result['twilio']})",
+                    user_id=by_user_id, session_id=session_id)
+    return result
+
+
 # --- media stream ------------------------------------------------------------------------
 
 class CallSession:
@@ -215,6 +268,8 @@ class CallSession:
         self._mark_seq = 0
         self._pending_mark: str | None = None
         self.live = sessions.LIVE.get(self.session_id)
+        self._closed = False
+        self.end_status = "ended"
 
     # lifecycle
     async def start(self) -> None:
@@ -224,6 +279,10 @@ class CallSession:
         self._speak(self.opening_line)
 
     async def close(self) -> None:
+        if self._closed:
+            return
+        self._closed = True
+        ACTIVE_CALLS.pop(self.session_id, None)
         for t in (self._worker, self._speak_task):
             if t:
                 t.cancel()
@@ -231,7 +290,7 @@ class CallSession:
         duration = self.recorder.close()
         db.log_activity("call", f"Call with {self.person.display_name} ended ({duration:.0f}s)",
                         self.person.id, self.session_id)
-        sessions.end_session(self.session_id)
+        sessions.end_session(self.session_id, status=self.end_status)
 
     # inbound events
     async def on_audio(self, ulaw: bytes) -> None:
@@ -339,6 +398,7 @@ async def media_stream(ws: WebSocket) -> None:
                     return
                 _stream_connected.add(pending.session_id)
                 call = CallSession(ws, start["streamSid"], pending, person, get_provider())
+                ACTIVE_CALLS[pending.session_id] = call
                 await call.start()
                 db.log_activity("call", f"Call connected with {person.display_name}", person.id, pending.session_id)
             elif event == "mark" and call is not None:

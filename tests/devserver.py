@@ -51,6 +51,21 @@ def seed() -> None:
     db.set_health("telegram", False, "not configured")
 
 
+def seed_live_call() -> None:
+    """Runs after startup (startup closes orphaned calls): a fake in-progress call for the Live view."""
+    import threading, time
+
+    def go():
+        time.sleep(8)
+        admin = db.query_one("SELECT id FROM users WHERE role='admin'")["id"]
+        sid = sessions.start_session(admin, "call", external_id=None)
+        sessions.add_turn(sid, "assistant", "Hi Erika, Alfred here. What can I do for you?")
+        sessions.add_turn(sid, "user", "Is the Minecraft server still running?")
+        sessions.LIVE[sid].speaking = True
+    threading.Thread(target=go, daemon=True).start()
+
+
 if __name__ == "__main__":
     seed()
+    seed_live_call()
     uvicorn.run("orchestrator.main:app", host="127.0.0.1", port=8765)

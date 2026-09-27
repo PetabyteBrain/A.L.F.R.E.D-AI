@@ -168,6 +168,22 @@ async def session_detail(session_id: str = Path(max_length=64), person: Person =
     return row
 
 
+@router.post("/sessions/{session_id}/end")
+async def end_session_route(session_id: str = Path(max_length=64), person: Person = Depends(admin_only)) -> dict:
+    """Admin kill switch: hang up a call (via Twilio) or close a stuck/unwanted session."""
+    row = _own_session(person, session_id)
+    if row["status"] != "active":
+        raise HTTPException(status_code=409, detail="Session is not active.")
+    if row["channel"] == "call":
+        from orchestrator.call_handler import end_call
+        result = await end_call(session_id, by_user_id=person.id)
+    else:
+        sessions.end_session(session_id, status="terminated")
+        db.log_activity("message", "Telegram session closed from dashboard", user_id=person.id, session_id=session_id)
+        result = {"local": "session closed"}
+    return {"ok": True, **result}
+
+
 # --- recordings --------------------------------------------------------------------------
 
 @router.get("/recordings/tree")

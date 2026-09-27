@@ -1,7 +1,3 @@
-export function Reactor({ small = false }) {
-  return <div className={`reactor${small ? " sm" : ""}`} aria-hidden="true"><span /></div>;
-}
-
 export function Empty({ children }) {
   return <div className="empty">{children}</div>;
 }
