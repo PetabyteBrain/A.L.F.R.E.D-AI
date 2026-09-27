@@ -282,3 +282,15 @@ def test_call_media_stream_end_to_end(monkeypatch):
                                  "customParameters": {"session_id": sid, "token": token}}}))
         with pytest.raises(Exception):
             ws.receive_text()
+
+
+def test_plain_http_visits_are_upgraded(monkeypatch):
+    import dataclasses
+    from types import SimpleNamespace as NS
+    from dashboard.api import security
+    fake = dataclasses.replace(security.settings, cookie_secure=True)
+    monkeypatch.setattr(security, "settings", fake)
+    via_cf = lambda scheme, peer="100.64.0.2": NS(client=NS(host=peer), headers={"cf-visitor": f'{{"scheme":"{scheme}"}}'})
+    assert security._visitor_used_plain_http(via_cf("http"))
+    assert not security._visitor_used_plain_http(via_cf("https"))
+    assert not security._visitor_used_plain_http(via_cf("http", peer="10.0.0.9"))  # untrusted peer can't trigger it

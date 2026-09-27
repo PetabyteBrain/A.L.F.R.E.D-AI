@@ -182,9 +182,27 @@ def _allowed_origins(request: Request) -> set[str]:
     return origins
 
 
+def _visitor_used_plain_http(request: Request) -> bool:
+    """Cloudflare tells the origin the visitor's scheme in CF-Visitor. Caddy talks HTTPS to the
+    tunnel either way, so this header is the only reliable signal. Trusted proxies only."""
+    peer = request.client.host if request.client else ""
+    if peer not in settings.trusted_proxy_ips:
+        return False
+    return '"http"' in request.headers.get("cf-visitor", "").replace(" ", "")
+
+
 class SecurityMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         path = request.url.path
+        # Secure cookies are dropped by browsers on http:// pages, which made logins silently
+        # bounce. Upgrade every plain-http visit to https before anything else.
+        if settings.cookie_secure and _visitor_used_plain_http(request):
+            if request.method in ("GET", "HEAD"):
+                host = urlsplit(settings.public_base_url).netloc or request.headers.get("host", "")
+                target = f"https://{host}{path}" + (f"?{request.url.query}" if request.url.query else "")
+                return Response(status_code=308, headers={"Location": target})
+            return JSONResponse({"detail": "Use HTTPS"}, status_code=403)
+
         if path.startswith("/api/") and request.method in UNSAFE_METHODS:
             if request.headers.get(CSRF_HEADER) != CSRF_VALUE:
                 return JSONResponse({"detail": "Missing CSRF header"}, status_code=403)
