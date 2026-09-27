@@ -118,6 +118,9 @@ class ElevenLabsTTS(TTS):
         try:
             async with httpx.AsyncClient(timeout=10) as c:
                 r = await c.get(f"{API}/v1/user/subscription", headers={"xi-api-key": settings.elevenlabs_api_key})
+            if r.status_code == 401 and "missing the permission" in r.text:
+                # Restricted keys often lack user_read; the key itself is valid.
+                return True, "key valid (no user_read permission, quota unknown)"
             if r.status_code >= 400:
                 return False, f"HTTP {r.status_code}"
             d = r.json()

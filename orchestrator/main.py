@@ -23,7 +23,7 @@ from .identity import registry
 from .tools import registry as tool_registry
 
 logging.basicConfig(level=settings.log_level, format="%(asctime)s %(levelname)-7s %(name)s: %(message)s")
-for noisy in ("httpx", "httpx2", "telegram.ext", "websockets"):
+for noisy in ("httpx", "httpx2", "telegram.ext", "websockets", "twilio.http_client"):
     logging.getLogger(noisy).setLevel(logging.WARNING)
 log = logging.getLogger("alfred")
 
