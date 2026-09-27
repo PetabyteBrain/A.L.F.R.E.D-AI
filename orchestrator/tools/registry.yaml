@@ -1,0 +1,231 @@
+# Tool registry — the only place you edit to give Alfred a new capability.
+#
+# Each tool is exposed to Claude only for the roles listed under `roles`
+# ("*" = every role). Role checks happen twice: when the tool list is built
+# for a request, and again right before execution.
+#
+# kinds:
+#   builtin      -> python handler in orchestrator/tools/builtin.py (`handler:` name)
+#   n8n_api      -> n8n public REST API call (`action:` see orchestrator/tools/n8n_tool.py)
+#   n8n_webhook  -> POST to {N8N_BASE_URL}/webhook/<webhook_path>
+#                   async: true  -> fire-and-forget; n8n POSTs the result to /n8n/callback later
+#                   async: false -> wait for the webhook's response (keep these fast)
+#
+# Adding an n8n-backed feature = build the workflow in n8n (Webhook trigger) + add one entry here.
+
+tools:
+  # ---------------------------------------------------------------- builtin
+  - name: current_time
+    kind: builtin
+    handler: current_time
+    roles: ["*"]
+    description: Get the current date and time in Alfred's configured timezone.
+    input_schema:
+      type: object
+      properties: {}
+
+  - name: list_tasks
+    kind: builtin
+    handler: list_tasks
+    roles: ["*"]
+    description: List scheduled and recurring tasks (local tasks plus active n8n workflows).
+    input_schema:
+      type: object
+      properties: {}
+
+  - name: add_task
+    kind: builtin
+    handler: add_task
+    roles: [admin]
+    description: >-
+      Add a task to Alfred's task list, shown on the dashboard. This only records it;
+      it does not schedule execution.
+    input_schema:
+      type: object
+      properties:
+        title: {type: string, description: What the task is.}
+        schedule: {type: string, description: "Free text or cron expression, e.g. 'every Monday 08:00'."}
+        next_run_at: {type: string, description: Optional ISO-8601 timestamp of the next occurrence.}
+      required: [title]
+
+  - name: list_active_sessions
+    kind: builtin
+    handler: list_active_sessions
+    roles: [admin]
+    description: List calls and chats currently in progress, with who they are with.
+    input_schema:
+      type: object
+      properties: {}
+
+  - name: recent_activity
+    kind: builtin
+    handler: recent_activity
+    roles: [admin]
+    description: Recent activity across all users (messages, calls, tool calls, blocked access attempts).
+    input_schema:
+      type: object
+      properties:
+        limit: {type: integer, description: "How many entries (default 15, max 50)."}
+
+  - name: list_people
+    kind: builtin
+    handler: list_people
+    roles: [admin]
+    description: List registered people (id, name, role, which channels they are reachable on).
+    input_schema:
+      type: object
+      properties: {}
+
+  - name: send_telegram_message
+    kind: builtin
+    handler: send_telegram_message
+    roles: [admin]
+    description: Send a Telegram message to a registered person (by user id from list_people).
+    input_schema:
+      type: object
+      properties:
+        user_id: {type: integer}
+        text: {type: string}
+      required: [user_id, text]
+
+  - name: place_call
+    kind: builtin
+    handler: place_call
+    roles: [admin]
+    description: >-
+      Phone a registered person (by user id) from Alfred's Swiss number. Alfred opens
+      the call with `opening_line` and then converses normally.
+    input_schema:
+      type: object
+      properties:
+        user_id: {type: integer}
+        opening_line: {type: string, description: First sentence Alfred says when they pick up.}
+        reason: {type: string, description: Context for the call, kept in the call's system notes.}
+      required: [user_id, opening_line]
+
+  # ---------------------------------------------------------------- n8n REST API (admin)
+  - name: n8n_list_workflows
+    kind: n8n_api
+    action: list_workflows
+    roles: [admin]
+    description: List n8n workflows (id, name, active, tags).
+    input_schema:
+      type: object
+      properties:
+        active: {type: boolean, description: Only active / only inactive workflows.}
+
+  - name: n8n_get_workflow
+    kind: n8n_api
+    action: get_workflow
+    roles: [admin]
+    description: Get one n8n workflow's full definition (nodes, connections, settings).
+    input_schema:
+      type: object
+      properties:
+        workflow_id: {type: string}
+      required: [workflow_id]
+
+  - name: n8n_create_workflow
+    kind: n8n_api
+    action: create_workflow
+    roles: [admin]
+    description: >-
+      Create a new n8n workflow. `workflow` must be an n8n workflow object with
+      name, nodes, connections and settings. Created inactive.
+    input_schema:
+      type: object
+      properties:
+        workflow: {type: object}
+      required: [workflow]
+
+  - name: n8n_update_workflow
+    kind: n8n_api
+    action: update_workflow
+    roles: [admin]
+    description: Replace an n8n workflow's definition (name, nodes, connections, settings).
+    input_schema:
+      type: object
+      properties:
+        workflow_id: {type: string}
+        workflow: {type: object}
+      required: [workflow_id, workflow]
+
+  - name: n8n_set_workflow_active
+    kind: n8n_api
+    action: set_active
+    roles: [admin]
+    description: Activate or deactivate an n8n workflow.
+    input_schema:
+      type: object
+      properties:
+        workflow_id: {type: string}
+        active: {type: boolean}
+      required: [workflow_id, active]
+
+  - name: n8n_delete_workflow
+    kind: n8n_api
+    action: delete_workflow
+    roles: [admin]
+    destructive: true
+    description: >-
+      Permanently delete an n8n workflow. Destructive: only do this when the user has
+      explicitly confirmed the specific workflow in this conversation.
+    input_schema:
+      type: object
+      properties:
+        workflow_id: {type: string}
+        confirmed_by_user: {type: boolean, description: Must be true — the user explicitly confirmed.}
+      required: [workflow_id, confirmed_by_user]
+
+  - name: n8n_list_executions
+    kind: n8n_api
+    action: list_executions
+    roles: [admin]
+    description: List recent n8n executions, optionally for one workflow or status.
+    input_schema:
+      type: object
+      properties:
+        workflow_id: {type: string}
+        status: {type: string, enum: [success, error, waiting, running, canceled]}
+        limit: {type: integer, description: "Default 10, max 50."}
+
+  - name: n8n_get_execution
+    kind: n8n_api
+    action: get_execution
+    roles: [admin]
+    description: Get details of one n8n execution, including its data.
+    input_schema:
+      type: object
+      properties:
+        execution_id: {type: string}
+      required: [execution_id]
+
+  - name: n8n_trigger_webhook
+    kind: n8n_api
+    action: trigger_webhook
+    roles: [admin]
+    description: >-
+      Call any n8n Webhook-trigger path directly (POST {N8N_BASE_URL}/webhook/<path>).
+      Use for ad-hoc testing of workflows that don't have their own tool entry yet.
+    input_schema:
+      type: object
+      properties:
+        path: {type: string, description: Webhook path, without the /webhook/ prefix.}
+        payload: {type: object}
+        test: {type: boolean, description: Use /webhook-test/ (workflow open in the editor, not active).}
+      required: [path]
+
+  # ---------------------------------------------------------------- n8n webhook tools
+  # Phase 2 end-to-end proof. Import infra/n8n/alfred-echo.workflow.json into n8n
+  # and activate it; this tool then round-trips through n8n.
+  - name: echo_test
+    kind: n8n_webhook
+    webhook_path: alfred-echo
+    async: false
+    roles: ["*"]
+    description: Diagnostic — sends a message through n8n and returns n8n's echo. Use when asked to test n8n.
+    input_schema:
+      type: object
+      properties:
+        message: {type: string}
+      required: [message]

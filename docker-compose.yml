@@ -1,0 +1,21 @@
+services:
+  alfred:
+    build: .
+    image: alfred:latest
+    container_name: alfred
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DB_PATH: /data/alfred.db
+      # STORAGE_ROOT comes from .env (default /data/storage). For the NAS later, mount the
+      # share on the host and bind it below, e.g.  - /mnt/nas/alfred:/nas  + STORAGE_ROOT=/nas
+    volumes:
+      - ./data:/data
+      - ./orchestrator/tools/registry.yaml:/app/orchestrator/tools/registry.yaml:ro
+    ports:
+      # Bound to all interfaces so the reverse proxy can reach it over Tailscale.
+      # Restrict with ALFRED_BIND=100.x.y.z (the Pi 5's tailnet IP) in .env.
+      - "${ALFRED_BIND:-0.0.0.0}:${ALFRED_PORT:-8000}:8000"
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "5" }

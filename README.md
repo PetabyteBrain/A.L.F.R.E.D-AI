@@ -1,0 +1,117 @@
+# Alfred
+
+Personal AI agent reachable by **phone** (Twilio, Swiss number) and **Telegram**, backed by
+**Claude Haiku 4.5**, wired into **n8n**, with a password-protected **dashboard** for live
+sessions, recordings/transcripts, tasks, activity and health. Only people in the registry
+get answers; everyone else is ignored silently.
+
+Runs as one Docker container on **alfred-server** (`/home/user/alfred`).
+
+```
+Phone ──► Twilio ──► /twilio/voice ─► identity ─► <Stream> ─► /twilio/stream (WS)
+                                                         │ mu-law 8k
+                                                         ├─► ElevenLabs Scribe v2 RT (STT)
+                                                         ├─► Agent Core (Claude) ─► tools ─► n8n
+                                                         └─◄ ElevenLabs Flash TTS ◄─┘
+Telegram ◄─► long polling ─► identity ─► Agent Core
+Dashboard ─► /api/* (Argon2 login, session cookie) ─► SQLite + /data/storage
+n8n ─► /n8n/callback (X-Alfred-Secret) ─► Agent Core ─► Telegram
+```
+
+## Status by phase
+
+| Phase | What | State |
+|---|---|---|
+| 1 | Telegram + Agent Core + identity registry + SQLite logging | built, needs `ANTHROPIC_API_KEY` + `TELEGRAM_BOT_TOKEN` |
+| 2 | n8n full REST API tools + role-gated registry + `echo_test` | built, needs `N8N_API_KEY`; import `infra/n8n/alfred-echo.workflow.json` |
+| 3 | Twilio Media Streams + ElevenLabs STT/TTS + stereo recording | built, needs Twilio + ElevenLabs keys and a public URL |
+| 4 | Dashboard (live, recordings, tasks, activity, health, people) | built |
+| 5 | Jetson Whisper/Piper | swap point: `orchestrator/stt_tts/base.py` |
+| 6 | NAS storage | change `STORAGE_ROOT` + one bind mount in `docker-compose.yml` |
+
+## First start on the Pi
+
+```bash
+cd ~/alfred
+cp .env.example .env      # fill in keys as you get them
+mkdir -p data             # owned by you (uid 1000) so the container can write
+docker compose up -d --build
+docker compose exec alfred python -m orchestrator.identity.admin_cli set-password 1 admin
+```
+
+Dashboard: `http://alfred-server:8000` (LAN/Tailscale). For plain-HTTP LAN testing set
+`DASHBOARD_COOKIE_SECURE=false`, otherwise the login cookie is only sent over HTTPS.
+
+## Managing people
+
+```bash
+alias alfred-admin='docker compose exec alfred python -m orchestrator.identity.admin_cli'
+alfred-admin list
+alfred-admin add "Alex Muster" --role friend --telegram 123456789 --phone "079 000 01 00"
+alfred-admin link 2 email alex@example.com
+alfred-admin add-role family --desc "Family" --dashboard
+alfred-admin disable 2
+alfred-admin attempts          # who tried to reach Alfred without being registered
+```
+
+- Telegram identity is the **numeric user ID** (e.g. via @userinfobot), never the @username.
+- Phone numbers are normalised to E.164; Swiss local format (`079…`) becomes `+4179…`.
+- A role's channels (`telegram` / `call` / `dashboard`) are set per role; its tools are set in
+  `orchestrator/tools/registry.yaml` (`roles: [admin, friend]`, or `"*"` for everyone).
+- Admin details in `.env` (`ADMIN_*`) are re-applied on every start.
+
+## Adding a capability
+
+1. Build an n8n workflow with a **Webhook** trigger (path e.g. `alfred-weather`).
+2. Add an entry to `orchestrator/tools/registry.yaml` (`kind: n8n_webhook`, `webhook_path`,
+   `roles`, `input_schema`). For long jobs set `async: true`; n8n then POSTs its result to
+   `{PUBLIC_BASE_URL}/n8n/callback` with header `X-Alfred-Secret` and a JSON body containing the
+   `session_id`/`correlation_id` it received, and Alfred tells the person on Telegram.
+3. `docker compose restart alfred` (the registry file is bind-mounted, no rebuild needed).
+
+The admin also has direct n8n tools (list/get/create/update/activate/delete workflows, list
+executions, trigger any webhook), so you can ask Alfred to build workflows for you.
+
+## Going public (needed for phone calls)
+
+Telegram needs no public URL. Twilio does. Following the existing homelab pattern
+(the proxy host Caddy + `the tunnel`):
+
+1. Caddyfile on the proxy host: `alfred.example.com { tls internal; reverse_proxy <pi5-tailnet-ip>:8000 }`
+   (Caddy handles WebSocket upgrades automatically).
+2. `/etc/cloudflared/config.yml`: add `alfred.example.com → https://localhost:443` with
+   `originServerName`, before the 404 catch-all; `cloudflared tunnel route dns … alfred.example.com`.
+3. `docker exec caddy caddy reload && sudo systemctl restart cloudflared`.
+4. Twilio console → your number → *A call comes in*: **Webhook** `POST https://alfred.example.com/twilio/voice`.
+5. Optional extra layer: Cloudflare Access on the dashboard path, leaving `/twilio/*` and
+   `/n8n/callback` open (they're protected by Twilio signatures / shared secret).
+
+## Storage layout
+
+```
+data/alfred.db
+data/storage/{user_id}/{YYYY-MM-DD}/{session_id}/audio.wav        # calls: stereo, L=caller R=Alfred
+data/storage/{user_id}/{YYYY-MM-DD}/{session_id}/transcript.json  # calls + Telegram sessions
+```
+
+## Development
+
+```bash
+python -m venv .venv && .venv/Scripts/pip install -r requirements.txt pytest pytest-asyncio
+.venv/Scripts/python -m pytest -q        # offline tests incl. a simulated phone call
+.venv/Scripts/python -m tests.devserver  # dashboard with demo data: http://127.0.0.1:8765 (admin / devpassword123)
+```
+
+Deploy from Windows (local copy is the master):
+
+```bash
+tar --exclude=.venv --exclude=data --exclude=data-dev --exclude=.env --exclude=__pycache__ -czf - . | ssh user@alfred-server 'mkdir -p ~/alfred && tar -xzf - -C ~/alfred'
+ssh user@alfred-server 'cd ~/alfred && docker compose up -d --build'
+```
+
+## Open questions (from the spec)
+
+- Roles beyond `admin`/`friend` and exactly what each gates.
+- First real n8n workflow.
+- Retention of recordings/transcripts once the NAS is in place.
+- Whether phone and Telegram context should ever merge per person (today: separate threads).

@@ -1,0 +1,35 @@
+{
+  "name": "Alfred – echo test",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "alfred-echo",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "5b0f1c2e-1111-4a8e-9a11-000000000001",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [0, 0],
+      "webhookId": "alfred-echo"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { \"echo\": $json.body.input.message, \"from\": $json.body.user.name, \"via\": \"n8n\", \"at\": $now.toISO() } }}",
+        "options": {}
+      },
+      "id": "5b0f1c2e-1111-4a8e-9a11-000000000002",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [260, 0]
+    }
+  ],
+  "connections": {
+    "Webhook": { "main": [[{ "node": "Respond to Webhook", "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1" }
+}

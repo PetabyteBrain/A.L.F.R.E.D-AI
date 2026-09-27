@@ -1,0 +1,8 @@
+.env
+data/
+.git/
+__pycache__/
+*.pyc
+.venv/
+tests/
+data-dev/

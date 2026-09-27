@@ -1,0 +1,19 @@
+# Starts the Alfred compose stack on boot (Docker's own restart policy keeps it up after that).
+# Install:  sudo cp infra/systemd/alfred.service /etc/systemd/system/ && sudo systemctl enable --now alfred
+[Unit]
+Description=Alfred personal agent (docker compose)
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+User=user
+WorkingDirectory=/home/user/alfred
+ExecStart=/usr/bin/docker compose up -d --build
+ExecStop=/usr/bin/docker compose down
+TimeoutStartSec=600
+
+[Install]
+WantedBy=multi-user.target

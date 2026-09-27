@@ -1,0 +1,355 @@
+"""Telephony: Twilio voice webhooks + Media Streams WebSocket <-> STT / Agent Core / TTS.
+
+Flow (inbound):
+  Twilio POST /twilio/voice  -> caller ID resolved against the registry
+     unknown  -> <Reject reason="busy"/>  (never answered, nothing revealed, no cost)
+     known    -> <Connect><Stream wss://.../twilio/stream> with a one-time token
+  Twilio WS /twilio/stream   -> mu-law frames -> STT; committed utterances -> Agent Core
+                                replies -> TTS -> mu-law frames back to Twilio
+Outbound calls use the same stream endpoint via /twilio/voice/outbound.
+"""
+from __future__ import annotations
+
+import asyncio
+import base64
+import contextlib
+import hmac
+import json
+import logging
+import secrets
+import time
+from dataclasses import dataclass, field
+from urllib.parse import urlencode
+from xml.sax.saxutils import quoteattr
+
+from fastapi import APIRouter, HTTPException, Request, Response, WebSocket, WebSocketDisconnect
+
+from . import agent_core, db, sessions
+from .config import settings
+from .identity import registry
+from .identity.registry import Person
+from .storage.recordings import CallRecorder
+from .stt_tts.base import Provider, get_provider
+
+log = logging.getLogger(__name__)
+router = APIRouter()
+
+PENDING_TTL = 120  # seconds a stream token stays valid after the webhook answered
+
+
+@dataclass
+class PendingCall:
+    session_id: str
+    user_id: int
+    token: str
+    opening_line: str
+    extra_system: str | None = None
+    created: float = field(default_factory=time.monotonic)
+
+
+_pending: dict[str, PendingCall] = {}
+_stream_connected: set[str] = set()
+
+
+# --- helpers -----------------------------------------------------------------------------
+
+def _twiml(body: str) -> Response:
+    return Response(content=f'<?xml version="1.0" encoding="UTF-8"?><Response>{body}</Response>',
+                    media_type="application/xml")
+
+
+def _stream_twiml(p: PendingCall) -> Response:
+    url = f"{settings.public_ws_base}/twilio/stream"
+    return _twiml(
+        f"<Connect><Stream url={quoteattr(url)}>"
+        f"<Parameter name=\"session_id\" value={quoteattr(p.session_id)}/>"
+        f"<Parameter name=\"token\" value={quoteattr(p.token)}/>"
+        f"</Stream></Connect>"
+    )
+
+
+async def _validated_form(request: Request) -> dict[str, str]:
+    form = {k: str(v) for k, v in (await request.form()).items()}
+    if settings.twilio_validate_signature:
+        from twilio.request_validator import RequestValidator
+        url = f"{settings.public_base_url}{request.url.path}"
+        if request.url.query:
+            url += f"?{request.url.query}"
+        sig = request.headers.get("X-Twilio-Signature", "")
+        if not RequestValidator(settings.twilio_auth_token).validate(url, form, sig):
+            log.warning("Rejected Twilio webhook with bad signature (%s)", request.url.path)
+            raise HTTPException(status_code=403)
+    return form
+
+
+def _gc_pending() -> None:
+    now = time.monotonic()
+    for sid, p in list(_pending.items()):
+        if now - p.created > PENDING_TTL:
+            _pending.pop(sid, None)
+            if sid not in _stream_connected:
+                sessions.end_session(sid, status="failed")
+
+
+def _greeting(person: Person) -> str:
+    first = person.display_name.split()[0]
+    return f"Hi {first}, {settings.assistant_name} here. What can I do for you?"
+
+
+# --- webhooks ----------------------------------------------------------------------------
+
+@router.post("/twilio/voice")
+async def inbound_voice(request: Request) -> Response:
+    form = await _validated_form(request)
+    _gc_pending()
+    caller = form.get("From", "")
+    person = registry.resolve("call", "phone", caller)
+    if person is None:
+        log.info("Rejected call from unregistered number %s", caller)
+        return _twiml('<Reject reason="busy"/>')
+    if not (settings.elevenlabs_enabled and settings.public_base_url):
+        log.error("Call from %s but ElevenLabs/PUBLIC_BASE_URL not configured", person.display_name)
+        return _twiml('<Reject reason="busy"/>')
+
+    sid = sessions.start_session(person.id, "call", "inbound", external_id=form.get("CallSid"))
+    p = PendingCall(sid, person.id, secrets.token_urlsafe(24), _greeting(person))
+    _pending[sid] = p
+    return _stream_twiml(p)
+
+
+@router.post("/twilio/voice/outbound")
+async def outbound_voice(request: Request, session_id: str) -> Response:
+    await _validated_form(request)
+    p = _pending.get(session_id)
+    if p is None:
+        return _twiml("<Hangup/>")
+    p.created = time.monotonic()  # the clock starts when they pick up
+    return _stream_twiml(p)
+
+
+@router.post("/twilio/status")
+async def call_status(request: Request, session_id: str) -> Response:
+    form = await _validated_form(request)
+    status = form.get("CallStatus", "")
+    if status in ("completed", "busy", "no-answer", "failed", "canceled") and session_id not in _stream_connected:
+        _pending.pop(session_id, None)
+        sessions.end_session(session_id, status="ended" if status == "completed" else "failed")
+    return Response(status_code=204)
+
+
+# --- outbound ----------------------------------------------------------------------------
+
+def _twilio_client():
+    from twilio.rest import Client
+    return Client(settings.twilio_account_sid, settings.twilio_auth_token)
+
+
+async def place_outbound_call(user_id: int, *, opening_line: str, reason: str = "",
+                              requested_by: int | None = None) -> str:
+    if not (settings.twilio_enabled and settings.elevenlabs_enabled and settings.public_base_url):
+        raise RuntimeError("Telephony isn't fully configured (Twilio, ElevenLabs, PUBLIC_BASE_URL).")
+    person = registry.get_person(user_id)
+    number = registry.phone_for(user_id)
+    if person is None or not number:
+        raise ValueError(f"User {user_id} is not registered with a phone number.")
+    if not registry.role_allows_channel(person.role, "call"):
+        raise PermissionError(f"Role '{person.role}' has no call access.")
+
+    sid = sessions.start_session(person.id, "call", "outbound")
+    extra = f"This is an outbound call you placed. Reason: {reason}" if reason else "This is an outbound call you placed."
+    _pending[sid] = PendingCall(sid, person.id, secrets.token_urlsafe(24), opening_line, extra)
+    q = urlencode({"session_id": sid})
+
+    def _create():
+        return _twilio_client().calls.create(
+            to=number,
+            from_=settings.twilio_phone_number,
+            url=f"{settings.public_base_url}/twilio/voice/outbound?{q}",
+            status_callback=f"{settings.public_base_url}/twilio/status?{q}",
+            status_callback_event=["completed"],
+            timeout=30,
+        )
+
+    try:
+        call = await asyncio.to_thread(_create)
+    except Exception:
+        _pending.pop(sid, None)
+        sessions.end_session(sid, status="failed")
+        raise
+    db.execute("UPDATE sessions SET external_id = ? WHERE id = ?", (call.sid, sid))
+    db.log_activity("call", f"Outbound call to {person.display_name}", user_id=requested_by, session_id=sid)
+    return call.sid
+
+
+async def health() -> tuple[bool, str]:
+    if not settings.twilio_enabled:
+        return False, "not configured"
+    try:
+        acct = await asyncio.to_thread(lambda: _twilio_client().api.v2010.accounts(settings.twilio_account_sid).fetch())
+        return acct.status == "active", f"account {acct.status}"
+    except Exception as e:  # noqa: BLE001
+        return False, str(e)[:200]
+
+
+# --- media stream ------------------------------------------------------------------------
+
+class CallSession:
+    """One live call: glues Twilio audio, STT, Agent Core and TTS together."""
+
+    BARGE_IN_MIN_CHARS = 6
+
+    def __init__(self, ws: WebSocket, stream_sid: str, pending: PendingCall, person: Person, provider: Provider):
+        self.ws = ws
+        self.stream_sid = stream_sid
+        self.session_id = pending.session_id
+        self.person = person
+        self.provider = provider
+        self.opening_line = pending.opening_line
+        self.extra_system = pending.extra_system
+        self.recorder = CallRecorder(self.session_id)
+        self.utterances: asyncio.Queue[str] = asyncio.Queue()
+        self.stt = provider.stt_factory(self._on_partial, self._on_final)
+        self._send_lock = asyncio.Lock()
+        self._speak_task: asyncio.Task | None = None
+        self._worker: asyncio.Task | None = None
+        self._mark_seq = 0
+        self._pending_mark: str | None = None
+        self.live = sessions.LIVE.get(self.session_id)
+
+    # lifecycle
+    async def start(self) -> None:
+        await self.stt.start()
+        self._worker = asyncio.create_task(self._work())
+        sessions.add_turn(self.session_id, "assistant", self.opening_line)
+        self._speak(self.opening_line)
+
+    async def close(self) -> None:
+        for t in (self._worker, self._speak_task):
+            if t:
+                t.cancel()
+        await self.stt.close()
+        duration = self.recorder.close()
+        db.log_activity("call", f"Call with {self.person.display_name} ended ({duration:.0f}s)",
+                        self.person.id, self.session_id)
+        sessions.end_session(self.session_id)
+
+    # inbound events
+    async def on_audio(self, ulaw: bytes) -> None:
+        self.recorder.caller_audio(ulaw)
+        await self.stt.send_audio(ulaw)
+
+    def on_mark(self, name: str) -> None:
+        if name == self._pending_mark:
+            self._pending_mark = None
+            self._set_speaking(False)
+
+    async def _on_partial(self, text: str) -> None:
+        if self.live:
+            self.live.partial = text
+        if self.speaking and len(text.strip()) >= self.BARGE_IN_MIN_CHARS:
+            await self.interrupt()
+
+    async def _on_final(self, text: str) -> None:
+        if self.live:
+            self.live.partial = ""
+        if self.speaking:
+            await self.interrupt()
+        await self.utterances.put(text)
+
+    # agent loop
+    async def _work(self) -> None:
+        while True:
+            text = await self.utterances.get()
+            while not self.utterances.empty():  # merge anything said while we were busy
+                text += " " + self.utterances.get_nowait()
+            try:
+                reply = await agent_core.respond(self.person, "call", self.session_id, text,
+                                                 extra_system=self.extra_system)
+            except Exception:
+                log.exception("Agent failure during call")
+                reply = "Sorry, something went wrong on my side."
+            self._speak(reply)
+
+    # speaking
+    @property
+    def speaking(self) -> bool:
+        return (self._speak_task is not None and not self._speak_task.done()) or self._pending_mark is not None
+
+    def _set_speaking(self, value: bool) -> None:
+        if self.live:
+            self.live.speaking = value
+
+    def _speak(self, text: str) -> None:
+        if self._speak_task and not self._speak_task.done():
+            self._speak_task.cancel()
+        self._speak_task = asyncio.create_task(self._speak_run(text))
+
+    async def _speak_run(self, text: str) -> None:
+        self._set_speaking(True)
+        try:
+            async for chunk in self.provider.tts.stream(text):
+                self.recorder.agent_audio(chunk)
+                await self._send({"event": "media", "streamSid": self.stream_sid,
+                                  "media": {"payload": base64.b64encode(chunk).decode()}})
+            self._mark_seq += 1
+            self._pending_mark = f"reply-{self._mark_seq}"
+            await self._send({"event": "mark", "streamSid": self.stream_sid, "mark": {"name": self._pending_mark}})
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            log.exception("TTS failed")
+            self._set_speaking(False)
+
+    async def interrupt(self) -> None:
+        if self._speak_task and not self._speak_task.done():
+            self._speak_task.cancel()
+        self._pending_mark = None
+        self.recorder.clear_agent()
+        self._set_speaking(False)
+        await self._send({"event": "clear", "streamSid": self.stream_sid})
+
+    async def _send(self, msg: dict) -> None:
+        async with self._send_lock:
+            with contextlib.suppress(Exception):
+                await self.ws.send_text(json.dumps(msg))
+
+
+@router.websocket("/twilio/stream")
+async def media_stream(ws: WebSocket) -> None:
+    await ws.accept()
+    call: CallSession | None = None
+    try:
+        while True:
+            msg = json.loads(await ws.receive_text())
+            event = msg.get("event")
+            if event == "media" and call is not None:
+                if msg["media"].get("track", "inbound") == "inbound":
+                    await call.on_audio(base64.b64decode(msg["media"]["payload"]))
+            elif event == "start":
+                start = msg["start"]
+                params = start.get("customParameters", {})
+                pending = _pending.pop(params.get("session_id", ""), None)
+                if pending is None or not hmac.compare_digest(pending.token, params.get("token", "")):
+                    log.warning("Media stream with invalid/expired token — closing")
+                    await ws.close(code=1008)
+                    return
+                person = registry.get_person(pending.user_id)
+                if person is None:
+                    await ws.close(code=1008)
+                    return
+                _stream_connected.add(pending.session_id)
+                call = CallSession(ws, start["streamSid"], pending, person, get_provider())
+                await call.start()
+                db.log_activity("call", f"Call connected with {person.display_name}", person.id, pending.session_id)
+            elif event == "mark" and call is not None:
+                call.on_mark(msg.get("mark", {}).get("name", ""))
+            elif event == "stop":
+                break
+    except WebSocketDisconnect:
+        pass
+    except Exception:
+        log.exception("Media stream error")
+    finally:
+        if call is not None:
+            _stream_connected.discard(call.session_id)
+            await call.close()
