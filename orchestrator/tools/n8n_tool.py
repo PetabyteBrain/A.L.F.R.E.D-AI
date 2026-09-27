@@ -37,9 +37,15 @@ async def _api(method: str, path: str, **kw) -> Any:
     return r.json() if r.content else {"ok": True}
 
 
+# The public API rejects any workflow setting outside this list (e.g. ones the editor adds).
+_SETTINGS = ("saveExecutionProgress", "saveManualExecutions", "saveDataErrorExecution",
+             "saveDataSuccessExecution", "executionTimeout", "errorWorkflow", "timezone",
+             "executionOrder", "callerPolicy", "callerIds")
+
+
 def _writable(workflow: dict) -> dict:
     body = {k: workflow[k] for k in _WRITABLE if k in workflow}
-    body.setdefault("settings", {})
+    body["settings"] = {k: v for k, v in (body.get("settings") or {}).items() if k in _SETTINGS}
     body.setdefault("connections", {})
     return body
 
