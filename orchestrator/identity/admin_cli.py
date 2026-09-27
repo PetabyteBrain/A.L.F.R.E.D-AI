@@ -16,6 +16,7 @@ Commands:
     add-role NAME [--desc ..] [--no-telegram] [--no-call] [--dashboard]
     hash-password                            prints an Argon2 hash (for DASHBOARD_ADMIN_PASSWORD_HASH)
     attempts [--limit 20]                    recent blocked access attempts
+    logout-all [USER_ID]                     revoke dashboard sessions (one person or everyone)
 """
 from __future__ import annotations
 
@@ -45,6 +46,11 @@ def _prompt_password() -> str:
     if pw != getpass.getpass("Repeat:   "):
         sys.exit("Passwords don't match.")
     return pw
+
+
+def _revoke(user_id: int) -> None:
+    """Credentials, role or status changed -> existing dashboard logins must not survive it."""
+    db.execute("DELETE FROM dashboard_sessions WHERE user_id = ?", (user_id,))
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -92,6 +98,8 @@ def main(argv: list[str] | None = None) -> None:
     ar.add_argument("--dashboard", action="store_true")
 
     sub.add_parser("hash-password")
+    lo = sub.add_parser("logout-all")
+    lo.add_argument("user_id", type=int, nargs="?")
     at = sub.add_parser("attempts")
     at.add_argument("--limit", type=int, default=20)
 
@@ -120,21 +128,27 @@ def main(argv: list[str] | None = None) -> None:
         print("Linked.")
 
     elif args.cmd == "unlink":
+        row = db.query_one("SELECT user_id FROM user_identifiers WHERE id = ?", (args.identifier_id,))
         db.execute("DELETE FROM user_identifiers WHERE id = ?", (args.identifier_id,))
+        if row:
+            _revoke(row["user_id"])
         print("Unlinked.")
 
     elif args.cmd == "set-role":
         if not db.query_one("SELECT 1 FROM roles WHERE name = ?", (args.role,)):
             sys.exit(f"Unknown role '{args.role}'.")
         db.execute("UPDATE users SET role = ? WHERE id = ?", (args.role, args.user_id))
+        _revoke(args.user_id)
         print("Role updated.")
 
     elif args.cmd == "set-password":
         registry.upsert_identifier(args.user_id, "dashboard", args.username, registry.hash_password(_prompt_password()))
+        _revoke(args.user_id)
         print("Dashboard login set.")
 
     elif args.cmd in ("disable", "enable"):
         db.execute("UPDATE users SET active = ? WHERE id = ?", (int(args.cmd == "enable"), args.user_id))
+        _revoke(args.user_id)
         print(f"User {args.cmd}d.")
 
     elif args.cmd == "remove":
@@ -157,6 +171,13 @@ def main(argv: list[str] | None = None) -> None:
 
     elif args.cmd == "hash-password":
         print(registry.hash_password(_prompt_password()))
+
+    elif args.cmd == "logout-all":
+        if args.user_id:
+            _revoke(args.user_id)
+        else:
+            db.execute("DELETE FROM dashboard_sessions")
+        print("Dashboard sessions revoked.")
 
     elif args.cmd == "attempts":
         for row in db.query(

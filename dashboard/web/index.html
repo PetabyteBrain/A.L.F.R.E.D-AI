@@ -1,95 +1,15 @@
 <!doctype html>
 <html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="robots" content="noindex, nofollow">
-  <title>Alfred</title>
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='16' cy='16' r='11' fill='none' stroke='%2346d9ff' stroke-width='3'/><circle cx='16' cy='16' r='4' fill='%2346d9ff'/></svg>">
-  <link rel="stylesheet" href="style.css">
-</head>
-<body>
-  <!-- Login -->
-  <section id="login" class="login hidden">
-    <form id="login-form" class="login-card" autocomplete="on">
-      <div class="reactor" aria-hidden="true"><span></span></div>
-      <h1>ALFRED</h1>
-      <p class="muted">Restricted console</p>
-      <label>Username <input name="username" autocomplete="username" required></label>
-      <label>Password <input name="password" type="password" autocomplete="current-password" required></label>
-      <button type="submit">Sign in</button>
-      <p id="login-error" class="error" role="alert"></p>
-    </form>
-  </section>
-
-  <!-- App -->
-  <div id="app" class="hidden">
-    <header class="topbar">
-      <div class="brand"><div class="reactor sm" aria-hidden="true"><span></span></div><span id="brand-name">ALFRED</span></div>
-      <nav id="tabs" role="tablist">
-        <button data-tab="live" class="active">Live</button>
-        <button data-tab="history">Recordings</button>
-        <button data-tab="tasks">Tasks</button>
-        <button data-tab="activity">Activity</button>
-        <button data-tab="health">Health</button>
-        <button data-tab="people" data-admin>People</button>
-      </nav>
-      <div class="me"><span id="me-name"></span><button id="logout" class="ghost">Sign out</button></div>
-    </header>
-
-    <main>
-      <section class="stats" id="stats"></section>
-
-      <section data-panel="live" class="panel">
-        <h2>Active sessions <span class="pulse" aria-hidden="true"></span></h2>
-        <div id="live-list" class="cards"></div>
-      </section>
-
-      <section data-panel="history" class="panel hidden">
-        <div class="split">
-          <aside>
-            <h2>By person &amp; date</h2>
-            <div id="tree"></div>
-          </aside>
-          <div>
-            <h2 id="history-title">Recent sessions</h2>
-            <div id="session-list" class="list"></div>
-          </div>
-        </div>
-        <div id="session-detail" class="detail hidden"></div>
-      </section>
-
-      <section data-panel="tasks" class="panel hidden">
-        <h2>Tasks</h2>
-        <form id="task-form" class="inline-form" data-admin>
-          <input name="title" placeholder="Task" required maxlength="200">
-          <input name="schedule" placeholder="Schedule (e.g. every Monday 08:00)" maxlength="200">
-          <button type="submit">Add</button>
-        </form>
-        <div id="task-list" class="list"></div>
-        <h2 data-admin>n8n active workflows</h2>
-        <div id="n8n-list" class="list" data-admin></div>
-      </section>
-
-      <section data-panel="activity" class="panel hidden">
-        <h2>Activity</h2>
-        <div id="activity-list" class="feed"></div>
-      </section>
-
-      <section data-panel="health" class="panel hidden">
-        <h2>System health <button id="health-refresh" class="ghost small" data-admin>Re-check now</button></h2>
-        <div id="health-list" class="health-grid"></div>
-      </section>
-
-      <section data-panel="people" class="panel hidden">
-        <h2>Registry</h2>
-        <p class="muted">Managed with <code>docker compose exec alfred python -m orchestrator.identity.admin_cli</code></p>
-        <div id="people-list" class="list"></div>
-        <h2>Access attempts</h2>
-        <div id="attempts-list" class="feed"></div>
-      </section>
-    </main>
-  </div>
-  <script src="app.js"></script>
-</body>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex, nofollow" />
+    <meta name="referrer" content="no-referrer" />
+    <title>Alfred</title>
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
 </html>

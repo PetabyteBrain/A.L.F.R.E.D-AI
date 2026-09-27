@@ -199,4 +199,13 @@ def bootstrap_admin() -> None:
     if settings.admin_email:
         upsert_identifier(user_id, "email", settings.admin_email)
     if settings.admin_dashboard_username and settings.admin_password_hash:
-        upsert_identifier(user_id, "dashboard", settings.admin_dashboard_username, settings.admin_password_hash)
+        if not settings.admin_password_hash.startswith("$argon2"):
+            log.error("DASHBOARD_ADMIN_PASSWORD_HASH is not an Argon2 hash (wrap it in single quotes in .env) — ignored")
+            return
+        existing = db.query_one(
+            "SELECT password_hash FROM user_identifiers WHERE type = 'dashboard' AND value = ?",
+            (normalize("dashboard", settings.admin_dashboard_username),),
+        )
+        if not existing or existing["password_hash"] != settings.admin_password_hash:
+            upsert_identifier(user_id, "dashboard", settings.admin_dashboard_username, settings.admin_password_hash)
+            db.execute("DELETE FROM dashboard_sessions WHERE user_id = ?", (user_id,))

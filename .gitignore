@@ -5,3 +5,5 @@ __pycache__/
 .venv/
 .pytest_cache/
 data-dev/
+node_modules/
+dashboard/web/dist/

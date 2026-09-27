@@ -5,13 +5,11 @@ recordings and activity.
 """
 from __future__ import annotations
 
-import time
-from collections import defaultdict, deque
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request, Response
 from fastapi.responses import FileResponse
-from pydantic import BaseModel, Field
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
 
 from orchestrator import db, health, sessions
 from orchestrator.config import settings
@@ -19,19 +17,17 @@ from orchestrator.identity import registry
 from orchestrator.identity.registry import Person
 from orchestrator.storage import recordings
 
+from . import security
+
 router = APIRouter(prefix="/api")
 
 # --- auth --------------------------------------------------------------------------------
 
-_login_attempts: dict[str, deque] = defaultdict(deque)
-LOGIN_WINDOW, LOGIN_MAX = 300, 8
-
 
 def current_person(request: Request) -> Person:
-    uid = request.session.get("uid")
+    uid = security.session_user_id(request)
     person = registry.get_person(uid) if uid else None
     if person is None or not registry.role_allows_channel(person.role, "dashboard"):
-        request.session.clear()
         raise HTTPException(status_code=401)
     return person
 
@@ -42,34 +38,39 @@ def admin_only(person: Person = Depends(current_person)) -> Person:
     return person
 
 
-class LoginBody(BaseModel):
-    username: str = Field(max_length=100)
-    password: str = Field(max_length=200)
+class Strict(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+
+class LoginBody(Strict):
+    username: str = Field(min_length=1, max_length=100)
+    password: str = Field(min_length=1, max_length=200)
 
 
 @router.post("/login")
-async def login(body: LoginBody, request: Request) -> dict:
-    ip = request.headers.get("cf-connecting-ip") or (request.client.host if request.client else "?")
-    q = _login_attempts[ip]
-    now = time.monotonic()
-    while q and now - q[0] > LOGIN_WINDOW:
-        q.popleft()
-    if len(q) >= LOGIN_MAX:
-        raise HTTPException(status_code=429, detail="Too many attempts. Wait a few minutes.")
-    q.append(now)
+async def login(body: LoginBody, request: Request, response: Response) -> dict:
+    ip = security.client_ip(request)
+    uname = registry.normalize("dashboard", body.username)
+    if security.ip_throttle.blocked(ip) or security.user_throttle.blocked(uname):
+        raise HTTPException(status_code=429, detail="Too many failed attempts. Try again in 15 minutes.")
     person = registry.verify_dashboard_login(body.username, body.password)
     if person is None:
+        security.ip_throttle.fail(ip)
+        security.user_throttle.fail(uname)
         raise HTTPException(status_code=401, detail="Invalid credentials")
-    q.clear()
-    request.session.clear()
-    request.session["uid"] = person.id
-    db.log_activity("access", "Dashboard login", user_id=person.id)
-    return {"id": person.id, "display_name": person.display_name, "role": person.role}
+    security.ip_throttle.reset(ip)
+    security.user_throttle.reset(uname)
+    security.destroy_session(request)  # no session fixation: always a fresh token
+    security.set_session_cookie(response, security.create_session(person.id, request))
+    db.log_activity("access", f"Dashboard login from {ip}", user_id=person.id)
+    return {"id": person.id, "display_name": person.display_name, "role": person.role,
+            "assistant_name": settings.assistant_name}
 
 
 @router.post("/logout")
-async def logout(request: Request) -> dict:
-    request.session.clear()
+async def logout(request: Request, response: Response) -> dict:
+    security.destroy_session(request)
+    security.clear_session_cookie(response)
     return {"ok": True}
 
 
@@ -127,11 +128,11 @@ async def active_sessions(person: Person = Depends(current_person)) -> list[dict
 @router.get("/sessions")
 async def list_sessions(
     person: Person = Depends(current_person),
-    user_id: int | None = None,
-    channel: str | None = None,
-    date: str | None = None,
-    limit: int = 50,
-    offset: int = 0,
+    user_id: int | None = Query(default=None, ge=1),
+    channel: str | None = Query(default=None, pattern="^(call|telegram)$"),
+    date: str | None = Query(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$"),
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0, le=100_000),
 ) -> list[dict]:
     where, params = _scope(person)
     sql = ("SELECT s.id, s.user_id, s.channel, s.direction, s.started_at, s.ended_at, s.status, u.display_name, "
@@ -149,12 +150,12 @@ async def list_sessions(
         sql += " AND substr(s.started_at, 1, 10) = ?"
         params.append(date)
     sql += " ORDER BY s.started_at DESC LIMIT ? OFFSET ?"
-    params += [min(limit, 200), max(offset, 0)]
+    params += [limit, offset]
     return db.query(sql, params)
 
 
 @router.get("/sessions/{session_id}")
-async def session_detail(session_id: str, person: Person = Depends(current_person)) -> dict:
+async def session_detail(session_id: str = Path(max_length=64), person: Person = Depends(current_person)) -> dict:
     row = _own_session(person, session_id)
     row["turns"] = sessions.session_turns(session_id)
     row["tool_calls"] = db.query(
@@ -199,15 +200,16 @@ async def recording_audio(recording_id: int, person: Person = Depends(current_pe
         raise HTTPException(status_code=404)
     if not path.exists():
         raise HTTPException(status_code=404, detail="Audio file missing on disk")
-    return FileResponse(path, media_type="audio/wav", filename=f"{rec['session_id']}.wav")
+    return FileResponse(path, media_type="audio/wav", filename=f"{rec['session_id']}.wav",
+                        headers={"Cache-Control": "private, no-store"})
 
 
 # --- tasks -------------------------------------------------------------------------------
 
-class TaskBody(BaseModel):
+class TaskBody(Strict):
     title: str = Field(min_length=1, max_length=200)
     schedule: str = Field(default="", max_length=200)
-    next_run_at: str | None = None
+    next_run_at: AwareDatetime | None = None
 
 
 @router.get("/tasks")
@@ -239,7 +241,7 @@ def _trigger_summary(workflow: dict) -> list[str]:
 async def add_task(body: TaskBody, person: Person = Depends(admin_only)) -> dict:
     tid = db.execute(
         "INSERT INTO tasks(title, schedule, source, next_run_at, created_at) VALUES (?,?, 'local', ?, ?)",
-        (body.title, body.schedule, body.next_run_at, db.now_iso()),
+        (body.title, body.schedule, body.next_run_at.isoformat() if body.next_run_at else None, db.now_iso()),
     )
     return {"id": tid}
 
@@ -253,12 +255,12 @@ async def delete_task(task_id: int, person: Person = Depends(admin_only)) -> dic
 # --- activity / health / registry --------------------------------------------------------
 
 @router.get("/activity")
-async def activity(person: Person = Depends(current_person), limit: int = 100) -> list[dict]:
+async def activity(person: Person = Depends(current_person), limit: int = Query(default=100, ge=1, le=500)) -> list[dict]:
     where, params = ("", []) if person.is_admin else (" AND a.user_id = ?", [person.id])
     return db.query(
         "SELECT a.id, a.ts, a.kind, a.summary, a.session_id, u.display_name AS user FROM activity a "
         "LEFT JOIN users u ON u.id = a.user_id WHERE 1=1" + where + " ORDER BY a.id DESC LIMIT ?",
-        params + [min(limit, 500)],
+        params + [limit],
     )
 
 
@@ -310,8 +312,8 @@ async def people(person: Person = Depends(admin_only)) -> list[dict]:
 
 
 @router.get("/access-attempts")
-async def access_attempts(person: Person = Depends(admin_only), limit: int = 100) -> list[dict]:
+async def access_attempts(person: Person = Depends(admin_only), limit: int = Query(default=100, ge=1, le=500)) -> list[dict]:
     return db.query(
         "SELECT ts, channel, raw_identifier, resolved, detail FROM access_attempts ORDER BY id DESC LIMIT ?",
-        (min(limit, 500),),
+        (limit,),
     )

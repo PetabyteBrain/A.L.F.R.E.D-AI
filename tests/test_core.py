@@ -104,30 +104,82 @@ def test_call_recorder_stereo_wav():
         assert w.getnchannels() == 2 and w.getframerate() == 8000 and w.getnframes() == 1600
 
 
+CSRF = {"X-Requested-With": "alfred"}
+
+
 def test_http_surface():
     from fastapi.testclient import TestClient
     from orchestrator.main import app
     with TestClient(app, base_url="http://testserver") as c:
         assert c.get("/healthz").json() == {"ok": True}
         assert c.get("/api/me").status_code == 401
-        assert c.post("/api/login", json={"username": "admin", "password": "nope"}).status_code == 401
-        r = c.post("/api/login", json={"username": "ADMIN", "password": "correct horse battery"})
+        # CSRF: state-changing calls without the custom header are refused outright
+        assert c.post("/api/login", json={"username": "admin", "password": "correct horse battery"}).status_code == 403
+        assert c.post("/api/login", json={"username": "admin", "password": "nope"}, headers=CSRF).status_code == 401
+        r = c.post("/api/login", json={"username": "ADMIN", "password": "correct horse battery"}, headers=CSRF)
         assert r.status_code == 200, r.text
+        cookie = r.headers["set-cookie"].lower()
+        assert "httponly" in cookie and "samesite=strict" in cookie
         assert c.get("/api/me").json()["role"] == "admin"
         for path in ("/api/overview", "/api/sessions/active", "/api/sessions", "/api/recordings/tree",
                      "/api/tasks", "/api/activity", "/api/health", "/api/people", "/api/access-attempts"):
             assert c.get(path).status_code == 200, path
-        assert c.post("/api/tasks", json={"title": "Water plants", "schedule": "daily"}).status_code == 200
+        # input validation
+        assert c.get("/api/sessions?limit=-1").status_code == 422
+        assert c.get("/api/sessions?date=2026-01-01' OR 1=1").status_code == 422
+        assert c.post("/api/tasks", json={"title": "x", "evil": 1}, headers=CSRF).status_code == 422
+        assert c.post("/api/tasks", json={"title": "Water plants", "schedule": "daily"}, headers=CSRF).status_code == 200
+        # cross-origin write blocked even with the header
+        bad = dict(CSRF, Origin="https://evil.example")
+        assert c.post("/api/tasks", json={"title": "pwn"}, headers=bad).status_code == 403
         rec = db.query_one("SELECT id FROM recordings LIMIT 1")
         a = c.get(f"/api/recordings/{rec['id']}/audio")
         assert a.status_code == 200 and a.content[:4] == b"RIFF"
-        assert "ALFRED" in c.get("/").text
+        # security headers
+        h = c.get("/api/me").headers
+        assert "frame-ancestors 'none'" in h["content-security-policy"]
+        assert h["x-content-type-options"] == "nosniff" and h["cache-control"] == "no-store"
+
+        # Revoking sessions (password change / disable) logs the browser out immediately.
+        admin_id = c.get("/api/me").json()["id"]
+        db.execute("DELETE FROM dashboard_sessions WHERE user_id = ?", (admin_id,))
+        assert c.get("/api/me").status_code == 401
+
+        # Logout invalidates the token server-side, not just the cookie.
+        c.post("/api/login", json={"username": "admin", "password": "correct horse battery"}, headers=CSRF)
+        from dashboard.api.security import COOKIE_NAME
+        token = c.cookies.get(COOKIE_NAME)
+        assert c.post("/api/logout", headers=CSRF).status_code == 200
+        c.cookies.set(COOKIE_NAME, token)
+        assert c.get("/api/me").status_code == 401
 
         # Unknown caller -> rejected silently; ElevenLabs missing -> known caller also rejected.
         r = c.post("/twilio/voice", data={"From": "+15550000000", "CallSid": "CA1"})
         assert "<Reject" in r.text
         # n8n callback is invisible without the secret
         assert c.post("/n8n/callback", json={}).status_code == 404
+
+
+def test_friend_cannot_use_dashboard_and_login_is_throttled():
+    from fastapi.testclient import TestClient
+    from orchestrator.main import app
+    friend = registry.lookup("telegram", "222")
+    registry.add_identifier(friend.id, "dashboard", "friend", registry.hash_password("friendpassword1"))
+    with TestClient(app) as c:
+        # correct password, but the friend role has no dashboard access
+        assert c.post("/api/login", json={"username": "friend", "password": "friendpassword1"}, headers=CSRF).status_code == 401
+        for _ in range(5):
+            c.post("/api/login", json={"username": "victim", "password": "guess"}, headers=CSRF)
+        assert c.post("/api/login", json={"username": "victim", "password": "guess"}, headers=CSRF).status_code == 429
+
+
+def test_proxy_headers_only_trusted_from_proxy():
+    from types import SimpleNamespace as NS
+    from dashboard.api.security import client_ip
+    spoof = NS(client=NS(host="192.0.2.50"), headers={"cf-connecting-ip": "1.2.3.4"})
+    assert client_ip(spoof) == "192.0.2.50"
+    proxied = NS(client=NS(host="100.64.0.2"), headers={"cf-connecting-ip": "1.2.3.4"})
+    assert client_ip(proxied) == "1.2.3.4"
 
 
 @pytest.mark.asyncio

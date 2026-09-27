@@ -121,6 +121,17 @@ CREATE TABLE IF NOT EXISTS n8n_callbacks (
     ts          TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS dashboard_sessions (
+    token_hash   TEXT PRIMARY KEY,            -- HMAC of the cookie token; the token itself is never stored
+    user_id      INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    created_at   TEXT NOT NULL,
+    last_seen_at TEXT NOT NULL,
+    expires_at   TEXT NOT NULL,               -- absolute lifetime cap
+    ip           TEXT NOT NULL DEFAULT '',
+    user_agent   TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_dash_sessions_user ON dashboard_sessions(user_id);
+
 CREATE TABLE IF NOT EXISTS health (
     service    TEXT PRIMARY KEY,
     ok         INTEGER NOT NULL,

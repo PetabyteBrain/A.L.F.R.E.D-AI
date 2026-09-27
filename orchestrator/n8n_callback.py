@@ -27,6 +27,8 @@ async def n8n_callback(request: Request) -> dict:
     secret = request.headers.get("X-Alfred-Secret", "")
     if not settings.n8n_callback_secret or not hmac.compare_digest(secret, settings.n8n_callback_secret):
         raise HTTPException(status_code=404)  # look like nothing is here
+    if int(request.headers.get("content-length") or 0) > 1_000_000:
+        raise HTTPException(status_code=413)
     try:
         body = await request.json()
     except ValueError:

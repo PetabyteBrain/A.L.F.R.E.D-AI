@@ -98,10 +98,6 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .14em; color: v
 .row.click { cursor: pointer; }
 .row.click:hover, .row.sel { border-color: var(--accent); }
 .row .meta { color: var(--muted); font-size: 12px; }
-#tree .person { margin-bottom: 10px; }
-#tree .person > div { font-weight: 600; margin-bottom: 4px; }
-#tree .day { display: flex; justify-content: space-between; padding: 4px 10px; border-radius: 6px; cursor: pointer; color: var(--muted); }
-#tree .day:hover, #tree .day.sel { background: var(--accent-dim); color: var(--accent); }
 
 .detail { margin-top: 20px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 18px; }
 .detail audio { width: 100%; margin: 8px 0 16px; }
@@ -132,3 +128,25 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .14em; color: v
   .inline-form { flex-direction: column; }
   .turn { grid-template-columns: 1fr; gap: 2px; }
 }
+
+/* React version additions */
+.boot { min-height: 100vh; display: grid; place-items: center; }
+.small { font-size: 12px; }
+.tiny { font-size: 11px; }
+.meta.small { margin-bottom: 8px; }
+.spaced { margin-bottom: 6px; }
+.tags { display: flex; flex-wrap: wrap; gap: 4px; }
+.flush { margin-top: 0; }
+.dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; margin-right: 8px; }
+.dot.ok { background: var(--ok); }
+.dot.bad { background: var(--bad); }
+.health-grid .card .muted.small { margin-top: 6px; }
+button.row { width: 100%; text-align: left; color: var(--text); font-weight: 400; }
+.tree .person { margin-bottom: 10px; }
+.tree .person > div { font-weight: 600; margin-bottom: 4px; }
+.tree .day { display: flex; width: 100%; justify-content: space-between; padding: 4px 10px; border-radius: 6px;
+  background: transparent; border: 0; color: var(--muted); font-weight: 400; }
+.tree .day:hover, .tree .day.sel { background: var(--accent-dim); color: var(--accent); }
+.empty.error { color: var(--bad); border-color: rgba(255, 93, 115, .4); }
+button:disabled { opacity: .6; cursor: default; }
+button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }

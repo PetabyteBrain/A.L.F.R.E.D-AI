@@ -59,11 +59,20 @@ async def check_all() -> None:
             db.set_health(name, *res)
 
 
+def _housekeeping() -> None:
+    from dashboard.api.security import prune_sessions
+    prune_sessions()
+    # Blocked-access spam must not grow the DB forever.
+    db.execute("DELETE FROM access_attempts WHERE ts < strftime('%Y-%m-%dT%H:%M:%S', 'now', '-90 days')")
+    db.execute("DELETE FROM activity WHERE kind = 'access' AND ts < strftime('%Y-%m-%dT%H:%M:%S', 'now', '-90 days')")
+
+
 async def background_loop() -> None:
     """Health probes + housekeeping (closing idle Telegram sessions)."""
     while True:
         try:
             sessions.close_idle_sessions()
+            _housekeeping()
             await check_all()
         except Exception:
             log.exception("Health loop iteration failed")

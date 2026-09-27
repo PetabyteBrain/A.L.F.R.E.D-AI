@@ -55,6 +55,12 @@ class Settings:
     # --- Dashboard ---
     session_secret: str = field(default_factory=lambda: _env("DASHBOARD_SESSION_SECRET"))
     cookie_secure: bool = field(default_factory=lambda: _bool("DASHBOARD_COOKIE_SECURE", True))
+    session_idle_minutes: int = field(default_factory=lambda: int(_env("DASHBOARD_SESSION_IDLE_MINUTES", "60")))
+    session_max_hours: int = field(default_factory=lambda: int(_env("DASHBOARD_SESSION_MAX_HOURS", "12")))
+    # Only requests arriving *from* these IPs may set the client IP via CF-Connecting-IP /
+    # X-Forwarded-For (the reverse proxy over Tailscale). Everyone else is taken at face value.
+    trusted_proxy_ips: frozenset = field(default_factory=lambda: frozenset(
+        ip.strip() for ip in _env("TRUSTED_PROXY_IPS", "100.64.0.2").split(",") if ip.strip()))
 
     # --- Admin bootstrap (seeded into the registry on startup) ---
     admin_display_name: str = field(default_factory=lambda: _env("ADMIN_DISPLAY_NAME", "Admin"))

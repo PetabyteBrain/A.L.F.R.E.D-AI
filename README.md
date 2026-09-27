@@ -14,7 +14,7 @@ Phone ──► Twilio ──► /twilio/voice ─► identity ─► <Stream> �
                                                          ├─► Agent Core (Claude) ─► tools ─► n8n
                                                          └─◄ ElevenLabs Flash TTS ◄─┘
 Telegram ◄─► long polling ─► identity ─► Agent Core
-Dashboard ─► /api/* (Argon2 login, session cookie) ─► SQLite + /data/storage
+Dashboard (React) ─► /api/* (Argon2 login, server-side sessions) ─► SQLite + /data/storage
 n8n ─► /n8n/callback (X-Alfred-Secret) ─► Agent Core ─► Telegram
 ```
 
@@ -94,18 +94,39 @@ data/storage/{user_id}/{YYYY-MM-DD}/{session_id}/audio.wav        # calls: stere
 data/storage/{user_id}/{YYYY-MM-DD}/{session_id}/transcript.json  # calls + Telegram sessions
 ```
 
+## Dashboard security
+
+- Argon2id password hashes; the login throttle trips after 10 failures per IP or 5 per username in 15 min.
+- Server-side sessions: the cookie (`__Host-alfred`, HttpOnly, Secure, SameSite=Strict) holds a
+  random token; only its HMAC is stored. Idle timeout 60 min, hard cap 12 h. Logout, password
+  change, role change, disabling a person, or `admin_cli logout-all` revoke sessions immediately.
+- CSRF: every POST/PUT/PATCH/DELETE under `/api` needs `X-Requested-With: alfred`, and a
+  foreign `Origin` is rejected.
+- Strict CSP (`script-src 'self'`, no inline code, `frame-ancestors 'none'`), nosniff,
+  no-referrer, HSTS over HTTPS, `no-store` on API responses and recordings.
+- Validated inputs (bounded query params, strict JSON bodies) and parameterised SQL.
+  Recordings are served only by numeric ID after an ownership check, and paths are confined to `STORAGE_ROOT`.
+- Admins see everything; other dashboard roles see only their own sessions and recordings.
+- The client IP (used for throttling) is taken from `CF-Connecting-IP` only when the request
+  comes from `TRUSTED_PROXY_IPS` (the reverse proxy); uvicorn runs without proxy-header trust.
+- Tip: set `ALFRED_BIND` to the Pi 5 tailnet IP so port 8000 isn't reachable from the LAN.
+
 ## Development
 
 ```bash
 python -m venv .venv && .venv/Scripts/pip install -r requirements.txt pytest pytest-asyncio
-.venv/Scripts/python -m pytest -q        # offline tests incl. a simulated phone call
-.venv/Scripts/python -m tests.devserver  # dashboard with demo data: http://127.0.0.1:8765 (admin / devpassword123)
+cd dashboard/web && npm install && npm run build && cd ../..
+.venv/Scripts/python -m pytest -q        # offline tests incl. a simulated phone call + security checks
+.venv/Scripts/python -m tests.devserver  # built dashboard with demo data: http://127.0.0.1:8765 (admin / devpassword123)
+cd dashboard/web && npm run dev          # hot-reload React on :5180, proxies /api to the devserver
 ```
+
+The Docker build compiles the React app in a Node stage, so the Pi doesn't need Node installed.
 
 Deploy from Windows (local copy is the master):
 
 ```bash
-tar --exclude=.venv --exclude=data --exclude=data-dev --exclude=.env --exclude=__pycache__ -czf - . | ssh user@alfred-server 'mkdir -p ~/alfred && tar -xzf - -C ~/alfred'
+tar --exclude=.venv --exclude=node_modules --exclude=dist --exclude=data --exclude=data-dev --exclude=.env --exclude=__pycache__ -czf - . | ssh user@alfred-server 'mkdir -p ~/alfred && tar -xzf - -C ~/alfred'
 ssh user@alfred-server 'cd ~/alfred && docker compose up -d --build'
 ```
 

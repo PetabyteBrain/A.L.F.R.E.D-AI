@@ -6,3 +6,6 @@ __pycache__/
 .venv/
 tests/
 data-dev/
+node_modules/
+dashboard/web/node_modules/
+dashboard/web/dist/

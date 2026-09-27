@@ -23,7 +23,15 @@ original design spec is `C:\Users\user\Downloads\alfred-agent-spec.md`.
 - Keep the static system prompt in `agent_core.STATIC_SYSTEM` byte-stable (prompt caching); put
   per-request details in `_dynamic_system`. Tool list is sorted for the same reason.
 
+## Dashboard
+- React 19 + Vite in `dashboard/web` (no router; tabs in `App.jsx`), built to `dashboard/web/dist`,
+  which FastAPI serves. Keep it CSP-clean: no inline scripts, no `dangerouslySetInnerHTML`.
+- All API calls go through `src/api.js` (it adds the CSRF header). Security primitives live in
+  `dashboard/api/security.py`; anything that changes a person's credentials, role or status must
+  revoke their `dashboard_sessions`.
+
 ## Testing
 - `.venv/Scripts/python -m pytest -q` — offline; includes a simulated Twilio call through the
   media-stream WebSocket with fake STT/TTS/agent.
-- `python -m tests.devserver` — dashboard with demo data on :8765 (admin / devpassword123).
+- `python -m tests.devserver` — built dashboard with demo data on :8765 (admin / devpassword123);
+  `npm run dev` in dashboard/web for hot reload on :5180.

@@ -7,15 +7,15 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
-import secrets
 from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
+from fastapi.responses import PlainTextResponse
 from fastapi.staticfiles import StaticFiles
-from starlette.middleware.sessions import SessionMiddleware
 
 from dashboard.api.routes import router as dashboard_router
+from dashboard.api.security import SecurityMiddleware
 
 from . import call_handler, db, health, n8n_callback, sessions, telegram_handler
 from .config import settings
@@ -27,7 +27,7 @@ for noisy in ("httpx", "httpx2", "telegram.ext", "websockets"):
     logging.getLogger(noisy).setLevel(logging.WARNING)
 log = logging.getLogger("alfred")
 
-WEB_DIR = Path(__file__).resolve().parent.parent / "dashboard" / "web"
+WEB_DIR = Path(__file__).resolve().parent.parent / "dashboard" / "web" / "dist"
 
 
 @asynccontextmanager
@@ -38,6 +38,11 @@ async def lifespan(app: FastAPI):
     sessions.mark_orphans_on_startup()
     tool_registry.load()
     db.log_activity("system", "Alfred started")
+
+    if settings.twilio_enabled and not settings.twilio_validate_signature:
+        log.warning("TWILIO_VALIDATE_SIGNATURE=false — anyone can forge call webhooks. Testing only!")
+    if not settings.cookie_secure:
+        log.warning("DASHBOARD_COOKIE_SECURE=false — dashboard cookie can travel over plain HTTP. LAN testing only!")
 
     await telegram_handler.start()
     bg = asyncio.create_task(health.background_loop())
@@ -56,19 +61,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Alfred", lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
 
-_secret = settings.session_secret
-if not _secret:
-    _secret = secrets.token_urlsafe(32)
-    log.warning("DASHBOARD_SESSION_SECRET not set — using a random one (logins reset on restart).")
-
-app.add_middleware(
-    SessionMiddleware,
-    secret_key=_secret,
-    session_cookie="alfred_session",
-    max_age=60 * 60 * 12,
-    same_site="strict",
-    https_only=settings.cookie_secure,
-)
+app.add_middleware(SecurityMiddleware)
 
 
 @app.get("/healthz", include_in_schema=False)
@@ -79,4 +72,9 @@ async def healthz() -> dict:
 app.include_router(call_handler.router)
 app.include_router(n8n_callback.router)
 app.include_router(dashboard_router)
-app.mount("/", StaticFiles(directory=WEB_DIR, html=True), name="web")
+if WEB_DIR.is_dir():
+    app.mount("/", StaticFiles(directory=WEB_DIR, html=True), name="web")
+else:
+    @app.get("/", include_in_schema=False)
+    async def no_frontend() -> PlainTextResponse:
+        return PlainTextResponse("Dashboard not built: run `npm run build` in dashboard/web.", status_code=503)
