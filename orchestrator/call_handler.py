@@ -164,7 +164,7 @@ async def place_outbound_call(user_id: int, *, opening_line: str, reason: str = 
     def _create():
         return _twilio_client().calls.create(
             to=number,
-            from_=settings.twilio_phone_number,
+            from_=registry.normalize_phone(settings.twilio_phone_number),  # Twilio needs E.164
             url=f"{settings.public_base_url}/twilio/voice/outbound?{q}",
             status_callback=f"{settings.public_base_url}/twilio/status?{q}",
             status_callback_event=["completed"],
