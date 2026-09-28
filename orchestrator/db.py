@@ -143,6 +143,7 @@ CREATE TABLE IF NOT EXISTS health (
 DEFAULT_ROLES = [
     # name, description, telegram, call, dashboard
     ("admin", "Full access to every tool and channel.", 1, 1, 1),
+    ("cofounder", "Just under admin: all tools except n8n workflow management; own dashboard.", 1, 1, 1),
     ("friend", "Chat and call; only tools explicitly granted to 'friend'.", 1, 1, 0),
 ]
 

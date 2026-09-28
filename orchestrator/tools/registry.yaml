@@ -1,5 +1,8 @@
 # Tool registry — the only place you edit to give Alfred a new capability.
 #
+# Roles: admin (everything) > cofounder (everything except managing n8n workflows)
+#        > friend (basic tools only).
+#
 # Each tool is exposed to Claude only for the roles listed under `roles`
 # ("*" = every role). Role checks happen twice: when the tool list is built
 # for a request, and again right before execution.
@@ -36,7 +39,7 @@ tools:
   - name: add_task
     kind: builtin
     handler: add_task
-    roles: [admin]
+    roles: [admin, cofounder]
     description: >-
       Add a task to Alfred's task list, shown on the dashboard. This only records it;
       it does not schedule execution.
@@ -51,7 +54,7 @@ tools:
   - name: list_active_sessions
     kind: builtin
     handler: list_active_sessions
-    roles: [admin]
+    roles: [admin, cofounder]
     description: List calls and chats currently in progress, with who they are with.
     input_schema:
       type: object
@@ -60,7 +63,7 @@ tools:
   - name: recent_activity
     kind: builtin
     handler: recent_activity
-    roles: [admin]
+    roles: [admin, cofounder]
     description: Recent activity across all users (messages, calls, tool calls, blocked access attempts).
     input_schema:
       type: object
@@ -70,7 +73,7 @@ tools:
   - name: list_people
     kind: builtin
     handler: list_people
-    roles: [admin]
+    roles: [admin, cofounder]
     description: List registered people (id, name, role, which channels they are reachable on).
     input_schema:
       type: object
@@ -79,7 +82,7 @@ tools:
   - name: send_telegram_message
     kind: builtin
     handler: send_telegram_message
-    roles: [admin]
+    roles: [admin, cofounder]
     description: Send a Telegram message to a registered person (by user id from list_people).
     input_schema:
       type: object
@@ -91,7 +94,7 @@ tools:
   - name: place_call
     kind: builtin
     handler: place_call
-    roles: [admin]
+    roles: [admin, cofounder]
     description: >-
       Phone a registered person (by user id) from Alfred's Swiss number. Alfred opens
       the call with `opening_line` and then converses normally.
@@ -107,7 +110,7 @@ tools:
   - name: n8n_list_workflows
     kind: n8n_api
     action: list_workflows
-    roles: [admin]
+    roles: [admin, cofounder]
     description: List n8n workflows (id, name, active, tags).
     input_schema:
       type: object
@@ -117,7 +120,7 @@ tools:
   - name: n8n_get_workflow
     kind: n8n_api
     action: get_workflow
-    roles: [admin]
+    roles: [admin, cofounder]
     description: Get one n8n workflow's full definition (nodes, connections, settings).
     input_schema:
       type: object
@@ -180,7 +183,7 @@ tools:
   - name: n8n_list_executions
     kind: n8n_api
     action: list_executions
-    roles: [admin]
+    roles: [admin, cofounder]
     description: List recent n8n executions, optionally for one workflow or status.
     input_schema:
       type: object
@@ -192,7 +195,7 @@ tools:
   - name: n8n_get_execution
     kind: n8n_api
     action: get_execution
-    roles: [admin]
+    roles: [admin, cofounder]
     description: Get details of one n8n execution, including its data.
     input_schema:
       type: object
@@ -203,7 +206,7 @@ tools:
   - name: n8n_trigger_webhook
     kind: n8n_api
     action: trigger_webhook
-    roles: [admin]
+    roles: [admin, cofounder]
     description: >-
       Call any n8n Webhook-trigger path directly (POST {N8N_BASE_URL}/webhook/<path>).
       Use for ad-hoc testing of workflows that don't have their own tool entry yet.

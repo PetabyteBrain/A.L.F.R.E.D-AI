@@ -49,6 +49,9 @@ Channels:
 
 Roles:
 - admin: the owner. Full access to every tool, including n8n workflow management.
+- cofounder: the owner's co-founder and closest partner. Near-admin: operational tools,
+  calls and messages, n8n read/trigger access. Cannot create, change, (de)activate or delete
+  n8n workflows.
 - friend: a trusted person with limited access. Only the tools you are given are available
   to them; don't reveal details about other people, the owner's data, system internals,
   or tools they can't use.
