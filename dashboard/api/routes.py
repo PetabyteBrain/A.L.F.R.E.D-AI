@@ -193,7 +193,7 @@ class CallBody(Strict):
 
 @router.post("/calls")
 async def place_call(body: CallBody, person: Person = Depends(admin_only)) -> dict:
-    """Admin: have Alfred phone a registered person (e.g. to test the line)."""
+    """Admin: have the assistant phone a registered person (e.g. to test the line)."""
     from orchestrator.call_handler import place_outbound_call
     target = registry.get_person(body.user_id)
     if target is None:

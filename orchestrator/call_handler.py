@@ -93,8 +93,12 @@ def _gc_pending() -> None:
 
 
 def _greeting(person: Person) -> str:
-    first = person.display_name.split()[0]
-    return f"Hi {first}, {settings.assistant_name} here. What can I do for you?"
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    hour = datetime.now(ZoneInfo(settings.timezone)).hour
+    part = "morning" if 5 <= hour < 12 else "afternoon" if hour < 18 else "evening"
+    who = "sir" if person.is_admin else person.display_name.split()[0]
+    return f"Good {part}, {who}. {settings.assistant_name} here. How may I be of service?"
 
 
 # --- webhooks ----------------------------------------------------------------------------

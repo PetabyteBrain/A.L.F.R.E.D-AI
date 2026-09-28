@@ -31,7 +31,7 @@ def seed() -> None:
     registry.add_identifier(friend, "telegram", "200000002")
 
     s = sessions.start_session(admin, "call", external_id="CAdemo")
-    sessions.add_turn(s, "assistant", "Hi Erika, Alfred here. What can I do for you?")
+    sessions.add_turn(s, "assistant", "Good evening, sir. Alfred here. How may I be of service?")
     sessions.add_turn(s, "user", "Remind me what's on the task list.")
     sessions.add_turn(s, "assistant", "Just one thing: water the plants, every evening.")
     rec = CallRecorder(s)
@@ -59,7 +59,7 @@ def seed_live_call() -> None:
         time.sleep(8)
         admin = db.query_one("SELECT id FROM users WHERE role='admin'")["id"]
         sid = sessions.start_session(admin, "call", external_id=None)
-        sessions.add_turn(sid, "assistant", "Hi Erika, Alfred here. What can I do for you?")
+        sessions.add_turn(sid, "assistant", "Good evening, sir. Alfred here. How may I be of service?")
         sessions.add_turn(sid, "user", "Is the Minecraft server still running?")
         sessions.LIVE[sid].speaking = True
     threading.Thread(target=go, daemon=True).start()

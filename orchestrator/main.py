@@ -1,4 +1,4 @@
-"""Alfred entrypoint: one FastAPI process hosting every channel, the dashboard and background jobs.
+"""Alfred (the "alfred" service) entrypoint: one FastAPI process hosting every channel, the dashboard and background jobs.
 
     uvicorn orchestrator.main:app --host 0.0.0.0 --port 8000
 """
@@ -37,7 +37,7 @@ async def lifespan(app: FastAPI):
     registry.bootstrap_admin()
     sessions.mark_orphans_on_startup()
     tool_registry.load()
-    db.log_activity("system", "Alfred started")
+    db.log_activity("system", f"{settings.assistant_name} started")
 
     if settings.twilio_enabled and not settings.twilio_validate_signature:
         log.warning("TWILIO_VALIDATE_SIGNATURE=false — anyone can forge call webhooks. Testing only!")
@@ -46,8 +46,8 @@ async def lifespan(app: FastAPI):
 
     await telegram_handler.start()
     bg = asyncio.create_task(health.background_loop())
-    log.info("Alfred up — telegram=%s phone=%s n8n=%s model=%s",
-             settings.telegram_enabled, settings.twilio_enabled and settings.elevenlabs_enabled,
+    log.info("%s up — telegram=%s phone=%s n8n=%s model=%s",
+             settings.assistant_name, settings.telegram_enabled, settings.twilio_enabled and settings.elevenlabs_enabled,
              settings.n8n_enabled, settings.claude_model)
     try:
         yield
@@ -56,7 +56,7 @@ async def lifespan(app: FastAPI):
         with contextlib.suppress(asyncio.CancelledError):
             await bg
         await telegram_handler.stop()
-        db.log_activity("system", "Alfred stopped")
+        db.log_activity("system", f"{settings.assistant_name} stopped")
 
 
 app = FastAPI(title="Alfred", lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)

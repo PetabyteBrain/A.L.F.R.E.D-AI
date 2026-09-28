@@ -33,7 +33,7 @@ function Tree({ filter, setFilter }) {
   );
 }
 
-function Detail({ id }) {
+function Detail({ id, assistant }) {
   const { data: s, error } = usePoll(() => api(`/sessions/${encodeURIComponent(id)}`), 0, [id]);
   const ref = useRef(null);
   useEffect(() => {
@@ -47,13 +47,13 @@ function Detail({ id }) {
       {s.recordings.map((r) => (
         <div key={r.id}>
           <audio controls preload="none" src={audioUrl(r.id)} />
-          <div className="muted small">Stereo: left = {s.display_name}, right = Alfred · {fmtDur(r.duration)}</div>
+          <div className="muted small">Stereo: left = {s.display_name}, right = {assistant} · {fmtDur(r.duration)}</div>
         </div>
       ))}
       {s.turns.length === 0 && <div className="muted">No transcript.</div>}
       {s.turns.map((t) => (
         <div key={t.turn_index} className={`turn ${t.speaker}`}>
-          <div className="sp">{t.speaker === "user" ? s.display_name : "Alfred"}<br />{fmtClock(t.ts)}</div>
+          <div className="sp">{t.speaker === "user" ? s.display_name : assistant}<br />{fmtClock(t.ts)}</div>
           <div className="tx">{t.text}</div>
         </div>
       ))}
@@ -67,7 +67,7 @@ function Detail({ id }) {
   );
 }
 
-export default function Recordings() {
+export default function Recordings({ assistant }) {
   const [filter, setFilter] = useState({});
   const [selected, setSelected] = useState(null);
   const q = new URLSearchParams();
@@ -101,7 +101,7 @@ export default function Recordings() {
           </div>
         </div>
       </div>
-      {selected && <Detail id={selected} />}
+      {selected && <Detail id={selected} assistant={assistant} />}
     </Panel>
   );
 }

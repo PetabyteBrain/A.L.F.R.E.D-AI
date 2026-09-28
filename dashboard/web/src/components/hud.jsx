@@ -1,4 +1,35 @@
 import { useEffect, useState } from "react";
+import { useThemeName } from "../theme.js";
+
+// Generic bat silhouette (symmetric, 200x100 box, centred on x=100).
+const BAT = "M100 40 L94 24 L90 40 Q60 30 12 46 Q34 54 33 72 Q46 62 58 71 Q70 60 82 75 Q92 70 100 88 "
+  + "Q108 70 118 75 Q130 60 142 71 Q154 62 167 72 Q166 54 188 46 Q140 30 110 40 L106 24 Z";
+
+/* Bat-signal: a searchlight disc with the bat cut out, sweeping rings, cloud haze. */
+export function BatSignal({ size = "md", label }) {
+  const ticks = Array.from({ length: 48 }, (_, i) => {
+    const a = (i * 7.5) * (Math.PI / 180);
+    const r0 = i % 4 === 0 ? 82 : 86;
+    return `M ${100 + r0 * Math.cos(a)} ${100 + r0 * Math.sin(a)} L ${100 + 90 * Math.cos(a)} ${100 + 90 * Math.sin(a)}`;
+  });
+  return (
+    <div className={`reactor emblem-bat reactor-${size}`} role={label ? "img" : undefined} aria-label={label} aria-hidden={label ? undefined : true}>
+      <svg viewBox="0 0 200 200">
+        <circle className="r-halo" cx="100" cy="100" r="78" />
+        <g className="spin spin-slow"><circle className="ring ring-dash-a" cx="100" cy="100" r="96" /></g>
+        <g className="spin spin-rev"><path className="ring ring-ticks" d={ticks.join(" ")} /></g>
+        <circle className="bat-disc" cx="100" cy="100" r="62" />
+        <circle className="bat-rim" cx="100" cy="100" r="62" />
+        <path className="bat" d={BAT} transform="translate(100 102) scale(0.56) translate(-100 -56)" />
+      </svg>
+    </div>
+  );
+}
+
+/* The theme's emblem: arc reactor on the Stark HUD, bat-signal in the Batcave. */
+export function Emblem(props) {
+  return useThemeName() === "batcave" ? <BatSignal {...props} /> : <ArcReactor {...props} />;
+}
 
 /* Arc reactor: layered rotating rings around a glowing core (pure SVG + CSS animation). */
 export function ArcReactor({ size = "md", label }) {

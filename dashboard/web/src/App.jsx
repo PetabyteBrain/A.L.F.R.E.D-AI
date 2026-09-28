@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
 import { api, setUnauthorizedHandler } from "./api.js";
 import { usePoll, useStoredState } from "./hooks.js";
+import { THEMES, ThemeContext, useTheme } from "./theme.js";
 import Login from "./components/Login.jsx";
 import Stats from "./components/Stats.jsx";
-import { ArcReactor, Clock } from "./components/hud.jsx";
+import { Clock, Emblem } from "./components/hud.jsx";
 import Live from "./pages/Live.jsx";
 import Recordings from "./pages/Recordings.jsx";
 import Tasks from "./pages/Tasks.jsx";
@@ -20,17 +21,6 @@ const TABS = [
   { id: "people", label: "Personnel", Page: People, admin: true },
 ];
 
-const THEMES = { alfred: "J.A.R.V.I.S.", friday: "F.R.I.D.A.Y." };
-const SUBTITLES = {
-  alfred: "Just A Rather Very Intelligent System",
-  friday: "Female Replacement Intelligent Digital Assistant Youth",
-};
-
-function useTheme() {
-  const [theme, setTheme] = useStoredState("alfred-theme", "alfred");
-  useEffect(() => { document.documentElement.dataset.theme = THEMES[theme] ? theme : "alfred"; }, [theme]);
-  return [THEMES[theme] ? theme : "alfred", setTheme];
-}
 
 function SystemStatus() {
   const { data } = usePoll(() => api("/health"), 30000);
@@ -64,31 +54,41 @@ export default function App() {
   }
 
   if (me === undefined) {
-    return <div className="boot"><ArcReactor size="xl" /><p className="subtitle blink">Initializing</p></div>;
+    return (
+      <ThemeContext.Provider value={theme}>
+        <div className="boot"><Emblem size="xl" /><p className="subtitle blink">Initializing</p></div>
+      </ThemeContext.Provider>
+    );
   }
-  if (me === null) return <Login onLogin={setMe} />;
+  if (me === null) {
+    return <ThemeContext.Provider value={theme}><Login onLogin={setMe} /></ThemeContext.Provider>;
+  }
 
   const isAdmin = me.role === "admin";
   const tabs = TABS.filter((t) => !t.admin || isAdmin);
   const active = tabs.find((t) => t.id === tab) || tabs[0];
   const Page = active.Page;
+  const skin = THEMES[theme];
+  const assistant = me.assistant_name || "Alfred";
+  const wordmark = theme === "alfred" ? assistant.toUpperCase().split("").join(".") + "." : assistant.toUpperCase();
 
   return (
+    <ThemeContext.Provider value={theme}>
     <div className="shell">
       <header className="topbar">
         <div className="brand">
-          <ArcReactor size="sm" />
+          <Emblem size="sm" />
           <div>
-            <div className="wordmark">{THEMES[theme]}</div>
-            <div className="subtitle">{SUBTITLES[theme]}</div>
+            <div className="wordmark">{wordmark}</div>
+            <div className="subtitle">{skin.subtitle}</div>
           </div>
         </div>
         <SystemStatus />
         <div className="top-right">
           <div className="theme-switch" role="group" aria-label="Interface">
-            {Object.keys(THEMES).map((t) => (
+            {Object.entries(THEMES).map(([t, cfg]) => (
               <button key={t} className={t === theme ? "active" : ""} onClick={() => setTheme(t)} aria-pressed={t === theme}>
-                {t}
+                {cfg.label}
               </button>
             ))}
           </div>
@@ -112,8 +112,9 @@ export default function App() {
 
       <main>
         <Stats />
-        <Page me={me} isAdmin={isAdmin} />
+        <Page me={me} isAdmin={isAdmin} assistant={assistant} />
       </main>
     </div>
+    </ThemeContext.Provider>
   );
 }

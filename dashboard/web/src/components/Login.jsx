@@ -1,8 +1,10 @@
 import { useState } from "react";
 import { api } from "../api.js";
-import { ArcReactor } from "./hud.jsx";
+import { Emblem } from "./hud.jsx";
+import { THEMES, useThemeName } from "../theme.js";
 
 export default function Login({ onLogin }) {
+  const skin = THEMES[useThemeName()];
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -25,10 +27,10 @@ export default function Login({ onLogin }) {
 
   return (
     <section className="login">
-      <ArcReactor size="xl" />
+      <Emblem size="xl" />
       <form className="hud login-card" onSubmit={submit}>
-        <h1 className="wordmark">J.A.R.V.I.S.</h1>
-        <p className="subtitle">Authorization required</p>
+        <h1 className="wordmark">{skin.wordmark}</h1>
+        <p className="subtitle">{skin.subtitle} · Authorization required</p>
         <label>
           <span>Identity</span>
           <input value={username} onChange={(e) => setUsername(e.target.value)}

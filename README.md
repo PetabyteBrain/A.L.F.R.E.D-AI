@@ -1,11 +1,14 @@
 # Alfred
 
-Personal AI agent reachable by **phone** (Twilio, Swiss number) and **Telegram**, backed by
+Personal AI butler (persona modelled on Alfred Pennyworth) reachable by **phone** (Twilio, Swiss number) and **Telegram**, backed by
 **Claude Haiku 4.5**, wired into **n8n**, with a password-protected **dashboard** for live
 sessions, recordings/transcripts, tasks, activity and health. Only people in the registry
 get answers; everyone else is ignored silently.
 
-Runs as one Docker container on **alfred-server** (`/home/user/alfred`).
+Runs as one Docker container on **alfred-server** (`/home/user/alfred`). The project, service,
+container and hostname keep their original `alfred` names (alfred.example.com, `docker compose exec alfred`);
+only the assistant's persona and branding are "Alfred" (`ASSISTANT_NAME`). The dashboard has two skins:
+**Stark** (holographic HUD) and **Batcave** (bat-signal yellow on gunmetal).
 
 ```
 Phone ──► Twilio ──► /twilio/voice ─► identity ─► <Stream> ─► /twilio/stream (WS)

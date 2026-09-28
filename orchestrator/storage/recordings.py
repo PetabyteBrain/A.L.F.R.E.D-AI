@@ -97,11 +97,11 @@ def write_transcript(session_id: str) -> Path:
 
 
 class CallRecorder:
-    """Writes a stereo 16-bit WAV while a call runs: left = caller, right = Alfred.
+    """Writes a stereo 16-bit WAV while a call runs: left = caller, right = the assistant.
 
     Twilio sends inbound frames continuously in real time, so inbound frames are the clock:
     for every chunk the caller sends, we pull the same number of bytes from the playback
-    buffer (whatever Alfred is currently "saying"), keeping both channels aligned.
+    buffer (whatever the assistant is currently "saying"), keeping both channels aligned.
     """
 
     def __init__(self, session_id: str):

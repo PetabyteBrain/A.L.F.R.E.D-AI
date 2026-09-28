@@ -5,7 +5,7 @@ import { usePoll } from "../hooks.js";
 import { Empty, ErrorNote, Tag } from "../components/common.jsx";
 import { ConfirmDialog, Panel } from "../components/hud.jsx";
 
-export default function People() {
+export default function People({ assistant }) {
   const { data: people, error } = usePoll(() => api("/people"), 30000);
   const { data: attempts, error: err2 } = usePoll(() => api("/access-attempts?limit=80"), 15000);
   const [callee, setCallee] = useState(null);
@@ -60,7 +60,7 @@ export default function People() {
       {callee && (
         <ConfirmDialog
           title="Place call"
-          body={<>Have Alfred phone <b>{callee.display_name}</b> now from the Alfred number?</>}
+          body={<>Have {assistant} phone <b>{callee.display_name}</b> now from the {assistant} number?</>}
           confirmLabel="Dial"
           busy={busy}
           error={callError}

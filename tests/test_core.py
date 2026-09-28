@@ -273,7 +273,7 @@ def test_call_media_stream_end_to_end(monkeypatch):
     s = db.query_one("SELECT status FROM sessions WHERE id=?", (sid,))
     assert s["status"] == "ended"
     texts = [t["text"] for t in sessions.session_turns(sid)]
-    assert texts[0].startswith("Hi Test") and "what's up" in texts and "all good" in texts
+    assert texts[0].startswith("Good ") and ", sir. Alfred here." in texts[0] and "what's up" in texts and "all good" in texts
     assert db.query_one("SELECT duration FROM recordings WHERE session_id=?", (sid,))["duration"] == 0.2
 
     # A replayed token must not open a second stream.

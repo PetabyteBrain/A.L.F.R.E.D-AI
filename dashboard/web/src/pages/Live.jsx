@@ -5,7 +5,7 @@ import { usePoll } from "../hooks.js";
 import { Empty, ErrorNote, Tag } from "../components/common.jsx";
 import { ConfirmDialog, Panel, Waveform } from "../components/hud.jsx";
 
-function Tail({ session }) {
+function Tail({ session, assistant }) {
   const ref = useRef(null);
   useEffect(() => {
     if (ref.current) ref.current.scrollTop = ref.current.scrollHeight;
@@ -15,7 +15,7 @@ function Tail({ session }) {
       {session.tail.length === 0 && <div className="p">Awaiting input…</div>}
       {session.tail.map((t, i) => (
         <div key={i} className={t.speaker === "user" ? "u" : "a"}>
-          <b>{t.speaker === "user" ? firstName(session.display_name) : "Alfred"}</b>{t.text}
+          <b>{t.speaker === "user" ? firstName(session.display_name) : assistant}</b>{t.text}
         </div>
       ))}
       {session.partial && <div className="p">› {session.partial}</div>}
@@ -23,7 +23,7 @@ function Tail({ session }) {
   );
 }
 
-function SessionCard({ s, isAdmin, onEnd }) {
+function SessionCard({ s, isAdmin, onEnd, assistant }) {
   const isCall = s.channel === "call";
   const state = s.speaking ? "speaking" : s.busy ? "processing" : isCall ? "listening" : "idle";
   return (
@@ -40,7 +40,7 @@ function SessionCard({ s, isAdmin, onEnd }) {
         <div className={`state-chip ${state}`}>{state}</div>
       </header>
       {isCall && <Waveform active={s.speaking || Boolean(s.partial)} />}
-      <Tail session={s} />
+      <Tail session={s} assistant={assistant} />
       {isAdmin && (
         <footer className="live-foot">
           <button className="btn danger small" onClick={() => onEnd(s)}>
@@ -52,7 +52,7 @@ function SessionCard({ s, isAdmin, onEnd }) {
   );
 }
 
-export default function Live({ isAdmin }) {
+export default function Live({ isAdmin, assistant }) {
   const { data, error, reload } = usePoll(() => api("/sessions/active"), 2000);
   const [target, setTarget] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -83,7 +83,7 @@ export default function Live({ isAdmin }) {
       {data && data.length === 0 && <Empty>No active channels. Standing by.</Empty>}
       <div className="cards">
         {(data || []).map((s) => (
-          <SessionCard key={s.id} s={s} isAdmin={isAdmin} onEnd={(x) => { setEndError(""); setTarget(x); }} />
+          <SessionCard key={s.id} s={s} isAdmin={isAdmin} assistant={assistant} onEnd={(x) => { setEndError(""); setTarget(x); }} />
         ))}
       </div>
       {target && (

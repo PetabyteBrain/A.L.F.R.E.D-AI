@@ -1,6 +1,9 @@
-# Alfred — notes for Claude
+# Alfred (repo/service name: alfred) — notes for Claude
 
-Personal AI agent (phone + Telegram + dashboard). Full spec lives in the README; the
+Personal AI butler "Alfred" (phone + Telegram + dashboard). Renamed from Alfred on 2026-09-28:
+user-facing name comes from `ASSISTANT_NAME`; infra names (folder, container, domain, cookie,
+CSRF value, localStorage keys) intentionally stay `alfred`. Dashboard skins: `alfred` (Stark HUD)
+and `batcave` (see `dashboard/web/src/theme.js`). Full spec lives in the README; the
 original design spec is `C:\Users\user\Downloads\alfred-agent-spec.md`.
 
 ## Where things run
