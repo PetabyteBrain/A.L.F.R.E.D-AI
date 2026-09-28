@@ -5,6 +5,7 @@ recordings and activity.
 """
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request, Response
@@ -204,8 +205,9 @@ async def place_call(body: CallBody, person: Person = Depends(admin_only)) -> di
                                              requested_by=person.id)
     except (ValueError, PermissionError, RuntimeError) as e:
         raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:  # Twilio errors
-        raise HTTPException(status_code=502, detail=f"Carrier error: {str(e)[:200]}")
+    except Exception as e:  # Twilio errors. 400, not 502: Cloudflare replaces 5xx bodies with its own page.
+        logging.getLogger(__name__).exception("Outbound call failed")
+        raise HTTPException(status_code=400, detail=f"Carrier error: {str(e)[:300]}")
     return {"ok": True, "call_sid": call_sid}
 
 
