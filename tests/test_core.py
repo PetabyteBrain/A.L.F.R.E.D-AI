@@ -338,3 +338,14 @@ def test_dashboard_can_terminate_live_call(monkeypatch):
         # a stuck session with no live stream can be cleared too
         stuck = sessions.start_session(registry.lookup("telegram", "111").id, "call")
         assert c.post(f"/api/sessions/{stuck}/end", headers=CSRF).json()["local"] == "session closed"
+
+
+def test_place_call_endpoint_is_admin_only_and_reports_config_errors():
+    from fastapi.testclient import TestClient
+    from orchestrator.main import app
+    with TestClient(app) as c:
+        assert c.post("/api/calls", json={"user_id": 1}, headers=CSRF).status_code == 401
+        c.post("/api/login", json={"username": "admin", "password": "correct horse battery"}, headers=CSRF)
+        assert c.post("/api/calls", json={"user_id": 9999}, headers=CSRF).status_code == 404
+        r = c.post("/api/calls", json={"user_id": 1}, headers=CSRF)  # no Twilio in tests
+        assert r.status_code == 400 and "configured" in r.json()["detail"]

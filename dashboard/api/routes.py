@@ -184,6 +184,31 @@ async def end_session_route(session_id: str = Path(max_length=64), person: Perso
     return {"ok": True, **result}
 
 
+class CallBody(Strict):
+    user_id: int = Field(ge=1)
+    opening_line: str = Field(default="", max_length=300)
+    reason: str = Field(default="", max_length=300)
+
+
+@router.post("/calls")
+async def place_call(body: CallBody, person: Person = Depends(admin_only)) -> dict:
+    """Admin: have Alfred phone a registered person (e.g. to test the line)."""
+    from orchestrator.call_handler import place_outbound_call
+    target = registry.get_person(body.user_id)
+    if target is None:
+        raise HTTPException(status_code=404, detail="Unknown person.")
+    line = body.opening_line or f"Hi {target.display_name.split()[0]}, it's {settings.assistant_name}. Can you hear me?"
+    try:
+        call_sid = await place_outbound_call(body.user_id, opening_line=line,
+                                             reason=body.reason or "Placed from the dashboard.",
+                                             requested_by=person.id)
+    except (ValueError, PermissionError, RuntimeError) as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:  # Twilio errors
+        raise HTTPException(status_code=502, detail=f"Carrier error: {str(e)[:200]}")
+    return {"ok": True, "call_sid": call_sid}
+
+
 # --- recordings --------------------------------------------------------------------------
 
 @router.get("/recordings/tree")
