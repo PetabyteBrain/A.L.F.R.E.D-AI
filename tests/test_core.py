@@ -675,3 +675,20 @@ def test_public_homepage_and_app_route():
         dash = c.get("/app")
         assert dash.status_code == 200 and '<div id="root">' in dash.text
         assert dash.headers["cache-control"] == "no-cache"
+
+
+def test_google_site_verification(monkeypatch):
+    import dataclasses
+    from fastapi.testclient import TestClient
+    from orchestrator import main
+    from orchestrator.main import app, WEB_DIR
+    if not (WEB_DIR / "home.html").is_file():
+        pytest.skip("dashboard not built")
+    fake = dataclasses.replace(main.settings, google_site_verification="AbC123_xyz-TokenValue",
+                               google_site_verification_file="google0123456789abcdef.html")
+    monkeypatch.setattr(main, "settings", fake)
+    with TestClient(app) as c:
+        assert '<meta name="google-site-verification" content="AbC123_xyz-TokenValue">' in c.get("/").text
+        r = c.get("/google0123456789abcdef.html")
+        assert r.status_code == 200 and r.text == "google-site-verification: google0123456789abcdef.html"
+        assert c.get("/googledeadbeefdeadbeef.html").status_code == 404

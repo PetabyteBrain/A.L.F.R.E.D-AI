@@ -7,11 +7,12 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import re
 from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, HTMLResponse, PlainTextResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from dashboard.api.google import router as google_router
@@ -90,11 +91,26 @@ def _legal(name: str) -> FileResponse:
 # Public pages: "/" explains the app without a login (required by Google's OAuth review);
 # the dashboard single-page app lives at /app.
 @app.get("/", include_in_schema=False)
-async def home() -> FileResponse:
+async def home() -> Response:
     path = WEB_DIR / "home.html"
     if not path.is_file():
         raise HTTPException(status_code=503, detail="Site not built")
-    return FileResponse(path, media_type="text/html", headers={"Cache-Control": "public, max-age=600"})
+    html = path.read_text(encoding="utf-8")
+    token = settings.google_site_verification
+    if token and re.fullmatch(r"[A-Za-z0-9_-]{10,100}", token):
+        # Search Console "HTML tag" ownership proof.
+        html = html.replace("</head>", f'  <meta name="google-site-verification" content="{token}">\n</head>', 1)
+    return HTMLResponse(html, headers={"Cache-Control": "public, max-age=600"})
+
+
+@app.get("/google{code}.html", include_in_schema=False)
+async def google_site_verification_file(code: str) -> Response:
+    """Search Console "HTML file" ownership proof, configured via GOOGLE_SITE_VERIFICATION_FILE."""
+    name = f"google{code}.html"
+    if not settings.google_site_verification_file or name != settings.google_site_verification_file \
+            or not re.fullmatch(r"google[0-9a-f]{8,64}\.html", name):
+        raise HTTPException(status_code=404)
+    return PlainTextResponse(f"google-site-verification: {name}")
 
 
 @app.get("/app", include_in_schema=False)

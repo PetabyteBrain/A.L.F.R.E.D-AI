@@ -58,6 +58,11 @@ class Settings:
     # Fernet key that encrypts stored OAuth tokens. Generate:
     # python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
     token_encryption_key: str = field(default_factory=lambda: _env("TOKEN_ENCRYPTION_KEY"))
+    # Google Search Console ownership proof for the homepage (either or both):
+    #  - HTML tag method: the `content` value of <meta name="google-site-verification" ...>
+    #  - HTML file method: the file name Google gives you, e.g. google1a2b3c4d5e6f7a8b.html
+    google_site_verification: str = field(default_factory=lambda: _env("GOOGLE_SITE_VERIFICATION"))
+    google_site_verification_file: str = field(default_factory=lambda: _env("GOOGLE_SITE_VERIFICATION_FILE"))
 
     # --- Usage/cost estimates (USD). Claude prices are per million tokens. ---
     price_claude_input: float = field(default_factory=lambda: float(_env("PRICE_CLAUDE_INPUT_PER_MTOK", "1.00")))
