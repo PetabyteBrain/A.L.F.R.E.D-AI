@@ -64,8 +64,12 @@ async def login(body: LoginBody, request: Request, response: Response) -> dict:
     security.destroy_session(request)  # no session fixation: always a fresh token
     security.set_session_cookie(response, security.create_session(person.id, request))
     db.log_activity("access", f"Dashboard login from {ip}", user_id=person.id)
+    return _me_view(person)
+
+
+def _me_view(person: Person) -> dict:
     return {"id": person.id, "display_name": person.display_name, "role": person.role,
-            "assistant_name": settings.assistant_name}
+            "assistant_name": settings.assistant_name, "can_request_calls": _may_request_calls(person)}
 
 
 @router.post("/logout")
@@ -77,8 +81,7 @@ async def logout(request: Request, response: Response) -> dict:
 
 @router.get("/me")
 async def me(person: Person = Depends(current_person)) -> dict:
-    return {"id": person.id, "display_name": person.display_name, "role": person.role,
-            "assistant_name": settings.assistant_name}
+    return _me_view(person)
 
 
 # --- helpers -----------------------------------------------------------------------------
@@ -187,28 +190,63 @@ async def end_session_route(session_id: str = Path(max_length=64), person: Perso
 
 class CallBody(Strict):
     user_id: int = Field(ge=1)
+    purpose: str = Field(default="", max_length=600)
+    when: str | None = Field(default=None, max_length=40)  # ISO local time; empty = now
     opening_line: str = Field(default="", max_length=300)
-    reason: str = Field(default="", max_length=300)
+
+
+def _may_request_calls(person: Person) -> bool:
+    """Same rule as Alfred's place_call tool (roles listed in tools/registry.yaml)."""
+    from orchestrator.tools import registry as tools
+    if not tools._TOOLS:
+        tools.load()
+    spec = tools._TOOLS.get("place_call")
+    return bool(spec and spec.allowed_for(person.role))
 
 
 @router.post("/calls")
-async def place_call(body: CallBody, person: Person = Depends(admin_only)) -> dict:
-    """Admin: have the assistant phone a registered person (e.g. to test the line)."""
-    from orchestrator.call_handler import place_outbound_call
-    target = registry.get_person(body.user_id)
-    if target is None:
+async def place_call(body: CallBody, person: Person = Depends(current_person)) -> dict:
+    """Call a registered person now or later, optionally with a purpose Alfred reports back on."""
+    from orchestrator import scheduler
+    if not _may_request_calls(person):
+        raise HTTPException(status_code=403)
+    if registry.get_person(body.user_id) is None:
         raise HTTPException(status_code=404, detail="Unknown person.")
-    line = body.opening_line or f"Hi {target.display_name.split()[0]}, it's {settings.assistant_name}. Can you hear me?"
     try:
-        call_sid = await place_outbound_call(body.user_id, opening_line=line,
-                                             reason=body.reason or "Placed from the dashboard.",
-                                             requested_by=person.id)
-    except (ValueError, PermissionError, RuntimeError) as e:
+        row = await scheduler.request_call(body.user_id, requested_by=person, purpose=body.purpose,
+                                           when=body.when, opening_line=body.opening_line)
+    except scheduler.ScheduleError as e:
         raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:  # Twilio errors. 400, not 502: Cloudflare replaces 5xx bodies with its own page.
-        logging.getLogger(__name__).exception("Outbound call failed")
-        raise HTTPException(status_code=400, detail=f"Carrier error: {str(e)[:300]}")
-    return {"ok": True, "call_sid": call_sid}
+    if row["status"] == "failed":  # 400, not 5xx: Cloudflare replaces 5xx bodies with its own page
+        raise HTTPException(status_code=400, detail=row["result"] or "The call failed.")
+    return {"ok": True, "request": row}
+
+
+@router.get("/calls/targets")
+async def call_targets(person: Person = Depends(current_person)) -> list[dict]:
+    """People a caller may ask Alfred to phone: active, with a phone and a role allowed on calls."""
+    if not _may_request_calls(person):
+        return []
+    rows = db.query(
+        "SELECT DISTINCT u.id, u.display_name FROM users u JOIN user_identifiers i ON i.user_id = u.id "
+        "JOIN roles r ON r.name = u.role WHERE u.active = 1 AND i.type = 'phone' AND r.can_call = 1 "
+        "ORDER BY u.display_name")
+    return rows
+
+
+@router.get("/calls/scheduled")
+async def scheduled_calls(person: Person = Depends(current_person), include_done: bool = True) -> list[dict]:
+    from orchestrator import scheduler
+    return scheduler.list_for(person, include_done=include_done, limit=100)
+
+
+@router.delete("/calls/scheduled/{request_id}")
+async def cancel_scheduled_call(request_id: int = Path(ge=1), person: Person = Depends(current_person)) -> dict:
+    from orchestrator import scheduler
+    try:
+        return scheduler.cancel(request_id, person)
+    except scheduler.ScheduleError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 # --- recordings --------------------------------------------------------------------------
@@ -344,6 +382,15 @@ async def overview(person: Person = Depends(current_person)) -> dict:
         },
         "model": settings.claude_model,
     }
+
+
+@router.get("/usage")
+async def usage_report(person: Person = Depends(admin_only), days: int = Query(default=30, ge=1, le=366)) -> dict:
+    """Metered API usage (tokens, characters, minutes, requests) + Twilio's own month-to-date bill."""
+    from orchestrator import usage
+    data = usage.report(days)
+    data["twilio_month"] = await usage.twilio_month_to_date()
+    return data
 
 
 @router.get("/access-attempts")

@@ -132,6 +132,58 @@ CREATE TABLE IF NOT EXISTS dashboard_sessions (
 );
 CREATE INDEX IF NOT EXISTS idx_dash_sessions_user ON dashboard_sessions(user_id);
 
+CREATE TABLE IF NOT EXISTS scheduled_calls (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    target_user_id INTEGER NOT NULL REFERENCES users(id),
+    requested_by   INTEGER REFERENCES users(id),
+    run_at         TEXT NOT NULL,             -- UTC ISO; "now" for immediate calls
+    purpose        TEXT NOT NULL DEFAULT '',  -- what to ask/tell; empty = plain call, no report
+    opening_line   TEXT NOT NULL DEFAULT '',
+    status         TEXT NOT NULL DEFAULT 'pending', -- pending|dialing|done|no_answer|failed|cancelled
+    attempts       INTEGER NOT NULL DEFAULT 0,
+    session_id     TEXT,
+    result         TEXT,                      -- outcome summary reported to the requester
+    created_at     TEXT NOT NULL,
+    updated_at     TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_sched_due ON scheduled_calls(status, run_at);
+
+CREATE TABLE IF NOT EXISTS api_usage (
+    id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts                 TEXT NOT NULL,
+    provider           TEXT NOT NULL,         -- anthropic | elevenlabs | twilio | google | n8n
+    kind               TEXT NOT NULL,         -- chat | call | summary | tts | stt | voice | calendar | api
+    model              TEXT NOT NULL DEFAULT '',
+    input_tokens       INTEGER NOT NULL DEFAULT 0,
+    output_tokens      INTEGER NOT NULL DEFAULT 0,
+    cache_read_tokens  INTEGER NOT NULL DEFAULT 0,
+    cache_write_tokens INTEGER NOT NULL DEFAULT 0,
+    units              REAL NOT NULL DEFAULT 0, -- chars / seconds / requests, see unit
+    unit               TEXT NOT NULL DEFAULT '',
+    cost_usd           REAL NOT NULL DEFAULT 0,
+    user_id            INTEGER REFERENCES users(id),
+    session_id         TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_usage_ts ON api_usage(ts);
+
+CREATE TABLE IF NOT EXISTS google_accounts (
+    user_id           INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    email             TEXT NOT NULL DEFAULT '',
+    refresh_token_enc TEXT NOT NULL,          -- Fernet-encrypted
+    access_token_enc  TEXT,
+    access_expires_at TEXT,
+    scopes            TEXT NOT NULL DEFAULT '',
+    calendar_id       TEXT NOT NULL DEFAULT 'primary',
+    linked_at         TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS oauth_states (
+    state_hash    TEXT PRIMARY KEY,
+    user_id       INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    code_verifier TEXT NOT NULL,
+    created_at    TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS health (
     service    TEXT PRIMARY KEY,
     ok         INTEGER NOT NULL,

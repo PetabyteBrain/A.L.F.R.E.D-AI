@@ -12,6 +12,7 @@ import Activity from "./pages/Activity.jsx";
 import Health from "./pages/Health.jsx";
 import People from "./pages/People.jsx";
 import Profile from "./pages/Profile.jsx";
+import Usage from "./pages/Usage.jsx";
 
 const TABS = [
   { id: "live", label: "Live", Page: Live },
@@ -20,6 +21,7 @@ const TABS = [
   { id: "activity", label: "Log", Page: Activity },
   { id: "health", label: "Systems", Page: Health },
   { id: "people", label: "Personnel", Page: People, admin: true },
+  { id: "usage", label: "Usage", Page: Usage, admin: true },
   { id: "profile", label: "Profile", Page: Profile },
 ];
 

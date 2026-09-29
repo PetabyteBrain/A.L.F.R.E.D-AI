@@ -48,6 +48,34 @@ def seed() -> None:
     db.execute("INSERT INTO access_attempts(channel, raw_identifier, resolved, detail, ts) VALUES "
                "('telegram','telegram:987654',0,'unregistered',?)", (db.now_iso(),))
     db.set_health("claude", False, "not configured")
+
+    # demo usage for the Usage tab + a couple of call requests for the call queue
+    import random
+    from datetime import datetime, timedelta, timezone
+    rnd = random.Random(7)
+    for i in range(24):
+        day = (datetime.now(timezone.utc) - timedelta(days=i)).replace(hour=12).isoformat(timespec="seconds")
+        for kind in ("telegram", "call"):
+            inp, out, cr = rnd.randint(2000, 30000), rnd.randint(200, 3000), rnd.randint(0, 60000)
+            cost = (inp * 1 + out * 5 + cr * 0.1) / 1e6
+            db.execute("INSERT INTO api_usage(ts, provider, kind, model, input_tokens, output_tokens, cache_read_tokens, "
+                       "cost_usd, user_id) VALUES (?,?,?,?,?,?,?,?,?)", (day, "anthropic", kind, "claude-haiku-4-5",
+                                                                          inp, out, cr, cost, admin))
+        db.execute("INSERT INTO api_usage(ts, provider, kind, units, unit, user_id) VALUES (?,?,?,?,?,?)",
+                   (day, "elevenlabs", "tts", rnd.randint(200, 3000), "chars", admin))
+        db.execute("INSERT INTO api_usage(ts, provider, kind, units, unit, user_id) VALUES (?,?,?,?,?,?)",
+                   (day, "twilio", "voice-outbound", rnd.randint(30, 400), "seconds", admin))
+    now = datetime.now(timezone.utc)
+    db.execute("INSERT INTO scheduled_calls(target_user_id, requested_by, run_at, purpose, status, created_at, updated_at) "
+               "VALUES (?,?,?,?,?,?,?)", (friend, admin, (now + timedelta(days=1)).isoformat(timespec="seconds"),
+                                          "Ask Alex whether he can bring the projector on Friday.", "pending",
+                                          db.now_iso(), db.now_iso()))
+    db.execute("INSERT INTO scheduled_calls(target_user_id, requested_by, run_at, purpose, status, attempts, result, "
+               "created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?)",
+               (friend, admin, (now - timedelta(hours=3)).isoformat(timespec="seconds"),
+                "Ask Alex if the invoice is ready.", "done", 1,
+                "Alex says the invoice will be sent by Thursday noon; he needs the project number first.",
+                db.now_iso(), db.now_iso()))
     db.set_health("telegram", False, "not configured")
 
 

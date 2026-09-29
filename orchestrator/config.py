@@ -52,6 +52,22 @@ class Settings:
     n8n_api_key: str = field(default_factory=lambda: _env("N8N_API_KEY"))
     n8n_callback_secret: str = field(default_factory=lambda: _env("N8N_CALLBACK_SECRET"))
 
+    # --- Google Calendar (per-user OAuth) ---
+    google_client_id: str = field(default_factory=lambda: _env("GOOGLE_CLIENT_ID"))
+    google_client_secret: str = field(default_factory=lambda: _env("GOOGLE_CLIENT_SECRET"))
+    # Fernet key that encrypts stored OAuth tokens. Generate:
+    # python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+    token_encryption_key: str = field(default_factory=lambda: _env("TOKEN_ENCRYPTION_KEY"))
+
+    # --- Usage/cost estimates (USD). Claude prices are per million tokens. ---
+    price_claude_input: float = field(default_factory=lambda: float(_env("PRICE_CLAUDE_INPUT_PER_MTOK", "1.00")))
+    price_claude_output: float = field(default_factory=lambda: float(_env("PRICE_CLAUDE_OUTPUT_PER_MTOK", "5.00")))
+    price_claude_cache_read: float = field(default_factory=lambda: float(_env("PRICE_CLAUDE_CACHE_READ_PER_MTOK", "0.10")))
+    price_claude_cache_write: float = field(default_factory=lambda: float(_env("PRICE_CLAUDE_CACHE_WRITE_PER_MTOK", "1.25")))
+    # ElevenLabs bills by plan; set these to your plan's effective rates to get cost estimates.
+    price_tts_per_1k_chars: float = field(default_factory=lambda: float(_env("PRICE_ELEVENLABS_TTS_PER_1K_CHARS", "0")))
+    price_stt_per_hour: float = field(default_factory=lambda: float(_env("PRICE_ELEVENLABS_STT_PER_HOUR", "0")))
+
     # --- Dashboard ---
     session_secret: str = field(default_factory=lambda: _env("DASHBOARD_SESSION_SECRET"))
     cookie_secure: bool = field(default_factory=lambda: _bool("DASHBOARD_COOKIE_SECURE", True))
@@ -97,6 +113,11 @@ class Settings:
     @property
     def elevenlabs_enabled(self) -> bool:
         return bool(self.elevenlabs_api_key and self.elevenlabs_voice_id)
+
+    @property
+    def google_enabled(self) -> bool:
+        return bool(self.google_client_id and self.google_client_secret and self.token_encryption_key
+                    and self.public_base_url)
 
     @property
     def n8n_enabled(self) -> bool:

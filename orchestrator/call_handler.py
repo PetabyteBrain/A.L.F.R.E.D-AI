@@ -24,7 +24,7 @@ from xml.sax.saxutils import quoteattr
 
 from fastapi import APIRouter, HTTPException, Request, Response, WebSocket, WebSocketDisconnect
 
-from . import agent_core, db, sessions
+from . import agent_core, db, sessions, usage
 from .config import settings
 from .identity import registry
 from .identity.registry import Person
@@ -92,6 +92,12 @@ def _gc_pending() -> None:
                 sessions.end_session(sid, status="failed")
 
 
+def _call_finished(session_id: str, outcome: str) -> None:
+    """Tell the scheduler a call ended (it reports outcomes / schedules retries)."""
+    from . import scheduler
+    asyncio.create_task(scheduler.on_call_finished(session_id, outcome))
+
+
 def _greeting(person: Person) -> str:
     from datetime import datetime
     from zoneinfo import ZoneInfo
@@ -137,8 +143,11 @@ async def call_status(request: Request, session_id: str) -> Response:
     form = await _validated_form(request)
     status = form.get("CallStatus", "")
     if status in ("completed", "busy", "no-answer", "failed", "canceled") and session_id not in _stream_connected:
-        _pending.pop(session_id, None)
+        was_pending = _pending.pop(session_id, None) is not None
         sessions.end_session(session_id, status="ended" if status == "completed" else "failed")
+        if was_pending:  # never reached the media stream: nobody (or voicemail) answered
+            _call_finished(session_id, "no_answer" if status in ("busy", "no-answer", "canceled", "completed")
+                           else "failed")
     return Response(status_code=204)
 
 
@@ -150,7 +159,8 @@ def _twilio_client():
 
 
 async def place_outbound_call(user_id: int, *, opening_line: str, reason: str = "",
-                              requested_by: int | None = None) -> str:
+                              requested_by: int | None = None, request_id: int | None = None,
+                              extra_system: str | None = None) -> str:
     if not (settings.twilio_enabled and settings.elevenlabs_enabled and settings.public_base_url):
         raise RuntimeError("Telephony isn't fully configured (Twilio, ElevenLabs, PUBLIC_BASE_URL).")
     person = registry.get_person(user_id)
@@ -161,7 +171,10 @@ async def place_outbound_call(user_id: int, *, opening_line: str, reason: str = 
         raise PermissionError(f"Role '{person.role}' has no call access.")
 
     sid = sessions.start_session(person.id, "call", "outbound")
-    extra = f"This is an outbound call you placed. Reason: {reason}" if reason else "This is an outbound call you placed."
+    if request_id is not None:
+        db.execute("UPDATE scheduled_calls SET session_id = ? WHERE id = ?", (sid, request_id))
+    extra = extra_system or (f"This is an outbound call you placed. Reason: {reason}" if reason
+                             else "This is an outbound call you placed.")
     _pending[sid] = PendingCall(sid, person.id, secrets.token_urlsafe(24), opening_line, extra)
     q = urlencode({"session_id": sid})
 
@@ -196,7 +209,8 @@ async def health() -> tuple[bool, str]:
         return False, str(e)[:200]
 
 
-async def end_call(session_id: str, *, by_user_id: int | None = None) -> dict:
+async def end_call(session_id: str, *, by_user_id: int | None = None, status: str = "terminated",
+                   reason: str = "from dashboard") -> dict:
     """Hang up a call from the dashboard: Twilio first, then force-close locally if needed.
 
     Works for live calls, outbound calls still ringing, and "stuck" sessions whose call is
@@ -226,7 +240,7 @@ async def end_call(session_id: str, *, by_user_id: int | None = None) -> dict:
 
     call = ACTIVE_CALLS.get(session_id)
     if call is not None:
-        call.end_status = "terminated"
+        call.end_status = status
         with contextlib.suppress(Exception):
             await call.ws.close(code=1000)
         for _ in range(50):  # give the stream handler up to 5 s to tear down cleanly
@@ -241,11 +255,23 @@ async def end_call(session_id: str, *, by_user_id: int | None = None) -> dict:
     _stream_connected.discard(session_id)
     still_active = db.query_one("SELECT 1 FROM sessions WHERE id = ? AND status = 'active'", (session_id,))
     if still_active:
-        sessions.end_session(session_id, status="terminated")
+        sessions.end_session(session_id, status=status)
         result["local"] = "session closed" if result["local"] == "none" else result["local"]
-    db.log_activity("call", f"Call terminated from dashboard (twilio: {result['twilio']})",
-                    user_id=by_user_id, session_id=session_id)
+        if call is None:
+            _call_finished(session_id, status)
+    db.log_activity("call", f"Call {'ended' if status == 'ended' else 'terminated'} {reason} "
+                            f"(twilio: {result['twilio']})", user_id=by_user_id, session_id=session_id)
     return result
+
+
+def request_hangup(session_id: str) -> bool:
+    """end_call tool: hang up once the current reply has been spoken."""
+    call = ACTIVE_CALLS.get(session_id)
+    if call is None:
+        return False
+    call.hangup_requested = True
+    asyncio.create_task(call._hangup_fallback())
+    return True
 
 
 # --- media stream ------------------------------------------------------------------------
@@ -274,6 +300,8 @@ class CallSession:
         self.live = sessions.LIVE.get(self.session_id)
         self._closed = False
         self.end_status = "ended"
+        self.hangup_requested = False
+        self._hanging_up = False
 
     # lifecycle
     async def start(self) -> None:
@@ -295,6 +323,11 @@ class CallSession:
         db.log_activity("call", f"Call with {self.person.display_name} ended ({duration:.0f}s)",
                         self.person.id, self.session_id)
         sessions.end_session(self.session_id, status=self.end_status)
+        direction = (db.query_one("SELECT direction FROM sessions WHERE id = ?", (self.session_id,)) or {}).get(
+            "direction", "inbound")
+        usage.record_stt(duration, user_id=self.person.id, session_id=self.session_id)
+        usage.record_call_minutes(duration, direction=direction, user_id=self.person.id, session_id=self.session_id)
+        _call_finished(self.session_id, self.end_status)
 
     # inbound events
     async def on_audio(self, ulaw: bytes) -> None:
@@ -305,6 +338,21 @@ class CallSession:
         if name == self._pending_mark:
             self._pending_mark = None
             self._set_speaking(False)
+            if self.hangup_requested and not self.speaking:
+                asyncio.create_task(self._hangup())
+
+    async def _hangup(self) -> None:
+        if self._hanging_up:
+            return
+        self._hanging_up = True
+        await asyncio.sleep(0.4)  # let the last syllable leave the phone line
+        await end_call(self.session_id, status="ended", reason=f"by {settings.assistant_name}")
+
+    async def _hangup_fallback(self) -> None:
+        """If no playback mark ever arrives (e.g. TTS error), don't leave the line open."""
+        await asyncio.sleep(25)
+        if not self._closed:
+            await self._hangup()
 
     async def _on_partial(self, text: str) -> None:
         if self.live:
@@ -349,6 +397,7 @@ class CallSession:
 
     async def _speak_run(self, text: str) -> None:
         self._set_speaking(True)
+        usage.record_tts(len(text), user_id=self.person.id, session_id=self.session_id)
         try:
             async for chunk in self.provider.tts.stream(text):
                 self.recorder.agent_audio(chunk)

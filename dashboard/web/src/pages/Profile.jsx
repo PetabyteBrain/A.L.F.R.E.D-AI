@@ -3,6 +3,7 @@ import { api } from "../api.js";
 import { usePoll } from "../hooks.js";
 import { ErrorNote, Tag } from "../components/common.jsx";
 import Connections from "../components/Connections.jsx";
+import GoogleCalendarCard from "../components/GoogleCalendarCard.jsx";
 import { Panel } from "../components/hud.jsx";
 
 /* Self-service for everyone with dashboard access: name, connections, password. */
@@ -85,6 +86,7 @@ export default function Profile({ assistant, refreshMe }) {
             </label>
             <button className="btn primary" type="submit" disabled={busy}>Update password</button>
           </form>
+          <GoogleCalendarCard assistant={assistant} />
         </section>
       </div>
     </Panel>

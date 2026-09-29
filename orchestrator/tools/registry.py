@@ -26,6 +26,7 @@ class ToolSpec:
     input_schema: dict
     roles: tuple[str, ...]
     config: dict = field(default_factory=dict)
+    channels: tuple[str, ...] = ()  # empty = every channel
 
     def allowed_for(self, role: str) -> bool:
         return "*" in self.roles or role in self.roles
@@ -60,6 +61,7 @@ def load() -> dict[str, ToolSpec]:
             description=entry.pop("description", "").strip(),
             input_schema=entry.pop("input_schema", {"type": "object", "properties": {}}),
             roles=tuple(entry.pop("roles", ["admin"])),
+            channels=tuple(entry.pop("channels", [])),
             config=entry,
         )
     _TOOLS.clear()
@@ -68,24 +70,35 @@ def load() -> dict[str, ToolSpec]:
     return tools
 
 
-def _available(spec: ToolSpec) -> bool:
+def _available(spec: ToolSpec, person_id: int | None = None) -> bool:
+    if spec.config.get("requires") == "google":
+        if not settings.google_enabled:
+            return False
+        if person_id is not None:
+            from .. import google_calendar
+            return google_calendar.is_linked(person_id)
+        return True
     if spec.kind in ("n8n_api",):
         return settings.n8n_enabled
     if spec.kind == "n8n_webhook":
         return bool(settings.n8n_base_url)
-    if spec.name == "place_call":
+    if spec.name in ("place_call", "schedule_call", "list_scheduled_calls", "cancel_scheduled_call"):
         return settings.twilio_enabled and settings.elevenlabs_enabled and bool(settings.public_base_url)
     if spec.name == "send_telegram_message":
         return settings.telegram_enabled
     return True
 
 
-def tools_for(role: str) -> list[dict]:
-    """Deterministic (sorted) so the prompt-cache prefix stays stable between requests."""
+def tools_for(role: str, channel: str | None = None, person_id: int | None = None) -> list[dict]:
+    """Tools this person may use on this channel.
+
+    Deterministic (sorted) so the prompt-cache prefix stays stable between requests.
+    """
     if not _TOOLS:
         load()
     return [s.api_definition() for s in sorted(_TOOLS.values(), key=lambda s: s.name)
-            if s.allowed_for(role) and _available(s)]
+            if s.allowed_for(role) and (not s.channels or channel is None or channel in s.channels)
+            and _available(s, person_id)]
 
 
 def _truncate(result: Any) -> str:
@@ -98,7 +111,7 @@ def _truncate(result: Any) -> str:
 async def execute(name: str, args: dict, ctx: ToolContext) -> tuple[str, bool]:
     """Run a tool. Returns (result_text, is_error). Never raises."""
     spec = _TOOLS.get(name)
-    if spec is None or not spec.allowed_for(ctx.person.role):
+    if spec is None or not spec.allowed_for(ctx.person.role) or (spec.channels and ctx.channel not in spec.channels):
         # Defence in depth: the model only sees permitted tools, but re-check anyway.
         result, is_error = f"Tool '{name}' is not available to this user.", True
         db.log_tool_call(name, args, result, True, ctx.session_id, ctx.person.id)

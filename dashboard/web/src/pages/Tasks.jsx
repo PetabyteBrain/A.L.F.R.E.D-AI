@@ -4,8 +4,9 @@ import { fmtTime } from "../format.js";
 import { usePoll } from "../hooks.js";
 import { Empty, ErrorNote, Tag } from "../components/common.jsx";
 import { Panel } from "../components/hud.jsx";
+import CallQueue from "../components/CallQueue.jsx";
 
-export default function Tasks({ isAdmin }) {
+export default function Tasks({ isAdmin, me, assistant }) {
   const { data: t, error, reload } = usePoll(() => api("/tasks"), 30000);
   const [title, setTitle] = useState("");
   const [schedule, setSchedule] = useState("");
@@ -34,7 +35,10 @@ export default function Tasks({ isAdmin }) {
   }
 
   return (
-    <Panel code="04" title="Task queue">
+    <Panel code="04" title="Tasks & calls">
+      <ErrorNote error={error || formError} />
+      <CallQueue me={me} assistant={assistant} />
+      <h3 className="sub">Tasks</h3>
       {isAdmin && (
         <form className="inline-form" onSubmit={add}>
           <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Task" required maxLength={200} />
@@ -43,7 +47,6 @@ export default function Tasks({ isAdmin }) {
           <button className="btn primary" type="submit">Queue</button>
         </form>
       )}
-      <ErrorNote error={error || formError} />
       {t && t.local.length === 0 && <Empty>No tasks yet.</Empty>}
       <div className="list">
         {(t?.local || []).map((x) => (

@@ -258,6 +258,8 @@ def delete_user(user_id: int) -> None:
         # Keep log lines, just detach them from the deleted person.
         conn.execute("UPDATE activity SET user_id = NULL WHERE user_id = ?", (user_id,))
         conn.execute("UPDATE tool_calls SET user_id = NULL WHERE user_id = ?", (user_id,))
+        conn.execute("UPDATE api_usage SET user_id = NULL WHERE user_id = ?", (user_id,))
+        conn.execute("DELETE FROM scheduled_calls WHERE target_user_id = ? OR requested_by = ?", (user_id, user_id))
         conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
 
 

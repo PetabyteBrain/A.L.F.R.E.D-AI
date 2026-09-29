@@ -428,3 +428,198 @@ def test_user_management_permissions():
         r = admin.delete(f"/api/people/{with_history}", headers=CSRF)
         assert r.status_code == 400 and "Disable" in r.json()["detail"]
         assert admin.get("/api/me").status_code == 200  # admin session untouched throughout
+
+
+@pytest.mark.asyncio
+async def test_call_requests_schedule_retry_and_report(monkeypatch):
+    import dataclasses
+    from types import SimpleNamespace as NS
+    from orchestrator import scheduler, call_handler, agent_core
+    from orchestrator.config import settings
+
+    monkeypatch.setattr(scheduler, "settings", dataclasses.replace(
+        settings, elevenlabs_api_key="x", elevenlabs_voice_id="v", twilio_account_sid="a",
+        twilio_auth_token="b", twilio_phone_number="+41310000000"))
+    placed = []
+
+    async def fake_place(user_id, *, opening_line, reason="", requested_by=None, request_id=None, extra_system=None):
+        sid = sessions.start_session(user_id, "call", "outbound")
+        db.execute("UPDATE scheduled_calls SET session_id = ? WHERE id = ?", (sid, request_id))
+        placed.append({"sid": sid, "opening": opening_line, "brief": extra_system})
+        return "CA-fake"
+    monkeypatch.setattr(call_handler, "place_outbound_call", fake_place)
+
+    class FakeMessages:
+        async def create(self, **kw):
+            return NS(content=[NS(type="text", text="He can send the invoice on Friday.")],
+                      usage=NS(input_tokens=120, output_tokens=15, cache_read_input_tokens=0, cache_creation_input_tokens=0))
+    monkeypatch.setattr(agent_core, "_client", NS(messages=FakeMessages()))
+
+    admin = registry.lookup("telegram", "111")
+    # the friend from setup is the call target
+    registry.add_identifier(registry.lookup("telegram", "22222222").id, "phone", "078 000 01 00") \
+        if not registry.phone_for(registry.lookup("telegram", "22222222").id) else None
+
+    # --- validation
+    with pytest.raises(scheduler.ScheduleError):
+        scheduler.parse_when("2001-01-01T10:00")
+    with pytest.raises(scheduler.ScheduleError):
+        scheduler.resolve_person("Nobody Here")
+    assert scheduler.resolve_person("friend").display_name == "Friend Person"  # first-name match
+
+    # --- future call stays pending, can be cancelled only by requester/admin
+    from datetime import datetime, timedelta
+    later = (datetime.now() + timedelta(hours=2)).strftime("%Y-%m-%dT%H:%M")
+    row = await scheduler.request_call("Friend", requested_by=admin, purpose="Ask about Friday", when=later)
+    assert row["status"] == "pending" and not placed
+    friend = registry.lookup("telegram", "22222222")
+    with pytest.raises(scheduler.ScheduleError):
+        scheduler.cancel(row["id"], friend)
+    assert scheduler.cancel(row["id"], admin)["status"] == "cancelled"
+
+    # --- immediate call dials right away with a brief on the requester's behalf
+    row = await scheduler.request_call("Friend Person", requested_by=admin, purpose="Ask if he can send the invoice")
+    assert row["status"] == "dialing" and len(placed) == 1
+    assert "on behalf of Test Admin" in placed[0]["brief"] and "end_call" in placed[0]["brief"]
+    assert "calling on behalf of Test" in placed[0]["opening"]
+
+    # --- no answer -> retried later, then given up after MAX_ATTEMPTS
+    sessions.end_session(placed[0]["sid"], status="failed")  # what the Twilio status webhook does
+    await scheduler.on_call_finished(placed[0]["sid"], "no_answer")
+    r = scheduler.get(row["id"])
+    assert r["status"] == "pending" and r["attempts"] == 1
+    for attempt in range(2, scheduler.MAX_ATTEMPTS + 1):
+        db.execute("UPDATE scheduled_calls SET run_at = ? WHERE id = ?", ("2000-01-01T00:00:00+00:00", row["id"]))
+        await scheduler.dispatch(row["id"])
+        assert len(placed) == attempt
+        sessions.end_session(placed[-1]["sid"], status="failed")
+        await scheduler.on_call_finished(placed[-1]["sid"], "no_answer")
+    r = scheduler.get(row["id"])
+    assert r["status"] == "no_answer" and "after 3 attempt" in r["result"]
+
+    # --- answered call -> summarised and reported to the requester
+    row = await scheduler.request_call(friend.id, requested_by=admin, purpose="Ask about the invoice")
+    sid = placed[-1]["sid"]
+    sessions.add_turn(sid, "assistant", "Hello, calling on behalf of Test about the invoice.")
+    sessions.add_turn(sid, "user", "Sure, I'll send it on Friday.")
+    await scheduler.on_call_finished(sid, "ended")
+    r = scheduler.get(row["id"])
+    assert r["status"] == "done" and "Friday" in r["result"]
+    assert db.query_one("SELECT 1 FROM activity WHERE summary LIKE 'Report to Test Admin:%Friday%'")
+    assert db.query_one("SELECT SUM(output_tokens) AS o FROM api_usage WHERE kind = 'summary'")["o"] >= 15
+
+
+def test_end_call_tool_only_exists_on_calls():
+    from orchestrator.tools import registry as tools
+    tools.load()
+    assert "end_call" not in {t["name"] for t in tools.tools_for("friend", "telegram")}
+    assert "end_call" in {t["name"] for t in tools.tools_for("friend", "call")}
+
+
+def test_google_calendar_link_flow(monkeypatch):
+    import base64, dataclasses, json as _json
+    from urllib.parse import parse_qs, urlparse
+    from cryptography.fernet import Fernet
+    from fastapi.testclient import TestClient
+    from orchestrator import google_calendar
+    from orchestrator.config import settings
+    from orchestrator.tools import registry as tools
+
+    fake = dataclasses.replace(settings, google_client_id="cid.apps.googleusercontent.com", google_client_secret="sec",
+                               token_encryption_key=Fernet.generate_key().decode())
+    monkeypatch.setattr(google_calendar, "settings", fake)
+    monkeypatch.setattr(tools, "settings", fake)
+    calls = []
+
+    class Resp:
+        def __init__(self, status, data):
+            self.status_code, self._d = status, data
+            self.text = _json.dumps(data)
+            self.content = self.text.encode()
+        def json(self):
+            return self._d
+
+    id_token = "x." + base64.urlsafe_b64encode(_json.dumps({"email": "boss@example.com"}).encode()).decode().rstrip("=") + ".y"
+
+    async def fake_http(method, url, **kw):
+        calls.append((method, url, kw))
+        if url == google_calendar.TOKEN_URL and kw["data"]["grant_type"] == "authorization_code":
+            assert kw["data"]["code_verifier"]  # PKCE verifier sent
+            return Resp(200, {"access_token": "at-1", "refresh_token": "rt-1", "expires_in": 3600,
+                              "scope": f"openid email {google_calendar.EVENTS_SCOPE}", "id_token": id_token})
+        if url == google_calendar.TOKEN_URL:
+            return Resp(200, {"access_token": "at-2", "expires_in": 3600})
+        if url.endswith("/events") and method == "GET":
+            assert kw["headers"]["Authorization"] == "Bearer at-2"
+            return Resp(200, {"items": [{"id": "ev1", "summary": "Dentist", "start": {"dateTime": "2026-10-01T09:00:00+02:00"},
+                                         "end": {"dateTime": "2026-10-01T10:00:00+02:00"}}]})
+        if url == google_calendar.REVOKE_URL:
+            return Resp(200, {})
+        raise AssertionError(url)
+    monkeypatch.setattr(google_calendar, "_http", fake_http)
+
+    admin = registry.lookup("telegram", "111")
+    from orchestrator.main import app
+    with TestClient(app) as c:
+        c.post("/api/login", json={"username": "admin", "password": "correct horse battery"}, headers=CSRF)
+        assert c.get("/api/google/status").json() == {"available": True, "linked": False}
+        url = c.post("/api/google/connect", headers=CSRF).json()["url"]
+        q = parse_qs(urlparse(url).query)
+        assert q["code_challenge_method"] == ["S256"] and q["access_type"] == ["offline"]
+        assert q["scope"][0] == google_calendar.SCOPES
+        assert q["redirect_uri"] == ["https://alfred.example.test/api/google/callback"]
+        state = q["state"][0]
+        # wrong / forged state is rejected and links nothing
+        r = c.get("/api/google/callback", params={"state": "forged", "code": "abc"})
+        assert "google=error" in r.text and not google_calendar.is_linked(admin.id)
+        # the real callback links the calendar and bounces back via a same-site page
+        r = c.get("/api/google/callback", params={"state": state, "code": "abc"})
+        assert "google=linked" in r.text and 'http-equiv="refresh"' in r.text
+        st = c.get("/api/google/status").json()
+        assert st["linked"] and st["email"] == "boss@example.com"
+        # tokens are encrypted at rest
+        row = db.query_one("SELECT refresh_token_enc, access_token_enc FROM google_accounts WHERE user_id = ?", (admin.id,))
+        assert "rt-1" not in row["refresh_token_enc"] and "at-1" not in row["access_token_enc"]
+        # state is single-use
+        r = c.get("/api/google/callback", params={"state": state, "code": "abc"})
+        assert "google=error" in r.text
+
+    # calendar tools only for the linked person
+    tools.load()
+    assert "calendar_list_events" in {t["name"] for t in tools.tools_for("admin", "telegram", admin.id)}
+    friend = registry.lookup("telegram", "22222222")
+    assert "calendar_list_events" not in {t["name"] for t in tools.tools_for("friend", "telegram", friend.id)}
+
+    # expired access token is refreshed transparently
+    db.execute("UPDATE google_accounts SET access_expires_at = '2000-01-01T00:00:00+00:00' WHERE user_id = ?", (admin.id,))
+    import asyncio
+    events = asyncio.run(google_calendar.list_events(admin.id, "2026-10-01", "2026-10-02"))
+    assert events[0]["summary"] == "Dentist"
+    with pytest.raises(google_calendar.GoogleError):
+        asyncio.run(google_calendar.delete_event(admin.id, "../../other-calendar"))
+
+    # unlink revokes at Google and removes the tokens
+    asyncio.run(google_calendar.disconnect(admin.id))
+    assert not google_calendar.is_linked(admin.id)
+    assert any(u == google_calendar.REVOKE_URL for _, u, _ in calls)
+
+
+def test_usage_report_endpoint():
+    from fastapi.testclient import TestClient
+    from orchestrator.main import app
+    from orchestrator import usage
+    from types import SimpleNamespace as NS
+    usage.record_claude(NS(input_tokens=1000, output_tokens=200, cache_read_input_tokens=5000,
+                           cache_creation_input_tokens=0), kind="telegram", user_id=None)
+    usage.record_tts(320, user_id=None, session_id=None)
+    with TestClient(app) as c:
+        assert c.get("/api/usage").status_code == 401
+        c.post("/api/login", json={"username": "admin", "password": "correct horse battery"}, headers=CSRF)
+        r = c.get("/api/usage?days=7").json()
+        tg = next(x for x in r["anthropic"] if x["kind"] == "telegram")
+        assert tg["input"] >= 1000 and tg["cache_read"] >= 5000
+        # 1000*1 + 200*5 + 5000*0.1 per MTok = $0.0025 for that request
+        assert r["estimated_cost_usd"] >= 0.0025
+        assert any(e["kind"] == "tts" and e["units"] >= 320 for e in r["elevenlabs"])
+        assert r["twilio_month"] is None  # not configured in tests
+        assert c.get("/api/usage?days=0").status_code == 422

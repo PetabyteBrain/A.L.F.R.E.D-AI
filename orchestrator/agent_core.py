@@ -13,7 +13,7 @@ from zoneinfo import ZoneInfo
 
 import anthropic
 
-from . import db, sessions
+from . import db, sessions, usage
 from .config import settings
 from .identity.registry import Person
 from .tools import registry as tool_registry
@@ -71,6 +71,15 @@ Tools:
 - n8n: the owner's automation server. Workflows may not exist yet. Before any destructive
   n8n action (deleting, overwriting a workflow), state exactly what will happen and get an
   explicit yes in the conversation first.
+- Phone calls on someone's behalf: when asked to call, ring or phone a registered person
+  (including "call me"), use place_call for now or schedule_call for a later time. Put what to
+  ask or tell them in `purpose`. Work out relative times ("tomorrow at 9", "in two hours")
+  from the local time you are given and pass an ISO local time. Tell the person when it's
+  scheduled and that you'll report back.
+- On a call you placed for someone else, stick to that purpose and use end_call once it's done
+  or when the other person says goodbye.
+- Calendar tools act only on the current person's own Google Calendar. Check existing events
+  before proposing times; confirm before deleting.
 - If a tool fails, say so plainly and suggest a next step. Don't retry the same failing
   call more than once.
 
@@ -134,7 +143,7 @@ async def _run(person: Person, channel: str, session_id: str, user_text: str, ex
         return "My language model isn't configured yet (ANTHROPIC_API_KEY is empty)."
 
     messages = _merge_user(sessions.history(person.id, channel), user_text)
-    tools = tool_registry.tools_for(person.role)
+    tools = tool_registry.tools_for(person.role, channel, person.id)
     system = [
         {"type": "text", "text": STATIC_SYSTEM, "cache_control": {"type": "ephemeral"}},
         {"type": "text", "text": _dynamic_system(person, channel, extra_system)},
@@ -163,6 +172,7 @@ async def _run(person: Person, channel: str, session_id: str, user_text: str, ex
             return "I can't reach my language model right now (network)."
 
         db.set_health("claude", True, f"ok ({settings.claude_model})")
+        usage.record_claude(getattr(response, "usage", None), kind=channel, user_id=person.id, session_id=session_id)
 
         if response.stop_reason == "tool_use":
             messages.append({"role": "assistant", "content": response.content})

@@ -477,3 +477,58 @@ select option { background: var(--bg); color: var(--text-strong); }
 .modal.hud { background: linear-gradient(180deg, rgb(var(--accent-rgb) / .08), rgb(var(--accent-rgb) / .03)), var(--bg); }
 .modal.alert.hud { background: linear-gradient(180deg, rgb(var(--bad-rgb) / .16), rgb(var(--bad-rgb) / .05)), var(--bg); }
 :root[data-theme="batcave"] .modal.hud { background: linear-gradient(180deg, rgb(34 35 41), rgb(15 15 18)); }
+
+/* ---------- calls, calendar, usage ---------- */
+textarea {
+  font: 500 15px var(--font-body); color: var(--text-strong); letter-spacing: .02em; resize: vertical;
+  background: rgb(var(--accent-rgb) / .05); border: 0; border-bottom: 1px solid var(--line-strong);
+  padding: 10px 12px; width: 100%; min-height: 70px;
+}
+textarea:focus { outline: none; background: rgb(var(--accent-rgb) / .1); border-bottom-color: var(--accent); }
+input[type="datetime-local"] { color-scheme: dark; }
+:root[data-theme="batcave"] textarea { background: rgb(0 0 0 / .45); border-bottom-color: rgb(255 204 0 / .35); }
+.sub .btn { margin-left: auto; }
+.call-row { align-items: flex-start; }
+.call-result { margin-top: 6px; padding: 6px 10px; border-left: 2px solid var(--ok); background: rgb(var(--ok-rgb) / .06);
+  color: var(--text-strong); font-size: 14px; }
+.gcal { margin-top: 8px; }
+.gcal-linked { display: grid; gap: 6px; justify-items: start; }
+
+.seg { display: flex; border: 1px solid var(--line); }
+.seg button { font: 700 10px var(--font-display); letter-spacing: .18em; text-transform: uppercase; background: transparent;
+  color: var(--muted); border: 0; padding: 7px 12px; cursor: pointer; }
+.seg button.active { background: rgb(var(--accent-rgb) / .2); color: var(--text-strong); }
+:root[data-theme="batcave"] .seg button { font-weight: 400; font-size: 14px; letter-spacing: .1em; }
+
+.stat-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 10px; }
+.stat-tile { padding: 12px 14px; background: var(--fill); border: 1px solid var(--line); border-left: 2px solid var(--accent); }
+.st-label { font: 600 10px var(--font-display); letter-spacing: .18em; text-transform: uppercase; color: var(--muted); }
+.st-value { font: 700 22px var(--font-display); color: var(--text-strong); margin-top: 6px; font-variant-numeric: tabular-nums; }
+.st-sub { font: 400 12px var(--font-mono); color: var(--muted); margin-top: 4px; }
+:root[data-theme="batcave"] .st-label { font-weight: 400; font-size: 13px; letter-spacing: .1em; }
+:root[data-theme="batcave"] .st-value { font-weight: 400; font-size: 30px; letter-spacing: .04em; }
+
+.chart-wrap { position: relative; }
+.bar-chart { width: 100%; height: auto; display: block; overflow: visible; }
+.bar-chart .grid { stroke: var(--line); stroke-width: 1; }
+.bar-chart .baseline { stroke: var(--line-strong); stroke-width: 1; }
+.bar-chart .axis { fill: var(--muted); font: 400 10px var(--font-mono); }
+.bar-chart .bar { fill: var(--accent); opacity: .85; }
+.bar-chart .bar.on { opacity: 1; filter: drop-shadow(0 0 4px var(--accent)); }
+.bar-chart .hit { fill: transparent; }
+.chart-tip { position: absolute; top: 0; transform: translateX(-50%); pointer-events: none; display: grid; gap: 2px;
+  padding: 6px 10px; background: var(--bg); border: 1px solid var(--line-strong); font: 400 12px var(--font-mono);
+  color: var(--text-strong); white-space: nowrap; }
+.chart-tip b { font-family: var(--font-display); font-weight: 600; letter-spacing: .1em; }
+
+.usage-tables { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+table.data { width: 100%; border-collapse: collapse; font-size: 14px; }
+table.data th { text-align: left; font: 600 10px var(--font-display); letter-spacing: .16em; text-transform: uppercase;
+  color: var(--muted); padding: 6px 8px; border-bottom: 1px solid var(--line-strong); }
+table.data td { padding: 7px 8px; border-bottom: 1px solid var(--line); color: var(--text-strong); font-variant-numeric: tabular-nums; }
+table.data td:not(:first-child), table.data th:not(:first-child) { text-align: right; }
+:root[data-theme="batcave"] table.data th { font-weight: 400; font-size: 13px; letter-spacing: .1em; }
+@media (max-width: 700px) {
+  .usage-tables { grid-template-columns: 1fr; }
+  .stat-grid { grid-template-columns: 1fr 1fr; }
+}

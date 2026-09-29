@@ -89,8 +89,89 @@ async def send_telegram_message(ctx, user_id: int, text: str) -> str:
 
 
 @handler
-async def place_call(ctx, user_id: int, opening_line: str, reason: str = "") -> dict:
-    from ..call_handler import place_outbound_call
-    call_sid = await place_outbound_call(int(user_id), opening_line=opening_line, reason=reason,
-                                         requested_by=ctx.person.id)
-    return {"status": "dialing", "call_sid": call_sid}
+async def place_call(ctx, person: str, purpose: str = "", opening_line: str = "") -> dict:
+    from .. import scheduler
+    try:
+        row = await scheduler.request_call(person, requested_by=ctx.person, purpose=purpose, opening_line=opening_line)
+    except scheduler.ScheduleError as e:
+        return {"error": str(e)}
+    return {"status": row["status"], "calling": row["target_name"], "request_id": row["id"],
+            "note": "The outcome will be reported back when the call ends." if purpose and row["target_user_id"] != ctx.person.id
+            else ""}
+
+
+@handler
+async def schedule_call(ctx, person: str, when: str, purpose: str = "", opening_line: str = "") -> dict:
+    from .. import scheduler
+    try:
+        row = await scheduler.request_call(person, requested_by=ctx.person, purpose=purpose, when=when,
+                                           opening_line=opening_line)
+    except scheduler.ScheduleError as e:
+        return {"error": str(e)}
+    return {"scheduled": True, "request_id": row["id"], "calling": row["target_name"],
+            "at_local_time": row["run_at_local"], "status": row["status"]}
+
+
+@handler
+async def list_scheduled_calls(ctx, include_finished: bool = False) -> list[dict]:
+    from .. import scheduler
+    rows = scheduler.list_for(ctx.person, include_done=include_finished, limit=25)
+    return [{k: r[k] for k in ("id", "target_name", "requester_name", "run_at_local", "purpose", "status",
+                               "attempts", "result")} for r in rows]
+
+
+@handler
+async def cancel_scheduled_call(ctx, request_id: int) -> dict:
+    from .. import scheduler
+    try:
+        row = scheduler.cancel(int(request_id), ctx.person)
+    except scheduler.ScheduleError as e:
+        return {"error": str(e)}
+    return {"cancelled": True, "call_to": row["target_name"], "was_at": row["run_at_local"]}
+
+
+@handler
+async def end_call(ctx) -> str:
+    from ..call_handler import request_hangup
+    if ctx.channel != "call" or not ctx.session_id or not request_hangup(ctx.session_id):
+        return "There's no live call to end."
+    return "The line will be closed right after your current reply. Make that reply a short goodbye."
+
+
+# --- Google Calendar (the current person's own linked calendar only) -------------------------
+
+async def _cal(fn, *args, **kwargs):
+    from .. import google_calendar
+    try:
+        return await fn(*args, **kwargs)
+    except google_calendar.GoogleError as e:
+        return {"error": str(e)}
+
+
+@handler
+async def calendar_list_events(ctx, start: str, end: str, query: str = "", max_results: int = 25):
+    from .. import google_calendar
+    return await _cal(google_calendar.list_events, ctx.person.id, start, end, query, max_results)
+
+
+@handler
+async def calendar_create_event(ctx, summary: str, start: str, end: str, description: str = "", location: str = ""):
+    from .. import google_calendar
+    return await _cal(google_calendar.create_event, ctx.person.id, summary, start, end, description, location)
+
+
+@handler
+async def calendar_update_event(ctx, event_id: str, summary: str | None = None, start: str | None = None,
+                                end: str | None = None, description: str | None = None, location: str | None = None):
+    from .. import google_calendar
+    return await _cal(google_calendar.update_event, ctx.person.id, event_id, summary=summary, start=start, end=end,
+                      description=description, location=location)
+
+
+@handler
+async def calendar_delete_event(ctx, event_id: str, confirmed_by_user: bool = False):
+    from .. import google_calendar
+    if not confirmed_by_user:
+        return {"error": "Ask the person to confirm deleting this specific event first."}
+    result = await _cal(google_calendar.delete_event, ctx.person.id, event_id)
+    return result or {"deleted": event_id}

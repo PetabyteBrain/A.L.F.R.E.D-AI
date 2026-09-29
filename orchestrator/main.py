@@ -14,11 +14,12 @@ from fastapi import FastAPI
 from fastapi.responses import PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 
+from dashboard.api.google import router as google_router
 from dashboard.api.people import router as people_router
 from dashboard.api.routes import router as dashboard_router
 from dashboard.api.security import SecurityMiddleware
 
-from . import call_handler, db, health, n8n_callback, sessions, telegram_handler
+from . import call_handler, db, health, n8n_callback, scheduler, sessions, telegram_handler
 from .config import settings
 from .identity import registry
 from .tools import registry as tool_registry
@@ -47,6 +48,7 @@ async def lifespan(app: FastAPI):
 
     await telegram_handler.start()
     bg = asyncio.create_task(health.background_loop())
+    sched = asyncio.create_task(scheduler.background_loop())
     log.info("%s up — telegram=%s phone=%s n8n=%s model=%s",
              settings.assistant_name, settings.telegram_enabled, settings.twilio_enabled and settings.elevenlabs_enabled,
              settings.n8n_enabled, settings.claude_model)
@@ -54,8 +56,11 @@ async def lifespan(app: FastAPI):
         yield
     finally:
         bg.cancel()
+        sched.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await bg
+        with contextlib.suppress(asyncio.CancelledError):
+            await sched
         await telegram_handler.stop()
         db.log_activity("system", f"{settings.assistant_name} stopped")
 
@@ -74,6 +79,7 @@ app.include_router(call_handler.router)
 app.include_router(n8n_callback.router)
 app.include_router(dashboard_router)
 app.include_router(people_router)
+app.include_router(google_router)
 if WEB_DIR.is_dir():
     app.mount("/", StaticFiles(directory=WEB_DIR, html=True), name="web")
 else:

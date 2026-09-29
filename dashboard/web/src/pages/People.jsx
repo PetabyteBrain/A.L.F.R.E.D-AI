@@ -4,6 +4,7 @@ import { fmtTime } from "../format.js";
 import { usePoll } from "../hooks.js";
 import { Empty, ErrorNote, Tag } from "../components/common.jsx";
 import Connections from "../components/Connections.jsx";
+import CallDialog from "../components/CallDialog.jsx";
 import { ConfirmDialog, Panel } from "../components/hud.jsx";
 
 /* ---------------------------------------------------------------- editor (admin) */
@@ -205,23 +206,7 @@ export default function People({ assistant, me }) {
   const [editing, setEditing] = useState(null);
   const [adding, setAdding] = useState(false);
   const [callee, setCallee] = useState(null);
-  const [busy, setBusy] = useState(false);
-  const [callError, setCallError] = useState("");
   const [notice, setNotice] = useState("");
-
-  async function placeCall() {
-    setBusy(true);
-    setCallError("");
-    try {
-      await api("/calls", { method: "POST", body: { user_id: callee.id } });
-      setNotice(`Dialing ${callee.display_name}… watch the Live tab.`);
-      setCallee(null);
-    } catch (e) {
-      setCallError(e.message);
-    } finally {
-      setBusy(false);
-    }
-  }
 
   return (
     <Panel code="07" title="Personnel registry" actions={
@@ -246,7 +231,7 @@ export default function People({ assistant, me }) {
             </div>
             <div className="row-actions">
               {p.active && p.connections.some((i) => i.type === "phone") && (
-                <button className="btn small" onClick={() => { setCallError(""); setCallee(p); }}>Call</button>
+                <button className="btn small" onClick={() => setCallee(p)}>Call</button>
               )}
               <button className="btn primary small" onClick={() => setEditing(p.id)}>Edit</button>
             </div>
@@ -270,14 +255,16 @@ export default function People({ assistant, me }) {
         <PersonEditor personId={editing} roles={roles} me={me} onClose={() => setEditing(null)} onChanged={reload} />
       )}
       {callee && (
-        <ConfirmDialog
-          title="Place call"
-          body={<>Have {assistant} phone <b>{callee.display_name}</b> now from the {assistant} number?</>}
-          confirmLabel="Dial"
-          busy={busy}
-          error={callError}
-          onConfirm={placeCall}
+        <CallDialog
+          assistant={assistant}
+          targets={(people || []).filter((x) => x.active && x.connections.some((i) => i.type === "phone"))}
+          initialTarget={callee}
           onCancel={() => setCallee(null)}
+          onDone={(r) => {
+            setCallee(null);
+            setNotice(r.status === "pending" ? `Call to ${r.target_name} scheduled for ${r.run_at_local}.`
+              : `Dialing ${r.target_name}… watch the Live tab.`);
+          }}
         />
       )}
     </Panel>
