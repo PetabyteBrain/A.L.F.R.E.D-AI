@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useThemeName } from "../theme.js";
 
 // Generic bat silhouette (symmetric, 200x100 box, centred on x=100).
@@ -63,6 +63,7 @@ export function ArcReactor({ size = "md", label }) {
 /* Circular gauge for a count. The ring fills relative to `max` (auto-scales). */
 export function Gauge({ value, label, max, tone = "" }) {
   const v = Number(value) || 0;
+  const shown = useCountUp(v);
   const scale = max || Math.max(5, Math.ceil(v / 5) * 5);
   const C = 2 * Math.PI * 40;
   const frac = Math.min(1, v / scale);
@@ -73,7 +74,7 @@ export function Gauge({ value, label, max, tone = "" }) {
         <circle className="g-ticks" cx="50" cy="50" r="46" />
         <circle className="g-fill" cx="50" cy="50" r="40" strokeDasharray={`${C * frac} ${C}`} transform="rotate(-90 50 50)" />
       </svg>
-      <div className="g-value">{v}</div>
+      <div className="g-value">{shown}</div>
       <div className="g-label">{label}</div>
     </div>
   );
@@ -137,4 +138,52 @@ export function ConfirmDialog({ title, body, confirmLabel, busy, error, onConfir
       </div>
     </div>
   );
+}
+
+const GLYPHS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789#%&*<>/";
+const stillMotion = () => window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+/* Text that "decodes" from random glyphs whenever it changes (page titles, wordmarks). */
+export function DecodeText({ text, as: Tag = "span", className = "", duration = 700 }) {
+  const [shown, setShown] = useState(text);
+  useEffect(() => {
+    if (stillMotion()) { setShown(text); return undefined; }
+    let raf = 0;
+    const start = performance.now();
+    const step = (now) => {
+      const p = Math.min(1, (now - start) / duration);
+      const settled = Math.floor(p * text.length);
+      let out = "";
+      for (let i = 0; i < text.length; i++) {
+        out += i < settled || text[i] === " " || text[i] === "." ? text[i] : GLYPHS[(Math.random() * GLYPHS.length) | 0];
+      }
+      setShown(out);
+      if (p < 1) raf = requestAnimationFrame(step);
+    };
+    raf = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(raf);
+  }, [text, duration]);
+  return <Tag className={className} aria-label={text}><span aria-hidden="true">{shown}</span></Tag>;
+}
+
+/* Animate a number from its previous value to the new one. */
+export function useCountUp(value, duration = 900) {
+  const [v, setV] = useState(0);
+  const from = useRef(0);
+  useEffect(() => {
+    const target = Number(value) || 0;
+    if (stillMotion()) { setV(target); from.current = target; return undefined; }
+    let raf = 0;
+    const start = performance.now(), a = from.current;
+    const step = (now) => {
+      const p = Math.min(1, (now - start) / duration);
+      const eased = 1 - Math.pow(1 - p, 3);
+      setV(Math.round(a + (target - a) * eased));
+      if (p < 1) raf = requestAnimationFrame(step);
+      else from.current = target;
+    };
+    raf = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(raf);
+  }, [value, duration]);
+  return v;
 }

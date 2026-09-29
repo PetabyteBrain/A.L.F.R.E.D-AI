@@ -4,7 +4,9 @@ import { usePoll, useStoredState } from "./hooks.js";
 import { THEMES, ThemeContext, useTheme } from "./theme.js";
 import Login from "./components/Login.jsx";
 import Stats from "./components/Stats.jsx";
-import { Clock, Emblem } from "./components/hud.jsx";
+import Backdrop from "./components/Backdrop.jsx";
+import { Icon } from "./components/icons.jsx";
+import { Clock, DecodeText, Emblem } from "./components/hud.jsx";
 import Live from "./pages/Live.jsx";
 import Recordings from "./pages/Recordings.jsx";
 import Tasks from "./pages/Tasks.jsx";
@@ -15,16 +17,15 @@ import Profile from "./pages/Profile.jsx";
 import Usage from "./pages/Usage.jsx";
 
 const TABS = [
-  { id: "live", label: "Live", Page: Live },
-  { id: "history", label: "Archive", Page: Recordings },
-  { id: "tasks", label: "Tasks", Page: Tasks },
-  { id: "activity", label: "Log", Page: Activity },
-  { id: "health", label: "Systems", Page: Health },
-  { id: "people", label: "Personnel", Page: People, admin: true },
-  { id: "usage", label: "Usage", Page: Usage, admin: true },
-  { id: "profile", label: "Profile", Page: Profile },
+  { id: "live", label: "Live", title: "Live operations", kicker: "Channels in progress", Page: Live },
+  { id: "history", label: "Archive", title: "Archive", kicker: "Recordings & transcripts", Page: Recordings },
+  { id: "tasks", label: "Tasks", title: "Tasks & calls", kicker: "Queue & schedule", Page: Tasks },
+  { id: "activity", label: "Log", title: "Event log", kicker: "Everything that happened", Page: Activity },
+  { id: "health", label: "Systems", title: "Systems", kicker: "Diagnostics", Page: Health },
+  { id: "people", label: "Personnel", title: "Personnel", kicker: "Registry & access", Page: People, admin: true },
+  { id: "usage", label: "Usage", title: "API usage", kicker: "Tokens, minutes & cost", Page: Usage, admin: true },
+  { id: "profile", label: "Profile", title: "My profile", kicker: "Identity & connections", Page: Profile },
 ];
-
 
 function SystemStatus() {
   const { data } = usePoll(() => api("/health"), 30000);
@@ -34,6 +35,18 @@ function SystemStatus() {
     <div className={`sys-status ${down ? "warn" : "ok"}`}>
       <span className="led" />
       {down ? `${down} system${down > 1 ? "s" : ""} degraded` : "All systems nominal"}
+    </div>
+  );
+}
+
+function ThemeSwitch({ theme, setTheme }) {
+  return (
+    <div className="theme-switch" role="group" aria-label="Interface">
+      {Object.entries(THEMES).map(([t, cfg]) => (
+        <button key={t} className={t === theme ? "active" : ""} onClick={() => setTheme(t)} aria-pressed={t === theme}>
+          {cfg.label}
+        </button>
+      ))}
     </div>
   );
 }
@@ -64,12 +77,18 @@ export default function App() {
   if (me === undefined) {
     return (
       <ThemeContext.Provider value={theme}>
+        <Backdrop />
         <div className="boot"><Emblem size="xl" /><p className="subtitle blink">Initializing</p></div>
       </ThemeContext.Provider>
     );
   }
   if (me === null) {
-    return <ThemeContext.Provider value={theme}><Login onLogin={setMe} /></ThemeContext.Provider>;
+    return (
+      <ThemeContext.Provider value={theme}>
+        <Backdrop />
+        <Login onLogin={setMe} themeSwitch={<ThemeSwitch theme={theme} setTheme={setTheme} />} />
+      </ThemeContext.Provider>
+    );
   }
 
   const isAdmin = me.role === "admin";
@@ -79,54 +98,66 @@ export default function App() {
   const skin = THEMES[theme];
   const assistant = me.assistant_name || "Alfred";
   const wordmark = theme === "alfred" ? assistant.toUpperCase().split("").join(".") + "." : assistant.toUpperCase();
+  const index = String(tabs.indexOf(active) + 1).padStart(2, "0");
 
   return (
     <ThemeContext.Provider value={theme}>
-    <div className="shell">
-      <header className="topbar">
-        <div className="brand">
-          <Emblem size="sm" />
-          <div>
-            <div className="wordmark">{wordmark}</div>
-            <div className="subtitle">{skin.subtitle}</div>
-          </div>
-        </div>
-        <SystemStatus />
-        <div className="top-right">
-          <div className="theme-switch" role="group" aria-label="Interface">
-            {Object.entries(THEMES).map(([t, cfg]) => (
-              <button key={t} className={t === theme ? "active" : ""} onClick={() => setTheme(t)} aria-pressed={t === theme}>
-                {cfg.label}
+      <Backdrop />
+      <div className="app">
+        <aside className="rail">
+          <a className="rail-brand" href="/" title="Home">
+            <Emblem size="sm" />
+            <div>
+              <div className="wordmark">{wordmark}</div>
+              <div className="subtitle">{skin.subtitle}</div>
+            </div>
+          </a>
+
+          <nav className="rail-nav" role="tablist" aria-label="Sections">
+            {tabs.map((t, i) => (
+              <button key={t.id} role="tab" aria-selected={t.id === active.id}
+                      className={t.id === active.id ? "active" : ""} onClick={() => setTab(t.id)}>
+                <Icon name={t.id} />
+                <span className="nav-label">{t.label}</span>
+                <span className="nav-idx">{String(i + 1).padStart(2, "0")}</span>
               </button>
             ))}
+          </nav>
+
+          <div className="rail-foot">
+            <ThemeSwitch theme={theme} setTheme={setTheme} />
+            <div className="operator">
+              <div>
+                <span className="op-label">Operator · {me.role}</span>
+                <span className="op-name">{me.display_name}</span>
+              </div>
+              <button className="icon-btn" onClick={logout} title="Sign out" aria-label="Sign out"><Icon name="logout" /></button>
+            </div>
+            <nav className="legal-links" aria-label="Legal">
+              <a href="/privacy-policy">Privacy</a>
+              <a href="/terms-of-service">Terms</a>
+            </nav>
           </div>
-          <Clock />
-          <div className="operator">
-            <span className="op-label">Operator</span>
-            <span className="op-name">{me.display_name}</span>
-            <button className="btn ghost small" onClick={logout}>Sign out</button>
-          </div>
+        </aside>
+
+        <div className="content">
+          <header className="topline">
+            <div className="page-title">
+              <p className="kicker"><span className="blip" />{index} · {active.kicker}</p>
+              <DecodeText as="h1" text={active.title} key={active.id} />
+            </div>
+            <div className="topline-right">
+              <SystemStatus />
+              <Clock />
+            </div>
+          </header>
+
+          <main key={active.id} className="page-enter">
+            {active.id === "live" && <Stats />}
+            <Page me={me} isAdmin={isAdmin} assistant={assistant} refreshMe={() => api("/me").then(setMe).catch(() => {})} />
+          </main>
         </div>
-      </header>
-
-      <nav className="tabs" role="tablist">
-        {tabs.map((t, i) => (
-          <button key={t.id} role="tab" aria-selected={t.id === active.id}
-                  className={t.id === active.id ? "active" : ""} onClick={() => setTab(t.id)}>
-            <span className="tab-idx">{String(i + 1).padStart(2, "0")}</span>{t.label}
-          </button>
-        ))}
-      </nav>
-
-      <main>
-        <Stats />
-        <Page me={me} isAdmin={isAdmin} assistant={assistant} refreshMe={() => api("/me").then(setMe).catch(() => {})} />
-        <nav className="legal-links" aria-label="Legal">
-          <a href="/privacy-policy">Privacy Policy</a>
-          <a href="/terms-of-service">Terms of Service</a>
-        </nav>
-      </main>
-    </div>
+      </div>
     </ThemeContext.Provider>
   );
 }
