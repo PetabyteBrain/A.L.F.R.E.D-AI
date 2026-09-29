@@ -231,6 +231,6 @@ class SecurityMiddleware(BaseHTTPMiddleware):
             h.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
         if path.startswith("/api/"):
             h.setdefault("Cache-Control", "no-store")
-        elif path in ("/", "/index.html"):
+        elif path in ("/app", "/app/", "/index.html"):
             h["Cache-Control"] = "no-cache"
         return response

@@ -661,3 +661,17 @@ def test_legal_pages_are_public():
         assert r.status_code == 200 and "Terms of Service" in r.text
         assert "frame-ancestors 'none'" in r.headers["content-security-policy"]
         assert c.get("/legal/legal.css").status_code == 200
+
+
+def test_public_homepage_and_app_route():
+    from fastapi.testclient import TestClient
+    from orchestrator.main import app, WEB_DIR
+    if not (WEB_DIR / "home.html").is_file():
+        pytest.skip("dashboard not built")
+    with TestClient(app) as c:
+        home = c.get("/")
+        assert home.status_code == 200 and "private AI butler" in home.text and "/privacy-policy" in home.text
+        assert "Limited Use" in home.text  # Google's review reads the homepage without logging in
+        dash = c.get("/app")
+        assert dash.status_code == 200 and '<div id="root">' in dash.text
+        assert dash.headers["cache-control"] == "no-cache"

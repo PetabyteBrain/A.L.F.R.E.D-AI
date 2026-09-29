@@ -41,6 +41,10 @@ function SystemStatus() {
 export default function App() {
   const [me, setMe] = useState(undefined); // undefined = checking, null = signed out
   const [tab, setTab] = useStoredState("alfred-tab", "live");
+  // Returning from Google's consent screen (/app?google=...): open the Profile tab where the result shows.
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).has("google")) setTab("profile");
+  }, [setTab]);
   const [theme, setTheme] = useTheme();
 
   const signOut = useCallback(() => setMe(null), []);

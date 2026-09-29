@@ -1,0 +1,16 @@
+header.top .btn { margin-left: auto; }
+.btn {
+  display: inline-block; padding: 9px 16px; border: 1px solid var(--accent); color: var(--accent);
+  text-decoration: none; font-weight: 600; letter-spacing: .08em; font-size: 14px;
+}
+.btn:hover { background: rgb(88 214 255 / .12); }
+.btn.primary { background: rgb(88 214 255 / .2); color: var(--strong); }
+.hero { padding: 12px 0 8px; }
+.hero h1 { font-size: 38px; }
+.lead { font-size: 18px; color: var(--strong); max-width: 680px; }
+.note { color: var(--muted); max-width: 680px; }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 12px; margin: 12px 0; }
+.card { background: var(--panel); border: 1px solid var(--line); padding: 14px 16px; }
+.card h3 { margin: 0 0 6px; }
+.card p { margin: 0; font-size: 15px; }
+@media (max-width: 600px) { .hero h1 { font-size: 28px; } .lead { font-size: 16px; } }

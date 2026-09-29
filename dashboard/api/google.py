@@ -38,7 +38,7 @@ async def google_disconnect(person: Person = Depends(current_person)) -> dict:
 def _bounce(result: str, message: str = "") -> HTMLResponse:
     """Hop back to the dashboard via a same-site page, so the SameSite=Strict login cookie is sent
     again (it isn't on the redirect coming from accounts.google.com). No script: CSP-safe."""
-    target = f"/?google={result}"
+    target = f"/app?google={result}"
     body = (f'<!doctype html><meta charset="utf-8"><meta http-equiv="refresh" content="0;url={escape(target)}">'
             f'<title>Alfred</title><p style="font-family:sans-serif">{escape(message or "Returning to Alfred")}… '
             f'<a href="{escape(target)}">continue</a></p>')

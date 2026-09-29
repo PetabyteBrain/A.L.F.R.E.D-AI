@@ -11,7 +11,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse, PlainTextResponse
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from dashboard.api.google import router as google_router
@@ -87,6 +87,25 @@ def _legal(name: str) -> FileResponse:
     return FileResponse(path, media_type="text/html", headers={"Cache-Control": "public, max-age=3600"})
 
 
+# Public pages: "/" explains the app without a login (required by Google's OAuth review);
+# the dashboard single-page app lives at /app.
+@app.get("/", include_in_schema=False)
+async def home() -> FileResponse:
+    path = WEB_DIR / "home.html"
+    if not path.is_file():
+        raise HTTPException(status_code=503, detail="Site not built")
+    return FileResponse(path, media_type="text/html", headers={"Cache-Control": "public, max-age=600"})
+
+
+@app.get("/app", include_in_schema=False)
+@app.get("/app/", include_in_schema=False)
+async def dashboard_app() -> FileResponse:
+    path = WEB_DIR / "index.html"
+    if not path.is_file():
+        raise HTTPException(status_code=503, detail="Dashboard not built: run `npm run build` in dashboard/web.")
+    return FileResponse(path, media_type="text/html", headers={"Cache-Control": "no-cache"})
+
+
 # Public legal pages at clean URLs (also linked from Google's OAuth consent screen).
 @app.get("/privacy-policy", include_in_schema=False)
 async def privacy_policy() -> FileResponse:
@@ -100,7 +119,3 @@ async def terms_of_service() -> FileResponse:
 
 if WEB_DIR.is_dir():
     app.mount("/", StaticFiles(directory=WEB_DIR, html=True), name="web")
-else:
-    @app.get("/", include_in_schema=False)
-    async def no_frontend() -> PlainTextResponse:
-        return PlainTextResponse("Dashboard not built: run `npm run build` in dashboard/web.", status_code=503)

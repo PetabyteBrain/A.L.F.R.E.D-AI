@@ -16,13 +16,13 @@ export default function GoogleCalendarCard({ assistant }) {
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState({ ok: "", err: "" });
 
-  // Coming back from Google: /?google=linked|denied|error -> show it once, then clean the URL.
+  // Coming back from Google: /app?google=linked|denied|error -> show it once, then clean the URL.
   useEffect(() => {
     const result = new URLSearchParams(window.location.search).get("google");
     if (!result) return;
     const [kind, text] = RETURN_MESSAGES[result] || RETURN_MESSAGES.error;
     setMsg(kind === "ok" ? { ok: text, err: "" } : { ok: "", err: text });
-    window.history.replaceState(null, "", "/");
+    window.history.replaceState(null, "", "/app");
   }, []);
 
   async function connect() {
