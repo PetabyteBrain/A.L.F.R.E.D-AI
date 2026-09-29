@@ -135,26 +135,22 @@ def main(argv: list[str] | None = None) -> None:
         print("Unlinked.")
 
     elif args.cmd == "set-role":
-        if not db.query_one("SELECT 1 FROM roles WHERE name = ?", (args.role,)):
-            sys.exit(f"Unknown role '{args.role}'.")
-        db.execute("UPDATE users SET role = ? WHERE id = ?", (args.role, args.user_id))
+        registry.update_user(args.user_id, role=args.role)  # refuses to demote the last admin
         _revoke(args.user_id)
         print("Role updated.")
 
     elif args.cmd == "set-password":
-        registry.upsert_identifier(args.user_id, "dashboard", args.username, registry.hash_password(_prompt_password()))
+        registry.set_dashboard_login(args.user_id, args.username, _prompt_password())
         _revoke(args.user_id)
         print("Dashboard login set.")
 
     elif args.cmd in ("disable", "enable"):
-        db.execute("UPDATE users SET active = ? WHERE id = ?", (int(args.cmd == "enable"), args.user_id))
+        registry.update_user(args.user_id, active=args.cmd == "enable")
         _revoke(args.user_id)
         print(f"User {args.cmd}d.")
 
     elif args.cmd == "remove":
-        if db.query_one("SELECT 1 FROM sessions WHERE user_id = ? LIMIT 1", (args.user_id,)):
-            sys.exit("This person has session history — use 'disable' instead to keep the records.")
-        db.execute("DELETE FROM users WHERE id = ?", (args.user_id,))
+        registry.delete_user(args.user_id)  # same guard rails as the dashboard
         print("Removed.")
 
     elif args.cmd == "roles":
@@ -189,4 +185,7 @@ def main(argv: list[str] | None = None) -> None:
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except registry.RegistryError as e:
+        sys.exit(f"Error: {e}")

@@ -435,3 +435,45 @@ button.row { width: 100%; text-align: left; font: inherit; color: var(--text-str
 @keyframes signal { 0%, 100% { opacity: 1; } 46% { opacity: .96; } 48% { opacity: .78; } 50% { opacity: 1; } 71% { opacity: .9; } }
 :root[data-theme="batcave"] .tail b { font-size: 14px; font-weight: 400; letter-spacing: .1em; }
 :root[data-theme="batcave"] .subtitle { letter-spacing: .2em; }
+
+/* ---------- forms: user management & profile ---------- */
+select {
+  font: 500 15px var(--font-body); color: var(--text-strong); background: rgb(var(--accent-rgb) / .05);
+  border: 0; border-bottom: 1px solid var(--line-strong); padding: 10px 12px; width: 100%;
+}
+select option { background: var(--bg); color: var(--text-strong); }
+.field { display: grid; gap: 6px; min-width: 0; }
+.field > span, .kv > span { font: 600 10px var(--font-display); letter-spacing: .2em; text-transform: uppercase; color: var(--muted); }
+.form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 16px; align-items: end; }
+.form-grid .wide { grid-column: 1 / -1; }
+.form-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+.field-row { display: flex; gap: 10px; align-items: end; }
+.field-row .field { flex: 1; }
+.stack { display: grid; gap: 12px; }
+.toggle { display: flex; align-items: center; gap: 10px; cursor: pointer; color: var(--text-strong); }
+.toggle input { width: 18px; height: 18px; accent-color: var(--accent); }
+.kv { display: flex; align-items: center; gap: 12px; margin-top: 12px; }
+.new-person { background: var(--fill); border: 1px dashed var(--line-strong); padding: 14px; margin-bottom: 14px; }
+.row-actions { display: flex; gap: 8px; flex: none; }
+.person-row.inactive { opacity: .55; }
+.connections { display: grid; gap: 8px; }
+.conn-row { display: grid; grid-template-columns: 90px 1fr auto auto; gap: 8px; align-items: center; }
+.conn-row.add { grid-template-columns: 120px 1fr auto; margin-top: 4px; padding-top: 10px; border-top: 1px dashed var(--line); }
+.conn-type { font: 600 10px var(--font-display); letter-spacing: .18em; text-transform: uppercase; color: var(--accent); }
+.hint { margin-top: -2px; }
+.profile-grid { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 28px; }
+.modal.editor { width: min(760px, 100%); max-height: calc(100vh - 32px); overflow-y: auto; gap: 10px; }
+.modal.editor .hud-head { margin-bottom: 6px; }
+:root[data-theme="batcave"] :is(.field > span, .kv > span, .conn-type) { font-weight: 400; letter-spacing: .1em; font-size: 13px; }
+:root[data-theme="batcave"] select { background: rgb(0 0 0 / .45); border-bottom-color: rgb(255 204 0 / .35); }
+@media (max-width: 700px) {
+  .form-grid, .profile-grid { grid-template-columns: 1fr; }
+  .conn-row { grid-template-columns: 1fr auto auto; }
+  .conn-row .conn-type { grid-column: 1 / -1; }
+  .conn-row.add { grid-template-columns: 1fr; }
+  .person-row { flex-direction: column; align-items: stretch; }
+}
+/* Dialogs sit on a solid base so the page behind doesn't bleed through the translucent HUD glass. */
+.modal.hud { background: linear-gradient(180deg, rgb(var(--accent-rgb) / .08), rgb(var(--accent-rgb) / .03)), var(--bg); }
+.modal.alert.hud { background: linear-gradient(180deg, rgb(var(--bad-rgb) / .16), rgb(var(--bad-rgb) / .05)), var(--bg); }
+:root[data-theme="batcave"] .modal.hud { background: linear-gradient(180deg, rgb(34 35 41), rgb(15 15 18)); }

@@ -346,14 +346,6 @@ async def overview(person: Person = Depends(current_person)) -> dict:
     }
 
 
-@router.get("/people")
-async def people(person: Person = Depends(admin_only)) -> list[dict]:
-    rows = db.query("SELECT id, display_name, role, active, created_at FROM users ORDER BY id")
-    for r in rows:
-        r["identifiers"] = registry.identifiers_for(r["id"])
-    return rows
-
-
 @router.get("/access-attempts")
 async def access_attempts(person: Person = Depends(admin_only), limit: int = Query(default=100, ge=1, le=500)) -> list[dict]:
     return db.query(

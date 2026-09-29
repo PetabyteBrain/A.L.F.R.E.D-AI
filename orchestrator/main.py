@@ -14,6 +14,7 @@ from fastapi import FastAPI
 from fastapi.responses import PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 
+from dashboard.api.people import router as people_router
 from dashboard.api.routes import router as dashboard_router
 from dashboard.api.security import SecurityMiddleware
 
@@ -72,6 +73,7 @@ async def healthz() -> dict:
 app.include_router(call_handler.router)
 app.include_router(n8n_callback.router)
 app.include_router(dashboard_router)
+app.include_router(people_router)
 if WEB_DIR.is_dir():
     app.mount("/", StaticFiles(directory=WEB_DIR, html=True), name="web")
 else:

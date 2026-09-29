@@ -104,8 +104,13 @@ def destroy_session(request: Request) -> None:
         db.execute("DELETE FROM dashboard_sessions WHERE token_hash = ?", (_hash(token),))
 
 
-def revoke_user_sessions(user_id: int) -> None:
-    db.execute("DELETE FROM dashboard_sessions WHERE user_id = ?", (user_id,))
+def revoke_user_sessions(user_id: int, keep: Request | None = None) -> None:
+    """End a person's dashboard sessions; `keep` spares the session making this request."""
+    token = keep.cookies.get(COOKIE_NAME) if keep is not None else None
+    if token:
+        db.execute("DELETE FROM dashboard_sessions WHERE user_id = ? AND token_hash != ?", (user_id, _hash(token)))
+    else:
+        db.execute("DELETE FROM dashboard_sessions WHERE user_id = ?", (user_id,))
 
 
 def prune_sessions() -> None:

@@ -33,6 +33,13 @@ original design spec is `C:\Users\user\Downloads\alfred-agent-spec.md`.
   `dashboard/api/security.py`; anything that changes a person's credentials, role or status must
   revoke their `dashboard_sessions`.
 
+## People & permissions
+- Admin-only user management + everyone's self-service profile: `dashboard/api/people.py`
+  (UI: `pages/People.jsx`, `pages/Profile.jsx`, `components/Connections.jsx`). All validation and
+  guard rails (last admin, no self-delete, conflict checks, session revocation) live server-side in
+  `orchestrator/identity/registry.py`; the CLI uses the same functions.
+- `.env` ADMIN_* only seeds the very first admin; the DB is the source of truth afterwards.
+
 ## Testing
 - `.venv/Scripts/python -m pytest -q` — offline; includes a simulated Twilio call through the
   media-stream WebSocket with fake STT/TTS/agent.

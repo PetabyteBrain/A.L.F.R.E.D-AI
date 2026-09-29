@@ -11,6 +11,7 @@ import Tasks from "./pages/Tasks.jsx";
 import Activity from "./pages/Activity.jsx";
 import Health from "./pages/Health.jsx";
 import People from "./pages/People.jsx";
+import Profile from "./pages/Profile.jsx";
 
 const TABS = [
   { id: "live", label: "Live", Page: Live },
@@ -19,6 +20,7 @@ const TABS = [
   { id: "activity", label: "Log", Page: Activity },
   { id: "health", label: "Systems", Page: Health },
   { id: "people", label: "Personnel", Page: People, admin: true },
+  { id: "profile", label: "Profile", Page: Profile },
 ];
 
 
@@ -112,7 +114,7 @@ export default function App() {
 
       <main>
         <Stats />
-        <Page me={me} isAdmin={isAdmin} assistant={assistant} />
+        <Page me={me} isAdmin={isAdmin} assistant={assistant} refreshMe={() => api("/me").then(setMe).catch(() => {})} />
       </main>
     </div>
     </ThemeContext.Provider>
