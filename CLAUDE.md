@@ -4,7 +4,8 @@ Personal AI butler "Alfred" (phone + Telegram + dashboard). Renamed from Alfred 
 user-facing name comes from `ASSISTANT_NAME`; infra names (folder, container, domain, cookie,
 CSRF value, localStorage keys) intentionally stay `alfred`. Dashboard skins: `alfred` (Stark HUD)
 and `batcave` (see `dashboard/web/src/theme.js`). Full spec lives in the README; the
-original design spec is `C:\Users\user\Downloads\alfred-agent-spec.md`.
+current plan is `docs/PROJECT_PLAN.md` (mirrored to `C:\Users\user\Downloads\alfred-agent-spec.md`);
+the original spec is in `docs/archive/original-spec.md`. Keep the plan updated when features land.
 
 ## Where things run
 - Local copy `C:\Github\Claude_Antropic\alfred` is the **master**; deploy to
@@ -39,6 +40,13 @@ original design spec is `C:\Users\user\Downloads\alfred-agent-spec.md`.
   guard rails (last admin, no self-delete, conflict checks, session revocation) live server-side in
   `orchestrator/identity/registry.py`; the CLI uses the same functions.
 - `.env` ADMIN_* only seeds the very first admin; the DB is the source of truth afterwards.
+
+## Calls, calendar, usage
+- Call requests: `orchestrator/scheduler.py` (tools place_call/schedule_call/...; `end_call` is
+  channel-gated to calls). Outcome hook: `call_handler._call_finished` -> `scheduler.on_call_finished`.
+- Google Calendar: `orchestrator/google_calendar.py` + `dashboard/api/google.py`; tools marked
+  `requires: google` in registry.yaml only appear for people with a linked calendar.
+- Usage metering: `orchestrator/usage.py`; record every new billable API call there.
 
 ## Testing
 - `.venv/Scripts/python -m pytest -q` — offline; includes a simulated Twilio call through the

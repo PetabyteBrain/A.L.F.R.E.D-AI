@@ -21,6 +21,9 @@ Dashboard (React) ─► /api/* (Argon2 login, server-side sessions) ─► SQLi
 n8n ─► /n8n/callback (X-Alfred-Secret) ─► Agent Core ─► Telegram
 ```
 
+The full, current project plan (architecture, data model, phases, roadmap) is in
+[docs/PROJECT_PLAN.md](docs/PROJECT_PLAN.md).
+
 ## Status by phase
 
 | Phase | What | State |
