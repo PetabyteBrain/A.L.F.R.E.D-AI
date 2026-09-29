@@ -106,13 +106,15 @@ def _call_brief(target: Person, requester: Person | None, purpose: str) -> str:
     if requester is None or requester.id == target.id:
         return (f"This is an outbound call {target.display_name} scheduled for themselves. "
                 f"Purpose: {purpose or 'none given, just check in'}. Deliver it, help with any follow-up, "
-                f"then say goodbye and use the end_call tool.")
+                f"then confirm the outcome in one sentence and say goodbye in that same reply, while "
+                f"calling the end_call tool.")
     return (
         f"This is an outbound call you are making on behalf of {requester.display_name} "
         f"(their {requester.role}), to {target.display_name}. Purpose: {purpose or 'a quick check-in'}.\n"
         f"Deliver the message or ask the question clearly and naturally, one thing at a time. Get a clear "
         f"answer; if they need time, ask when they'll get back to {requester.display_name.split()[0]}. "
-        f"Briefly confirm what you understood, then say goodbye and use the end_call tool. Stay on this topic "
+        f"Once you have the answer, confirm it back in one sentence and say goodbye in that same reply, "
+        f"while calling the end_call tool. Stay on this topic "
         f"and don't share anything else about {requester.display_name}. If asked who you are: {name}, "
         f"{requester.display_name.split()[0]}'s assistant."
     )
@@ -224,6 +226,11 @@ async def on_call_finished(session_id: str, outcome: str) -> None:
     row = db.query_one("SELECT id FROM scheduled_calls WHERE session_id = ? AND status = 'dialing'", (session_id,))
     if not row:
         return
+    # Atomic claim: the stream closing and Twilio's status webhook can both report the same call's
+    # end within milliseconds; only the first one gets to process (and pay for) the outcome.
+    if not db.execute_count("UPDATE scheduled_calls SET status = 'finishing', updated_at = ? "
+                            "WHERE id = ? AND status = 'dialing'", (db.now_iso(), row["id"])):
+        return
     req = get(row["id"])
     target = registry.get_person(req["target_user_id"])
     requester = registry.get_person(req["requested_by"]) if req["requested_by"] else None
@@ -301,7 +308,7 @@ async def background_loop() -> None:
                 await dispatch(r["id"])
             # A request stuck in 'dialing' with no live session (crash, restart) is closed out.
             for r in db.query("SELECT c.id, c.session_id FROM scheduled_calls c LEFT JOIN sessions s ON s.id = c.session_id "
-                              "WHERE c.status = 'dialing' AND c.updated_at < ? AND (s.id IS NULL OR s.status != 'active')",
+                              "WHERE c.status IN ('dialing', 'finishing') AND c.updated_at < ? AND (s.id IS NULL OR s.status != 'active')",
                               ((_now() - timedelta(minutes=10)).isoformat(timespec="seconds"),)):
                 _set(r["id"], status="failed", result="The call didn't complete (interrupted).")
         except Exception:

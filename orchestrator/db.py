@@ -243,6 +243,12 @@ def execute(sql: str, params: tuple | list = ()) -> int:
         return cur.lastrowid or 0
 
 
+def execute_count(sql: str, params: tuple | list = ()) -> int:
+    """Run a write; returns the number of affected rows (for atomic claim/compare-and-set)."""
+    with tx() as conn:
+        return conn.execute(sql, params).rowcount
+
+
 def query(sql: str, params: tuple | list = ()) -> list[dict[str, Any]]:
     conn = connect()
     try:

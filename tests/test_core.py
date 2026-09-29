@@ -623,3 +623,27 @@ def test_usage_report_endpoint():
         assert any(e["kind"] == "tts" and e["units"] >= 320 for e in r["elevenlabs"])
         assert r["twilio_month"] is None  # not configured in tests
         assert c.get("/api/usage?days=0").status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_call_outcome_processed_once_when_signals_race(monkeypatch):
+    import asyncio
+    from types import SimpleNamespace as NS
+    from orchestrator import scheduler, agent_core
+    summaries = []
+
+    class FakeMessages:
+        async def create(self, **kw):
+            summaries.append(1)
+            await asyncio.sleep(0.05)
+            return NS(content=[NS(type="text", text="Done.")], usage=None)
+    monkeypatch.setattr(agent_core, "_client", NS(messages=FakeMessages()))
+    admin = registry.lookup("telegram", "111")
+    friend = registry.lookup("telegram", "22222222")
+    sid = sessions.start_session(friend.id, "call", "outbound")
+    sessions.add_turn(sid, "user", "yes")
+    rid = db.execute("INSERT INTO scheduled_calls(target_user_id, requested_by, run_at, purpose, status, attempts, "
+                     "session_id, created_at, updated_at) VALUES (?,?,?,?, 'dialing', 1, ?, ?, ?)",
+                     (friend.id, admin.id, db.now_iso(), "Ask something", sid, db.now_iso(), db.now_iso()))
+    await asyncio.gather(scheduler.on_call_finished(sid, "ended"), scheduler.on_call_finished(sid, "ended"))
+    assert len(summaries) == 1 and scheduler.get(rid)["status"] == "done"

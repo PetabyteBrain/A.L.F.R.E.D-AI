@@ -135,7 +135,8 @@ async def end_call(ctx) -> str:
     from ..call_handler import request_hangup
     if ctx.channel != "call" or not ctx.session_id or not request_hangup(ctx.session_id):
         return "There's no live call to end."
-    return "The line will be closed right after your current reply. Make that reply a short goodbye."
+    return ("The line will be closed right after your current reply. In that reply, briefly confirm what "
+            "was agreed or answered (one sentence), then say goodbye.")
 
 
 # --- Google Calendar (the current person's own linked calendar only) -------------------------
