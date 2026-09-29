@@ -379,6 +379,7 @@ async def overview(person: Person = Depends(current_person)) -> dict:
             "telegram": settings.telegram_enabled,
             "phone": settings.twilio_enabled and settings.elevenlabs_enabled,
             "n8n": settings.n8n_enabled,
+            "google": settings.google_enabled,
         },
         "model": settings.claude_model,
     }

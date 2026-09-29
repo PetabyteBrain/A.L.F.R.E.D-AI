@@ -692,3 +692,55 @@ def test_google_site_verification(monkeypatch):
         r = c.get("/google0123456789abcdef.html")
         assert r.status_code == 200 and r.text == "google-site-verification: google0123456789abcdef.html"
         assert c.get("/googledeadbeefdeadbeef.html").status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_google_health_reports_per_person(monkeypatch):
+    import dataclasses, json as _json
+    from cryptography.fernet import Fernet
+    from orchestrator import google_calendar
+    from orchestrator.config import settings
+    monkeypatch.setattr(google_calendar, "settings", dataclasses.replace(
+        settings, google_client_id="cid", google_client_secret="sec", token_encryption_key=Fernet.generate_key().decode()))
+    state = {"scope": f"openid email {google_calendar.EVENTS_SCOPE}", "refresh": 200}
+
+    class Resp:
+        def __init__(self, status, data):
+            self.status_code, self._d, self.text = status, data, _json.dumps(data)
+            self.content = self.text.encode()
+        def json(self):
+            return self._d
+
+    async def fake_http(method, url, **kw):
+        if url == google_calendar.TOKEN_URL:
+            return Resp(state["refresh"], {"access_token": "at", "expires_in": 3600} if state["refresh"] == 200
+                        else {"error": "invalid_grant"})
+        if url == google_calendar.TOKENINFO_URL:
+            return Resp(200, {"scope": state["scope"]})
+        if url.endswith("/events"):
+            return Resp(200, {"items": []})
+        if url == google_calendar.DISCOVERY_URL:
+            return Resp(200, {})
+        raise AssertionError(url)
+    monkeypatch.setattr(google_calendar, "_http", fake_http)
+
+    db.execute("DELETE FROM google_accounts")
+    assert await google_calendar.health() == (True, "configured · no calendars linked yet")
+    admin = registry.lookup("telegram", "111")
+    f = google_calendar._fernet()
+    db.execute("INSERT INTO google_accounts(user_id, email, refresh_token_enc, scopes, linked_at) VALUES (?,?,?,?,?)",
+               (admin.id, "a@example.com", f.encrypt(b"rt").decode(), "", db.now_iso()))
+    before = db.query_one("SELECT COUNT(*) AS n FROM api_usage WHERE provider = 'google'")["n"]
+    ok, detail = await google_calendar.health()
+    assert ok and detail == "1/1 calendar OK"
+    assert db.query_one("SELECT COUNT(*) AS n FROM api_usage WHERE provider = 'google'")["n"] == before  # not metered
+
+    state["scope"] = "openid email"
+    db.execute("UPDATE google_accounts SET access_expires_at = NULL")
+    ok, detail = await google_calendar.health()
+    assert not ok and "Test Admin: calendar permission was removed" in detail
+
+    state["refresh"] = 400
+    db.execute("UPDATE google_accounts SET access_expires_at = NULL")
+    ok, detail = await google_calendar.health()
+    assert not ok and "revoked" in detail

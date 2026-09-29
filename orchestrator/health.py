@@ -41,12 +41,18 @@ async def _n8n() -> tuple[bool, str]:
     return await n8n_tool.health()
 
 
+async def _google() -> tuple[bool, str]:
+    from . import google_calendar
+    return await google_calendar.health()
+
+
 PROBES = {
     "claude": _claude,
     "telegram": telegram_handler.health,
     "twilio": call_handler.health,
     "elevenlabs": _elevenlabs,
     "n8n": _n8n,
+    "google": _google,
 }
 
 

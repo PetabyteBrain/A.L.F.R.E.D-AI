@@ -31,6 +31,8 @@ log = logging.getLogger(__name__)
 AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 TOKEN_URL = "https://oauth2.googleapis.com/token"
 REVOKE_URL = "https://oauth2.googleapis.com/revoke"
+TOKENINFO_URL = "https://oauth2.googleapis.com/tokeninfo"
+DISCOVERY_URL = "https://accounts.google.com/.well-known/openid-configuration"
 API = "https://www.googleapis.com/calendar/v3"
 EVENTS_SCOPE = "https://www.googleapis.com/auth/calendar.events"
 SCOPES = f"openid email {EVENTS_SCOPE}"
@@ -192,17 +194,56 @@ async def _access_token(user_id: int) -> str:
     return tok["access_token"]
 
 
-async def _api(user_id: int, method: str, path: str, **kw) -> dict:
+async def _api(user_id: int, method: str, path: str, *, meter: bool = True, **kw) -> dict:
     token = await _access_token(user_id)
     cal = (db.query_one("SELECT calendar_id FROM google_accounts WHERE user_id = ?", (user_id,)) or {}).get(
         "calendar_id", "primary")
     r = await _http(method, f"{API}/calendars/{cal}{path}", headers={"Authorization": f"Bearer {token}"}, **kw)
-    usage.record_request("google", "calendar", user_id=user_id)
+    if meter:
+        usage.record_request("google", "calendar", user_id=user_id)
     if r.status_code == 404:
         raise GoogleError("That event wasn't found.")
     if r.status_code >= 400:
         raise GoogleError(f"Google Calendar error {r.status_code}: {r.text[:200]}")
     return r.json() if r.content else {}
+
+
+# --- health --------------------------------------------------------------------------------------
+
+async def check_account(user_id: int) -> None:
+    """Raise GoogleError if this person's link no longer works (revoked, scope removed, API off)."""
+    token = await _access_token(user_id)  # refreshes if needed; unlinks on invalid_grant
+    r = await _http("GET", TOKENINFO_URL, params={"access_token": token})
+    if r.status_code != 200:
+        raise GoogleError("access token rejected")
+    if EVENTS_SCOPE not in r.json().get("scope", "").split():
+        raise GoogleError("calendar permission was removed; relink needed")
+    now = _now().isoformat()
+    await _api(user_id, "GET", "/events", meter=False, params={"maxResults": 1, "timeMin": now, "singleEvents": "true"})
+
+
+async def health() -> tuple[bool, str]:
+    if not settings.google_enabled:
+        return False, "not configured"
+    linked = db.query("SELECT g.user_id, u.display_name FROM google_accounts g JOIN users u ON u.id = g.user_id "
+                      "ORDER BY u.display_name")
+    if not linked:
+        r = await _http("GET", DISCOVERY_URL)
+        return r.status_code == 200, "configured · no calendars linked yet" if r.status_code == 200 else \
+            f"Google sign-in unreachable ({r.status_code})"
+    problems = []
+    for row in linked:
+        try:
+            await check_account(row["user_id"])
+        except GoogleError as e:
+            problems.append(f"{row['display_name']}: {e}")
+        except Exception as e:  # noqa: BLE001 — network etc.
+            problems.append(f"{row['display_name']}: {type(e).__name__}")
+    ok = len(linked) - len(problems)
+    detail = f"{ok}/{len(linked)} calendar{'s' if len(linked) != 1 else ''} OK"
+    if problems:
+        detail += " · " + "; ".join(problems)
+    return not problems, detail[:300]
 
 
 # --- calendar operations -----------------------------------------------------------------------
