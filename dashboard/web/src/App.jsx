@@ -117,6 +117,10 @@ export default function App() {
       <main>
         <Stats />
         <Page me={me} isAdmin={isAdmin} assistant={assistant} refreshMe={() => api("/me").then(setMe).catch(() => {})} />
+        <nav className="legal-links" aria-label="Legal">
+          <a href="/privacy-policy">Privacy Policy</a>
+          <a href="/terms-of-service">Terms of Service</a>
+        </nav>
       </main>
     </div>
     </ThemeContext.Provider>

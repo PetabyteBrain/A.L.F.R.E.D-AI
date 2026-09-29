@@ -44,6 +44,10 @@ export default function Login({ onLogin }) {
         <button className="btn primary" type="submit" disabled={busy}>{busy ? "Verifying…" : "Authenticate"}</button>
         <p className="error" role="alert">{error}</p>
       </form>
+      <nav className="legal-links" aria-label="Legal">
+        <a href="/privacy-policy">Privacy Policy</a>
+        <a href="/terms-of-service">Terms of Service</a>
+      </nav>
     </section>
   );
 }

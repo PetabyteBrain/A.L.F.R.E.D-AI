@@ -647,3 +647,17 @@ async def test_call_outcome_processed_once_when_signals_race(monkeypatch):
                      (friend.id, admin.id, db.now_iso(), "Ask something", sid, db.now_iso(), db.now_iso()))
     await asyncio.gather(scheduler.on_call_finished(sid, "ended"), scheduler.on_call_finished(sid, "ended"))
     assert len(summaries) == 1 and scheduler.get(rid)["status"] == "done"
+
+
+def test_legal_pages_are_public():
+    from fastapi.testclient import TestClient
+    from orchestrator.main import app, WEB_DIR
+    if not (WEB_DIR / "legal").is_dir():
+        pytest.skip("dashboard not built")
+    with TestClient(app) as c:
+        r = c.get("/privacy-policy")
+        assert r.status_code == 200 and "Limited Use" in r.text and "text/html" in r.headers["content-type"]
+        r = c.get("/terms-of-service")
+        assert r.status_code == 200 and "Terms of Service" in r.text
+        assert "frame-ancestors 'none'" in r.headers["content-security-policy"]
+        assert c.get("/legal/legal.css").status_code == 200

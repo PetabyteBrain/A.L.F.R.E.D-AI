@@ -532,3 +532,8 @@ table.data td:not(:first-child), table.data th:not(:first-child) { text-align: r
   .usage-tables { grid-template-columns: 1fr; }
   .stat-grid { grid-template-columns: 1fr 1fr; }
 }
+
+.legal-links { display: flex; gap: 18px; justify-content: center; font: 400 12px var(--font-mono); letter-spacing: .08em; }
+.legal-links a { color: var(--muted); text-decoration: none; }
+.legal-links a:hover { color: var(--accent); text-decoration: underline; }
+main > .legal-links { margin-top: 8px; }

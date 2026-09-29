@@ -10,8 +10,8 @@ import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
-from fastapi.responses import PlainTextResponse
+from fastapi import FastAPI, HTTPException
+from fastapi.responses import FileResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 
 from dashboard.api.google import router as google_router
@@ -80,6 +80,24 @@ app.include_router(n8n_callback.router)
 app.include_router(dashboard_router)
 app.include_router(people_router)
 app.include_router(google_router)
+def _legal(name: str) -> FileResponse:
+    path = WEB_DIR / "legal" / f"{name}.html"
+    if not path.is_file():
+        raise HTTPException(status_code=404)
+    return FileResponse(path, media_type="text/html", headers={"Cache-Control": "public, max-age=3600"})
+
+
+# Public legal pages at clean URLs (also linked from Google's OAuth consent screen).
+@app.get("/privacy-policy", include_in_schema=False)
+async def privacy_policy() -> FileResponse:
+    return _legal("privacy-policy")
+
+
+@app.get("/terms-of-service", include_in_schema=False)
+async def terms_of_service() -> FileResponse:
+    return _legal("terms-of-service")
+
+
 if WEB_DIR.is_dir():
     app.mount("/", StaticFiles(directory=WEB_DIR, html=True), name="web")
 else:
