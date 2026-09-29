@@ -744,3 +744,12 @@ async def test_google_health_reports_per_person(monkeypatch):
     db.execute("UPDATE google_accounts SET access_expires_at = NULL")
     ok, detail = await google_calendar.health()
     assert not ok and "revoked" in detail
+
+
+def test_session_state_endpoint():
+    from fastapi.testclient import TestClient
+    from orchestrator.main import app
+    with TestClient(app) as c:
+        assert c.get("/api/session").json() == {"authenticated": False}
+        c.post("/api/login", json={"username": "admin", "password": "correct horse battery"}, headers=CSRF)
+        assert c.get("/api/session").json() == {"authenticated": True, "first_name": "Test"}

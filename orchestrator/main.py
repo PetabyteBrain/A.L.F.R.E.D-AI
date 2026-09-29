@@ -100,7 +100,7 @@ async def home() -> Response:
     if token and re.fullmatch(r"[A-Za-z0-9_-]{10,100}", token):
         # Search Console "HTML tag" ownership proof.
         html = html.replace("</head>", f'  <meta name="google-site-verification" content="{token}">\n</head>', 1)
-    return HTMLResponse(html, headers={"Cache-Control": "public, max-age=600"})
+    return HTMLResponse(html, headers={"Cache-Control": "no-cache"})  # new builds rename assets
 
 
 @app.get("/google{code}.html", include_in_schema=False)

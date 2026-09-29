@@ -13,141 +13,96 @@
   <header class="top"><img src="/favicon.svg" alt=""><a href="/">ALFRED</a></header>
 
   <h1>Privacy Policy</h1>
-  <p class="meta">Effective 29 September 2026 · Applies to the "Alfred" personal assistant service at
-    alfred.example.com, its phone number, its Telegram bot and its dashboard.</p>
+  <p class="meta">Last updated 29 September 2026</p>
 
-  <div class="box">
-    <strong>In short:</strong> Alfred is a private, invitation-only assistant. It only serves people
-    who have been registered by its operator. It processes what you say or write to it, call
-    recordings and transcripts, and (only if you link it) your Google Calendar, in order to answer
-    you and carry out what you ask. Your data is stored on a private server in Switzerland, is never
-    sold, and is not used for advertising or to train AI models.
-  </div>
+  <p>This policy explains how personal data is processed when you use "Alfred", a private,
+    invitation-only assistant service available by phone, messaging and a web dashboard. It is based on
+    the Swiss Federal Act on Data Protection (FADP) and, where applicable, the EU General Data
+    Protection Regulation (GDPR).</p>
 
-  <h2>1. Who is responsible</h2>
-  <p>The controller responsible for processing personal data under the Swiss Federal Act on Data
-    Protection (FADP) and, where applicable, the EU General Data Protection Regulation (GDPR) is:</p>
+  <h2>1. Controller</h2>
   <p>Erika Mustermann, Switzerland<br>
-    Email: <a href="mailto:contact@example.com">contact@example.com</a></p>
+    Contact: <a href="mailto:contact@example.com">contact@example.com</a></p>
 
-  <h2>2. What Alfred is</h2>
-  <p>Alfred is an AI assistant that can be reached by phone call, via Telegram and through a web
-    dashboard. Access is limited to people the operator has registered. Messages and calls from
-    anyone else are ignored; such attempts are logged (see section 3.5).</p>
-
-  <h2>3. Data we process</h2>
-  <h3>3.1 Registration data</h3>
-  <p>Your name, role, and the identifiers used to recognise you: phone number, Telegram user ID,
-    email address and, if you have dashboard access, a username with a securely hashed password
-    (Argon2id). We never store your password in readable form.</p>
-
-  <h3>3.2 Conversations</h3>
+  <h2>2. Data we process</h2>
   <ul>
-    <li><strong>Telegram:</strong> the text of your messages and Alfred's replies.</li>
-    <li><strong>Phone calls:</strong> an audio recording of the call (caller and Alfred), a written
-      transcript, the call time and duration. Calls are recorded so that you (and, for calls placed on
-      someone's behalf, the person who requested the call) can review what was said.</li>
-    <li><strong>Actions:</strong> the tools Alfred used during a conversation (for example "scheduled a
-      call", "created a calendar event") and their results.</li>
-    <li><strong>Call requests:</strong> if someone asks Alfred to call you, the purpose of that call,
-      the time, and a short summary of the outcome, which is shared with the person who asked.</li>
+    <li><strong>Identification and contact data</strong> of registered users, such as name, phone number,
+      messaging account ID, email address and login credentials.</li>
+    <li><strong>Communication content</strong>: messages you exchange with Alfred, and for phone calls an
+      audio recording and a transcript.</li>
+    <li><strong>Calendar data</strong>, only if you choose to link your Google Calendar (see section 6).</li>
+    <li><strong>Technical data</strong>, such as sign-in information, a session cookie, and aggregated
+      usage information needed to operate the service.</li>
+    <li>Contact attempts from people who are not registered (phone number or account ID and time), to
+      prevent misuse.</li>
   </ul>
 
-  <h3>3.3 Google Calendar data (only if you link your calendar)</h3>
-  <p>If you choose to link your Google account on the dashboard, Alfred requests the scope
-    <code>calendar.events</code> and your email address. With it, Alfred can read, create, change and
-    delete events on your own calendar <em>only when you ask it to</em> (for example "what's on my
-    calendar tomorrow?" or "add a meeting on Friday at 10"). Alfred never accesses another person's
-    calendar through your link, and other users cannot use your calendar.</p>
-  <p>OAuth tokens are stored encrypted. You can unlink at any time on the dashboard (Profile), which
-    deletes the tokens and revokes Alfred's access at Google; you can also revoke access in your
-    Google account settings.</p>
-  <div class="box">
-    <strong>Google API Services — Limited Use.</strong> Alfred's use and transfer of information received
-    from Google APIs adheres to the
+  <h2>3. Purposes</h2>
+  <ul>
+    <li>Providing the service: understanding and answering your requests, placing and handling calls,
+      reminders, tasks and, if linked, managing your calendar.</li>
+    <li>Letting you and, for calls made on someone's behalf, the person who requested the call review
+      what was said (transcripts and short summaries).</li>
+    <li>Operating, securing and improving the reliability of the service, and preventing misuse.</li>
+  </ul>
+  <p>Where the GDPR applies, we rely on the performance of the service you use (Art. 6(1)(b)), our
+    legitimate interest in a secure service (Art. 6(1)(f)) and, for call recordings and calendar
+    linking, your consent (Art. 6(1)(a)), which you may withdraw at any time.</p>
+
+  <h2>4. Recipients</h2>
+  <p>We do not sell personal data or use it for advertising. To provide the service we use carefully
+    selected service providers, who process data on our behalf, in these categories:</p>
+  <ul>
+    <li>providers of AI language processing;</li>
+    <li>providers of speech recognition and speech synthesis;</li>
+    <li>telephony and messaging providers;</li>
+    <li>calendar provider (Google), only for users who link their calendar;</li>
+    <li>hosting, network and security providers.</li>
+  </ul>
+  <p>When Alfred calls someone on a user's behalf, a short summary of that call is shared with the
+    user who requested it.</p>
+
+  <h2>5. Disclosure abroad</h2>
+  <p>Some of these providers process data in the <strong>United States</strong> and in member states of
+    the <strong>European Union / EEA</strong>. For countries without an adequate level of data protection
+    recognised by Switzerland, we rely on the Swiss-U.S. Data Privacy Framework where the recipient is
+    certified, or on standard contractual clauses recognised by the Federal Data Protection and
+    Information Commissioner (FDPIC).</p>
+
+  <h2>6. Google user data</h2>
+  <p>Linking your Google Calendar is optional. If you link it, Alfred receives access to your calendar
+    events and your Google account's email address, and uses them only to show, create, change or delete
+    events on <em>your own</em> calendar when you ask it to. Calendar details are passed to our AI
+    processing provider only as far as needed to answer your request. You can unlink at any time, which
+    ends Alfred's access and deletes the stored access credentials.</p>
+  <p>Alfred's use and transfer of information received from Google APIs adheres to the
     <a href="https://developers.google.com/terms/api-services-user-data-policy" rel="noreferrer">Google API
-    Services User Data Policy</a>, including the Limited Use requirements. Google user data is used only
-    to provide the calendar features you request; it is not used for advertising, not sold, not used to
-    train or improve generalised AI or machine-learning models, and humans do not read it except with your
-    consent, for security purposes, or where required by law. Calendar details are passed to our AI
-    provider (section 5) only as needed to answer your request, under terms that do not allow them to be
-    used for model training.
-  </div>
+    Services User Data Policy</a>, including the Limited Use requirements. Google user data is not sold, not
+    used for advertising, not used to develop or train generalised AI or machine-learning models, and not
+    read by humans except with your consent, for security purposes, or where required by law.</p>
 
-  <h3>3.4 Usage and technical data</h3>
-  <p>Counts of API usage (for example tokens processed, speech characters, call minutes) to monitor
-    costs; a session cookie when you sign in to the dashboard; IP address and browser type of dashboard
-    logins, kept for security.</p>
+  <h2>7. Retention</h2>
+  <p>We keep personal data only as long as needed for the purposes above, as long as you are a registered
+    user, or as required by law. Calendar access is kept until you unlink it. Records of unregistered
+    contact attempts are deleted after a short period. You can ask for earlier deletion at any time.</p>
 
-  <h3>3.5 Unregistered access attempts</h3>
-  <p>If an unregistered phone number or Telegram account contacts Alfred, we log the number or ID, the
-    channel and the time, to detect misuse. These entries are deleted after 90 days.</p>
+  <h2>8. Security</h2>
+  <p>We protect personal data with appropriate technical and organisational measures against
+    unauthorised access, loss and misuse.</p>
 
-  <h2>4. Why we process it (purposes and legal bases)</h2>
-  <ul>
-    <li>To provide the assistant you or your organisation asked for: answering, calling, scheduling,
-      calendar management (performance of the service / legitimate interest; GDPR Art. 6(1)(b) and (f)).</li>
-    <li>To keep the service secure and prevent misuse (legitimate interest; GDPR Art. 6(1)(f)).</li>
-    <li>Recording calls and linking Google Calendar: based on your consent, which you give by using the
-      phone service after being informed here and by actively linking your calendar (GDPR Art. 6(1)(a)).
-      You can withdraw consent at any time.</li>
-  </ul>
+  <h2>9. Cookies</h2>
+  <p>The website only uses a strictly necessary cookie to keep you signed in, plus display preferences
+    stored in your own browser. There are no tracking or advertising cookies.</p>
 
-  <h2>5. Service providers (processors)</h2>
-  <p>To run Alfred we use the following providers. They process data only on our behalf and under
-    their data processing terms.</p>
-  <table>
-    <thead><tr><th>Provider</th><th>Purpose</th><th>Data</th><th>Location</th></tr></thead>
-    <tbody>
-      <tr><td>Anthropic (Claude API)</td><td>Understanding requests and generating replies</td><td>Conversation text, tool results (incl. calendar details you ask about)</td><td>USA</td></tr>
-      <tr><td>ElevenLabs</td><td>Speech-to-text and text-to-speech on calls</td><td>Call audio, spoken replies</td><td>USA / EU</td></tr>
-      <tr><td>Twilio</td><td>Phone number and call connection</td><td>Phone numbers, call audio in transit, call metadata</td><td>USA / EU</td></tr>
-      <tr><td>Telegram</td><td>Messaging channel</td><td>Messages you exchange with the bot</td><td>Per Telegram's policy</td></tr>
-      <tr><td>Google</td><td>Calendar (only if you link it)</td><td>Your calendar events</td><td>Per Google's policy</td></tr>
-      <tr><td>Cloudflare</td><td>Secure access to the website (TLS, network protection)</td><td>IP address, request data</td><td>Global</td></tr>
-      <tr><td>n8n (self-hosted)</td><td>Automations run by the operator</td><td>Data needed for the automation</td><td>Switzerland (own server)</td></tr>
-    </tbody>
-  </table>
-  <p>Where data is transferred to countries without an adequate level of data protection (such as the
-    USA), we rely on the providers' standard contractual clauses or equivalent safeguards, or on the
-    Swiss-U.S. / EU-U.S. Data Privacy Framework where the provider is certified.</p>
-
-  <h2>6. Where your data is stored and how long</h2>
-  <p>Registration data, transcripts, recordings, call requests and logs are stored on a private server
-    operated by the controller in Switzerland.</p>
-  <ul>
-    <li>Registration data: while you are registered; deleted when your registration is removed.</li>
-    <li>Conversations, recordings and transcripts: until deleted by the operator or at your request.
-      A fixed retention period will be introduced when archived storage is set up.</li>
-    <li>Dashboard sessions: expire after 60 minutes of inactivity and at most 12 hours.</li>
-    <li>Unregistered access attempts: 90 days.</li>
-    <li>Google tokens: until you unlink your calendar or access is revoked.</li>
-  </ul>
-
-  <h2>7. Security</h2>
-  <p>Access is limited to registered people and roles. The website uses HTTPS only, hashed passwords,
-    server-side sessions with secure cookies, CSRF protection and a strict content security policy.
-    Third-party tokens are encrypted at rest. Phone webhooks are verified with Twilio signatures.</p>
-
-  <h2>8. Cookies</h2>
-  <p>The dashboard sets one strictly necessary session cookie when you sign in. It is used only to keep
-    you logged in. There are no analytics, advertising or tracking cookies. Your browser may also store
-    your dashboard preferences (selected theme and tab) locally; these never leave your device.</p>
-
-  <h2>9. Your rights</h2>
-  <p>You can request access to your data, correction, deletion, restriction, a copy in a portable
-    format, and object to processing, and withdraw any consent. Email
-    <a href="mailto:contact@example.com">contact@example.com</a>. You can also correct most of
-    your details yourself on the dashboard (Profile). You have the right to lodge a complaint with the
-    Swiss Federal Data Protection and Information Commissioner (FDPIC) or, in the EU, with your local
-    supervisory authority.</p>
-
-  <h2>10. Children</h2>
-  <p>Alfred is not intended for children under 16, and we do not knowingly register them.</p>
+  <h2>10. Your rights</h2>
+  <p>You can request information about your data, its correction or deletion, a copy of data you
+    provided, and object to or restrict processing; you can withdraw consent at any time. Contact us at
+    <a href="mailto:contact@example.com">contact@example.com</a>. You may also complain to the
+    Federal Data Protection and Information Commissioner (FDPIC) or, in the EU, to your local supervisory
+    authority.</p>
 
   <h2>11. Changes</h2>
-  <p>We may update this policy when the service changes. The effective date above shows the latest
-    version; significant changes will be communicated to registered users.</p>
+  <p>We may update this policy. The date above shows the current version.</p>
 
   <footer>
     <a href="/terms-of-service">Terms of Service</a>

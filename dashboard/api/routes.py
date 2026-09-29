@@ -79,6 +79,16 @@ async def logout(request: Request, response: Response) -> dict:
     return {"ok": True}
 
 
+@router.get("/session")
+async def session_state(request: Request) -> dict:
+    """Public, minimal: lets the homepage swap "Sign in" for "Open Alfred". Never errors."""
+    uid = security.session_user_id(request)
+    person = registry.get_person(uid) if uid else None
+    if person is None or not registry.role_allows_channel(person.role, "dashboard"):
+        return {"authenticated": False}
+    return {"authenticated": True, "first_name": person.display_name.split()[0]}
+
+
 @router.get("/me")
 async def me(person: Person = Depends(current_person)) -> dict:
     return _me_view(person)
