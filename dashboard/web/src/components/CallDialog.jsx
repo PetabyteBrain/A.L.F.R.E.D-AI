@@ -6,6 +6,7 @@ export default function CallDialog({ assistant, targets, initialTarget, onDone, 
   const [target, setTarget] = useState(initialTarget ? String(initialTarget.id) : "");
   const [purpose, setPurpose] = useState("");
   const [when, setWhen] = useState("");
+  const [urgent, setUrgent] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
 
@@ -20,7 +21,7 @@ export default function CallDialog({ assistant, targets, initialTarget, onDone, 
     setBusy(true);
     setErr("");
     try {
-      const r = await api("/calls", { method: "POST", body: { user_id: Number(target), purpose, when: when || null } });
+      const r = await api("/calls", { method: "POST", body: { user_id: Number(target), purpose, when: when || null, urgent } });
       onDone(r.request);
     } catch (e2) {
       setErr(e2.message);
@@ -47,6 +48,10 @@ export default function CallDialog({ assistant, targets, initialTarget, onDone, 
         </label>
         <label className="field"><span>When (leave empty for now)</span>
           <input type="datetime-local" value={when} onChange={(e) => setWhen(e.target.value)} />
+        </label>
+        <label className="toggle">
+          <input type="checkbox" checked={urgent} onChange={(e) => setUrgent(e.target.checked)} />
+          <span>Urgent: ring even during their quiet hours</span>
         </label>
         <p className="muted tiny">
           {purpose ? `${assistant} hangs up when it's handled and reports the answer back to you.` : "Without a purpose it's a plain call."}

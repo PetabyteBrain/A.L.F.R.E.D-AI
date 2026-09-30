@@ -179,9 +179,13 @@ async def _reply_with_voice(msg, reply: str, person, session_id: str) -> bool:
 
 
 async def send_to_user(user_id: int, text: str, note: str | None = None, record: bool = True,
-                       buttons: list[list[tuple[str, str]]] | None = None) -> None:
+                       buttons: list[list[tuple[str, str]]] | None = None, silent: bool | None = None) -> None:
     """Proactive message to a registered person (tools, n8n callbacks, reminders).
-    `buttons`: rows of (label, callback_data) shown under the last message part."""
+    `buttons`: rows of (label, callback_data) shown under the last message part.
+    `silent`: no notification sound; by default only during the person's quiet hours."""
+    from . import quiet
+    if silent is None:
+        silent = quiet.is_quiet(user_id)
     if _app is None:
         raise RuntimeError("Telegram bot is not running.")
     tg = registry.telegram_for(user_id)
@@ -193,6 +197,7 @@ async def send_to_user(user_id: int, text: str, note: str | None = None, record:
                                    for row in buttons]) if buttons else None
     for i, part in enumerate(parts):
         await _app.bot.send_message(chat_id=int(tg), text=part, disable_web_page_preview=True,
+                                    disable_notification=silent,
                                     reply_markup=markup if i == len(parts) - 1 else None)
     if record:
         sessions.add_turn(session_id, "assistant", text)
@@ -200,8 +205,8 @@ async def send_to_user(user_id: int, text: str, note: str | None = None, record:
 
 
 async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Inline buttons under reminders: rem:done:<id> / rem:snooze:<id>."""
-    from . import reminders
+    """Inline buttons: reminders (rem:done|snooze:<id>) and task follow-ups (task:done|notyet:<id>)."""
+    from . import reminders, tasks
     q = update.callback_query
     if not q or not q.from_user:
         return
@@ -210,6 +215,21 @@ async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return  # silent, like messages
     kind, _, rest = (q.data or "").partition(":")
     action, _, rid = rest.partition(":")
+    if kind == "task" and rid.isdigit() and action in ("done", "notyet"):
+        try:
+            if action == "done":
+                tasks.complete(int(rid), person)
+                note = "✓ Done, thank you"
+            else:
+                t = tasks.not_yet(int(rid), person)
+                note = f"Noted. I'll ask again {t['follow_up_local']}" if t["follow_up_local"] else "Noted"
+        except tasks.TaskError as e:
+            await q.answer(str(e))
+            return
+        await q.answer(note)
+        with contextlib.suppress(Exception):
+            await q.edit_message_text(f"{q.message.text}\n{note}", reply_markup=None)
+        return
     if kind != "rem" or not rid.isdigit() or action not in ("done", "snooze"):
         await q.answer()
         return

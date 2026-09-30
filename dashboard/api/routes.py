@@ -7,10 +7,11 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request, Response
 from fastapi.responses import FileResponse
-from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from orchestrator import db, health, sessions
 from orchestrator.config import settings
@@ -203,6 +204,7 @@ class CallBody(Strict):
     purpose: str = Field(default="", max_length=600)
     when: str | None = Field(default=None, max_length=40)  # ISO local time; empty = now
     opening_line: str = Field(default="", max_length=300)
+    urgent: bool = False  # ring even during the target's quiet hours
 
 
 def _may_request_calls(person: Person) -> bool:
@@ -224,7 +226,7 @@ async def place_call(body: CallBody, person: Person = Depends(current_person)) -
         raise HTTPException(status_code=404, detail="Unknown person.")
     try:
         row = await scheduler.request_call(body.user_id, requested_by=person, purpose=body.purpose,
-                                           when=body.when, opening_line=body.opening_line)
+                                           when=body.when, opening_line=body.opening_line, urgent=body.urgent)
     except scheduler.ScheduleError as e:
         raise HTTPException(status_code=400, detail=str(e))
     if row["status"] == "failed":  # 400, not 5xx: Cloudflare replaces 5xx bodies with its own page
@@ -301,12 +303,20 @@ async def recording_audio(recording_id: int, person: Person = Depends(current_pe
 class TaskBody(Strict):
     title: str = Field(min_length=1, max_length=200)
     schedule: str = Field(default="", max_length=200)
-    next_run_at: AwareDatetime | None = None
+    owner_id: int | None = Field(default=None, ge=1)
+    due: str | None = Field(default=None, max_length=40)            # ISO local
+    follow_up: Literal["none", "telegram", "call"] = "none"
+    notes: str = Field(default="", max_length=500)
+
+
+class TaskDone(Strict):
+    result: str = Field(default="", max_length=500)
 
 
 @router.get("/tasks")
-async def tasks(person: Person = Depends(current_person)) -> dict:
-    out: dict = {"local": db.query("SELECT * FROM tasks WHERE status = 'active' ORDER BY COALESCE(next_run_at, created_at)")}
+async def tasks(person: Person = Depends(current_person), include_done: bool = Query(default=False)) -> dict:
+    from orchestrator import tasks as task_mod
+    out: dict = {"local": task_mod.list_for(person, include_done=include_done)}
     if person.is_admin and settings.n8n_enabled:
         from orchestrator.tools import n8n_tool
         try:
@@ -330,18 +340,31 @@ def _trigger_summary(workflow: dict) -> list[str]:
 
 
 @router.post("/tasks")
-async def add_task(body: TaskBody, person: Person = Depends(admin_only)) -> dict:
-    tid = db.execute(
-        "INSERT INTO tasks(title, schedule, source, next_run_at, created_at) VALUES (?,?, 'local', ?, ?)",
-        (body.title, body.schedule, body.next_run_at.isoformat() if body.next_run_at else None, db.now_iso()),
-    )
-    return {"id": tid}
+async def add_task(body: TaskBody, person: Person = Depends(current_person)) -> dict:
+    from orchestrator import tasks as task_mod
+    try:
+        return task_mod.create(created_by=person, title=body.title, owner_ref=body.owner_id, due=body.due,
+                               follow_up=body.follow_up, notes=body.notes, schedule=body.schedule)
+    except task_mod.TaskError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/tasks/{task_id}/done")
+async def complete_task(body: TaskDone, task_id: int = Path(ge=1), person: Person = Depends(current_person)) -> dict:
+    from orchestrator import tasks as task_mod
+    try:
+        return task_mod.complete(task_id, person, body.result)
+    except task_mod.TaskError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @router.delete("/tasks/{task_id}")
-async def delete_task(task_id: int, person: Person = Depends(admin_only)) -> dict:
-    db.execute("UPDATE tasks SET status = 'done' WHERE id = ?", (task_id,))
-    return {"ok": True}
+async def delete_task(task_id: int = Path(ge=1), person: Person = Depends(current_person)) -> dict:
+    from orchestrator import tasks as task_mod
+    try:
+        return task_mod.cancel(task_id, person)
+    except task_mod.TaskError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 # --- activity / health / registry --------------------------------------------------------

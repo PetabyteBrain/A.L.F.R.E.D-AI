@@ -205,7 +205,8 @@ async def _via_telegram(row: dict) -> bool:
         return False
     from .telegram_handler import send_to_user
     buttons = [[("Done ✓", f"rem:done:{row['id']}"), ("Snooze 10 min", f"rem:snooze:{row['id']}")]]
-    await send_to_user(row["user_id"], _message(row) + f"\n(reminder #{row['id']})", note="reminder", buttons=buttons)
+    await send_to_user(row["user_id"], _message(row) + f"\n(reminder #{row['id']})", note="reminder", buttons=buttons,
+                       silent=None if row["created_by"] not in (None, row["user_id"]) else False)
     return True
 
 

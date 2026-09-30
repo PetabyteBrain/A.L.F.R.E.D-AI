@@ -72,6 +72,22 @@ CREATE TABLE IF NOT EXISTS memories (
 );
 CREATE INDEX IF NOT EXISTS idx_memories_user ON memories(user_id);
 
+-- Small key/value store for settings edited on the dashboard (e.g. default quiet hours).
+CREATE TABLE IF NOT EXISTS app_settings (
+    key        TEXT PRIMARY KEY,
+    value      TEXT NOT NULL,
+    updated_at TEXT
+);
+
+-- Per-person quiet hours (orchestrator/quiet.py): follow the default, own window, or off.
+CREATE TABLE IF NOT EXISTS quiet_hours (
+    user_id    INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    mode       TEXT NOT NULL DEFAULT 'default' CHECK (mode IN ('default','custom','off')),
+    start      TEXT,
+    end        TEXT,
+    updated_at TEXT
+);
+
 -- Daily briefing settings per person (orchestrator/briefing.py).
 CREATE TABLE IF NOT EXISTS briefings (
     user_id      INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
@@ -340,6 +356,35 @@ def _migrate_identifier_verified_at() -> None:
         conn.close()
 
 
+# Columns added after tables already existed in production: (table, column, declaration).
+ADDED_COLUMNS = [
+    ("scheduled_calls", "urgent", "INTEGER NOT NULL DEFAULT 0"),      # skips the target's quiet hours
+    ("tasks", "owner_user_id", "INTEGER REFERENCES users(id) ON DELETE SET NULL"),
+    ("tasks", "requested_by", "INTEGER REFERENCES users(id) ON DELETE SET NULL"),
+    ("tasks", "due_at", "TEXT"),
+    ("tasks", "notes", "TEXT NOT NULL DEFAULT ''"),
+    ("tasks", "follow_up", "TEXT NOT NULL DEFAULT 'none'"),          # none | telegram | call
+    ("tasks", "follow_up_at", "TEXT"),
+    ("tasks", "follow_ups", "INTEGER NOT NULL DEFAULT 0"),
+    ("tasks", "last_follow_up_at", "TEXT"),
+    ("tasks", "completed_at", "TEXT"),
+    ("tasks", "completed_by", "INTEGER REFERENCES users(id) ON DELETE SET NULL"),
+    ("tasks", "result", "TEXT"),
+]
+
+
+def _add_missing_columns() -> None:
+    conn = sqlite3.connect(settings.db_path, timeout=10)
+    try:
+        with conn:
+            for table, col, decl in ADDED_COLUMNS:
+                cols = {r[1] for r in conn.execute(f"PRAGMA table_info({table})")}
+                if cols and col not in cols:
+                    conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {decl}")
+    finally:
+        conn.close()
+
+
 def init_db() -> None:
     settings.db_path.parent.mkdir(parents=True, exist_ok=True)
     _migrate_sessions_channel_check()
@@ -352,6 +397,7 @@ def init_db() -> None:
             "VALUES (?,?,?,?,?)",
             DEFAULT_ROLES,
         )
+    _add_missing_columns()
 
 
 def execute(sql: str, params: tuple | list = ()) -> int:

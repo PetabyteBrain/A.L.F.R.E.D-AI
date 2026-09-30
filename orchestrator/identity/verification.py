@@ -109,6 +109,12 @@ async def start(identifier_id: int, requester: Person) -> dict:
     _check_rate(ident, requester)
 
     code = f"{secrets.randbelow(10**6):06d}"
+    if ident["type"] == "phone" and requester.id != ident["user_id"]:
+        from .. import quiet
+        until = quiet.quiet_until(ident["user_id"])
+        if until:
+            raise RegistryError(f"They're in their quiet hours until {until.astimezone(quiet._tz()):%H:%M}. "
+                                "Try again then, or let them verify it themselves.")
     if ident["type"] == "phone":
         await _call_with_code(ident["value"], code)
     now = _now()

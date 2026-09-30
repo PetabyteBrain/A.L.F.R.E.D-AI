@@ -24,12 +24,13 @@ async def current_time(ctx) -> str:
 
 
 @handler
-async def list_tasks(ctx) -> dict:
-    local = db.query(
-        "SELECT id, title, schedule, next_run_at, status FROM tasks WHERE status = 'active' ORDER BY id"
-    )
-    out: dict[str, Any] = {"local_tasks": local}
-    if settings.n8n_enabled:
+async def list_tasks(ctx, include_finished: bool = False) -> dict:
+    from .. import tasks
+    out: dict[str, Any] = {"tasks": [
+        {k: t[k] for k in ("id", "title", "status", "owner_name", "requester_name", "due_local", "follow_up",
+                           "follow_up_local", "follow_ups", "result", "schedule") if t[k] not in (None, "", "none")}
+        for t in tasks.list_for(ctx.person, include_done=include_finished, limit=40)]}
+    if settings.n8n_enabled and ctx.person.is_admin:
         from . import n8n_tool
         try:
             out["active_n8n_workflows"] = [
@@ -41,13 +42,41 @@ async def list_tasks(ctx) -> dict:
 
 
 @handler
-async def add_task(ctx, title: str, schedule: str = "", next_run_at: str | None = None) -> dict:
-    tid = db.execute(
-        "INSERT INTO tasks(title, schedule, source, next_run_at, created_at) VALUES (?,?, 'local', ?, ?)",
-        (title, schedule, next_run_at, db.now_iso()),
-    )
-    db.log_activity("system", f"Task added: {title}", user_id=ctx.person.id, session_id=ctx.session_id)
-    return {"id": tid, "title": title, "schedule": schedule}
+async def add_task(ctx, title: str, person: str = "", due: str = "", follow_up: str = "", notes: str = "") -> dict:
+    from .. import tasks
+    try:
+        t = tasks.create(created_by=ctx.person, title=title, owner_ref=person or None, due=due or None,
+                         follow_up=follow_up or ("telegram" if due else "none"), notes=notes)
+    except tasks.TaskError as e:
+        return {"error": str(e)}
+    return {"task_id": t["id"], "owner": t["owner_name"], "due": t["due_local"], "follow_up": t["follow_up"]}
+
+
+@handler
+async def complete_task(ctx, task_id: int, result: str = "") -> dict:
+    from .. import tasks
+    try:
+        t = tasks.complete(int(task_id), ctx.person, result)
+    except tasks.TaskError as e:
+        return {"error": str(e)}
+    return {"task_id": t["id"], "status": t["status"]}
+
+
+@handler
+async def update_task(ctx, task_id: int, action: str = "update", due: str | None = None, person: str | None = None,
+                      follow_up: str | None = None, title: str | None = None) -> dict:
+    from .. import tasks
+    try:
+        if action == "cancel":
+            t = tasks.cancel(int(task_id), ctx.person)
+        elif action == "not_yet":
+            t = tasks.not_yet(int(task_id), ctx.person)
+        else:
+            t = tasks.update(int(task_id), ctx.person, title=title, due=due, owner_ref=person, follow_up=follow_up)
+    except tasks.TaskError as e:
+        return {"error": str(e)}
+    return {"task_id": t["id"], "status": t["status"], "owner": t["owner_name"], "due": t["due_local"],
+            "next_follow_up": t["follow_up_local"]}
 
 
 @handler
@@ -145,6 +174,17 @@ async def configure_briefing(ctx, enabled: bool | None = None, time: str | None 
 
 
 @handler
+async def configure_quiet_hours(ctx, mode: str | None = None, start: str | None = None, end: str | None = None) -> dict:
+    from .. import quiet
+    if mode is not None:
+        try:
+            quiet.set_person(ctx.person.id, mode=mode, start=start, end=end)
+        except quiet.QuietError as e:
+            return {"error": str(e)}
+    return quiet.describe(ctx.person.id)
+
+
+@handler
 async def remember(ctx, text: str) -> dict:
     from .. import memory
     try:
@@ -175,12 +215,18 @@ async def forget_memory(ctx, memory_id: int) -> dict:
 
 
 @handler
-async def place_call(ctx, person: str, purpose: str = "", opening_line: str = "") -> dict:
+async def place_call(ctx, person: str, purpose: str = "", opening_line: str = "", urgent: bool = False) -> dict:
     from .. import scheduler
     try:
-        row = await scheduler.request_call(person, requested_by=ctx.person, purpose=purpose, opening_line=opening_line)
+        row = await scheduler.request_call(person, requested_by=ctx.person, purpose=purpose, opening_line=opening_line,
+                                           urgent=urgent)
     except scheduler.ScheduleError as e:
         return {"error": str(e)}
+    if row.get("held_for_quiet_hours"):
+        return {"status": "waiting_for_quiet_hours", "calling": row["target_name"], "request_id": row["id"],
+                "will_call_at_local_time": row["run_at_local"],
+                "note": "They're in their quiet hours; the call goes out when those end. Say so, and mention "
+                        "it can be placed as urgent if it really can't wait."}
     return {"status": row["status"], "calling": row["target_name"], "request_id": row["id"],
             "note": "The outcome will be reported back when the call ends." if purpose and row["target_user_id"] != ctx.person.id
             else ""}
@@ -195,7 +241,8 @@ async def schedule_call(ctx, person: str, when: str, purpose: str = "", opening_
     except scheduler.ScheduleError as e:
         return {"error": str(e)}
     return {"scheduled": True, "request_id": row["id"], "calling": row["target_name"],
-            "at_local_time": row["run_at_local"], "status": row["status"]}
+            "at_local_time": row["run_at_local"], "status": row["status"],
+            **({"note": "Moved to the end of their quiet hours."} if row.get("held_for_quiet_hours") else {})}
 
 
 @handler

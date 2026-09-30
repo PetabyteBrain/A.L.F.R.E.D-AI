@@ -258,7 +258,7 @@ async def send(person: Person, channel: str | None = None) -> str:
         if not (settings.telegram_enabled and registry.telegram_for(person.id)):
             raise BriefingError("No verified Telegram account to send it to.")
         from .telegram_handler import send_to_user
-        await send_to_user(person.id, await compose(person, data, "telegram"), note="daily briefing")
+        await send_to_user(person.id, await compose(person, data, "telegram"), note="daily briefing", silent=False)
     db.log_activity("message", f"Daily briefing sent to {person.display_name} by {channel}", user_id=person.id)
     return channel
 

@@ -60,7 +60,8 @@ export default function CallQueue({ me, assistant }) {
           onCancel={() => setOpen(false)}
           onDone={(r) => {
             setOpen(false);
-            setNotice(r.status === "pending" ? `Scheduled: ${r.target_name}, ${r.run_at_local}.` : `Dialing ${r.target_name}…`);
+            setNotice(r.held_for_quiet_hours ? `${r.target_name} is in quiet hours: ${assistant} calls at ${r.run_at_local}.`
+              : r.status === "pending" ? `Scheduled: ${r.target_name}, ${r.run_at_local}.` : `Dialing ${r.target_name}…`);
             reload();
           }}
         />

@@ -5,11 +5,12 @@ import { ErrorNote, Tag } from "../components/common.jsx";
 import Connections from "../components/Connections.jsx";
 import BriefingCard from "../components/BriefingCard.jsx";
 import MemoryCard from "../components/MemoryCard.jsx";
+import QuietHoursCard from "../components/QuietHoursCard.jsx";
 import GoogleCalendarCard from "../components/GoogleCalendarCard.jsx";
 import { Panel } from "../components/hud.jsx";
 
 /* Self-service for everyone with dashboard access: name, connections, password. */
-export default function Profile({ assistant, refreshMe }) {
+export default function Profile({ assistant, isAdmin, refreshMe }) {
   const { data: me, error, reload } = usePoll(() => api("/profile"));
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
@@ -91,6 +92,7 @@ export default function Profile({ assistant, refreshMe }) {
             <button className="btn primary" type="submit" disabled={busy}>Update password</button>
           </form>
           <GoogleCalendarCard assistant={assistant} />
+          <QuietHoursCard assistant={assistant} isAdmin={isAdmin} />
           <BriefingCard assistant={assistant} />
           <MemoryCard assistant={assistant} />
         </section>

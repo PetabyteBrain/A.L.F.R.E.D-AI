@@ -22,6 +22,7 @@ os.environ.update({
     "PUBLIC_BASE_URL": "https://alfred.example.test",
     "ANTHROPIC_API_KEY": "",
     "TELEGRAM_BOT_TOKEN": "",
+    "QUIET_HOURS": "off",          # tests must not depend on the time of day; quiet hours have their own test
 })
 
 from orchestrator import db, sessions  # noqa: E402
@@ -60,7 +61,8 @@ def test_tool_role_gating():
     admin_names = {t["name"] for t in tools.tools_for("admin")}
     friend_names = {t["name"] for t in tools.tools_for("friend")}
     assert "current_time" in friend_names
-    assert "add_task" in admin_names and "add_task" not in friend_names
+    assert "recent_activity" in admin_names and "recent_activity" not in friend_names
+    assert "add_task" in friend_names                     # own tasks: everyone; others: admin/cofounder
     assert not any(n.startswith("n8n_") for n in friend_names)
 
 
@@ -68,7 +70,7 @@ def test_tool_role_gating():
 async def test_tool_execute_blocks_unpermitted():
     from orchestrator.tools import registry as tools
     friend = registry.lookup("telegram", "22222222")
-    out, err = await tools.execute("add_task", {"title": "x"}, tools.ToolContext(friend, None, "telegram"))
+    out, err = await tools.execute("recent_activity", {}, tools.ToolContext(friend, None, "telegram"))
     assert err and "not available" in out
 
 
@@ -1016,7 +1018,7 @@ def test_reminders_deliver_ack_escalate_and_repeat(monkeypatch):
     friend = registry.lookup("telegram", "22222222")
     sent, calls = [], []
 
-    async def fake_send(user_id, text, note=None, record=True, buttons=None):
+    async def fake_send(user_id, text, note=None, record=True, buttons=None, silent=None):
         sent.append((user_id, text, buttons))
 
     async def fake_request_call(target, *, requested_by, purpose="", when=None, opening_line=""):
@@ -1126,7 +1128,7 @@ def test_daily_briefing(monkeypatch):
     async def fake_weather(lat, lon):
         return {"conditions": "light rain", "high_c": 14, "low_c": 8, "rain_chance_pct": 70, "precip_mm": 3.1}
 
-    async def fake_send(user_id, text, note=None, record=True, buttons=None):
+    async def fake_send(user_id, text, note=None, record=True, buttons=None, silent=None):
         sent.append((user_id, text, note))
 
     class FakeMessages:
@@ -1351,3 +1353,157 @@ def test_call_reply_is_spoken_sentence_by_sentence(monkeypatch):
         assert spoken == [call_handler.FILLER]
         call.recorder.close()
     asyncio.run(run())
+
+
+def test_quiet_hours_windows_and_held_calls(monkeypatch):
+    import asyncio
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    from types import SimpleNamespace as NS
+    from orchestrator import quiet, scheduler, telegram_handler as th
+    from orchestrator.config import settings
+    tz = ZoneInfo("Europe/Zurich")
+    admin = registry.lookup("telegram", "111")
+    friend = registry.lookup("telegram", "22222222")
+    at = lambda h, m=0: datetime(2026, 10, 5, h, m, tzinfo=tz)  # noqa: E731
+    try:
+        quiet.set_default(enabled=True, start="22:00", end="07:00")
+        assert quiet.quiet_until(friend.id, at(23, 30)).astimezone(tz) == datetime(2026, 10, 6, 7, 0, tzinfo=tz)
+        assert quiet.quiet_until(friend.id, at(6, 59)).astimezone(tz) == at(7)
+        assert quiet.quiet_until(friend.id, at(7)) is None and not quiet.is_quiet(friend.id, at(12))
+        quiet.set_person(friend.id, mode="custom", start="12:00", end="14:00")        # same-day window
+        assert quiet.is_quiet(friend.id, at(13)) and not quiet.is_quiet(friend.id, at(23))
+        quiet.set_person(friend.id, mode="off")
+        assert not quiet.is_quiet(friend.id, at(3))
+        try:
+            quiet.set_person(friend.id, mode="custom", start="25:00", end="07:00")
+            raise AssertionError("bad time accepted")
+        except quiet.QuietError:
+            pass
+
+        # calls someone else asked for wait; urgent and self-requested calls don't
+        quiet.set_person(friend.id, mode="custom", start="00:00", end="23:59")        # quiet (almost) all day
+        monkeypatch.setattr(type(settings), "twilio_enabled", property(lambda s: True))
+        monkeypatch.setattr(type(settings), "elevenlabs_enabled", property(lambda s: True))
+        dialed = []
+
+        async def fake_dispatch(rid):
+            dialed.append(rid)
+        monkeypatch.setattr(scheduler, "dispatch", fake_dispatch)
+        if quiet.is_quiet(friend.id):
+            held = asyncio.run(scheduler.request_call(friend.id, requested_by=admin, purpose="Ask about the invoice"))
+            assert held.get("held_for_quiet_hours") and held["status"] == "pending" and not dialed
+            urgent = asyncio.run(scheduler.request_call(friend.id, requested_by=admin, purpose="x", urgent=True))
+            assert not urgent.get("held_for_quiet_hours") and dialed == [urgent["id"]]
+            own = asyncio.run(scheduler.request_call(friend.id, requested_by=friend))
+            assert not own.get("held_for_quiet_hours")
+            for r in (held, urgent, own):
+                db.execute("UPDATE scheduled_calls SET status = 'cancelled' WHERE id = ?", (r["id"],))
+
+            # automatic Telegram messages go out silently during quiet hours
+            sent = []
+
+            async def send_message(**kw):
+                sent.append(kw)
+            monkeypatch.setattr(th, "_app", NS(bot=NS(send_message=send_message)))
+            asyncio.run(th.send_to_user(friend.id, "call report", record=False))
+            asyncio.run(th.send_to_user(friend.id, "your own reminder", record=False, silent=False))
+            assert sent[0]["disable_notification"] is True and sent[1]["disable_notification"] is False
+    finally:
+        quiet.set_default(enabled=False, start="22:00", end="07:00")
+        quiet.set_person(friend.id, mode="default")
+
+
+def test_task_follow_ups(monkeypatch):
+    import asyncio
+    from datetime import timedelta
+    from orchestrator import scheduler, tasks, telegram_handler
+    from orchestrator.config import settings
+    admin = registry.lookup("telegram", "111")
+    friend = registry.lookup("telegram", "22222222")
+    sent, calls = [], []
+
+    async def fake_send(user_id, text, note=None, record=True, buttons=None, silent=None):
+        sent.append({"to": user_id, "text": text, "buttons": buttons})
+
+    async def fake_request_call(target, *, requested_by, purpose="", when=None, opening_line="", urgent=False):
+        calls.append((target, requested_by.id, purpose))
+        return {}
+    monkeypatch.setattr(telegram_handler, "send_to_user", fake_send)
+    monkeypatch.setattr(scheduler, "request_call", fake_request_call)
+    monkeypatch.setattr(type(settings), "telegram_enabled", property(lambda s: True))
+    soon = (tasks._now() + timedelta(hours=1)).astimezone(tasks._tz()).strftime("%Y-%m-%dT%H:%M")
+
+    try:
+        tasks.create(created_by=friend, title="x", owner_ref=admin.id)
+        raise AssertionError("friend assigned a task to someone else")
+    except tasks.TaskError:
+        pass
+    try:
+        tasks.create(created_by=admin, title="x", follow_up="telegram")
+        raise AssertionError("follow-up without a due time")
+    except tasks.TaskError:
+        pass
+
+    async def run():
+        async def settle():
+            await asyncio.sleep(0)
+            await asyncio.gather(*tasks._running)
+
+        t = tasks.create(created_by=admin, title="Send the invoice", owner_ref="Friend", due=soon, follow_up="telegram")
+        assert t["owner_user_id"] == friend.id and t["follow_up_at"] == t["due_at"]
+        await tasks.tick()
+        assert not sent                                               # not due yet
+        db.execute("UPDATE tasks SET follow_up_at = ? WHERE id = ?", (tasks._iso(tasks._now()), t["id"]))
+        await tasks.tick()
+        await tasks.tick()                                            # claimed: asked once
+        assert len(sent) == 1 and sent[0]["to"] == friend.id and "Send the invoice" in sent[0]["text"]
+        assert sent[0]["buttons"][0][1][1] == f"task:notyet:{t['id']}"
+        assert tasks.get(t["id"])["follow_ups"] == 1
+
+        # "Not yet" -> requester hears it; asked again a day later
+        tasks.not_yet(t["id"], friend)
+        await settle()
+        assert sent[-1]["to"] == admin.id and "isn't done yet" in sent[-1]["text"]
+        # done -> requester hears it, follow-ups stop
+        tasks.complete(t["id"], friend, "Sent at 11:40")
+        await settle()
+        assert sent[-1]["to"] == admin.id and "finished" in sent[-1]["text"] and "11:40" in sent[-1]["text"]
+        assert tasks.get(t["id"])["status"] == "done" and tasks.get(t["id"])["follow_up_at"] is None
+
+        # phone follow-up goes through the call scheduler with a brief that closes the task
+        c = tasks.create(created_by=admin, title="Book the venue", owner_ref=friend.id, due=soon, follow_up="call")
+        db.execute("UPDATE tasks SET follow_up_at = ? WHERE id = ?", (tasks._iso(tasks._now()), c["id"]))
+        await tasks.tick()
+        assert calls and calls[-1][0] == friend.id and calls[-1][1] == admin.id
+        assert f"complete_task with task_id {c['id']}" in calls[-1][2]
+
+        # three follow-ups with no answer -> requester told once, then silence
+        db.execute("UPDATE tasks SET follow_ups = 3, follow_up_at = NULL, last_follow_up_at = ? WHERE id = ?",
+                   (tasks._iso(tasks._now() - timedelta(hours=25)), c["id"]))
+        n = len(sent)
+        await tasks.tick()
+        await settle()
+        await tasks.tick()
+        await settle()
+        assert len(sent) == n + 1 and "No word from" in sent[-1]["text"]
+        tasks.cancel(c["id"], admin)
+    asyncio.run(run())
+
+
+def test_tasks_api():
+    from datetime import datetime, timedelta
+    from fastapi.testclient import TestClient
+    from orchestrator.main import app
+    friend = registry.lookup("telegram", "22222222")
+    due = (datetime.now() + timedelta(days=2)).strftime("%Y-%m-%dT%H:%M")
+    with TestClient(app) as c:
+        c.post("/api/login", json={"username": "admin", "password": "correct horse battery"}, headers=CSRF)
+        r = c.post("/api/tasks", json={"title": "Order toner", "owner_id": friend.id, "due": due, "follow_up": "telegram"},
+                   headers=CSRF)
+        assert r.status_code == 200 and r.json()["owner_name"] == "Friend Person"
+        tid = r.json()["id"]
+        assert any(t["id"] == tid for t in c.get("/api/tasks").json()["local"])
+        assert c.post("/api/tasks", json={"title": "x", "follow_up": "call"}, headers=CSRF).status_code == 400
+        assert c.post(f"/api/tasks/{tid}/done", json={"result": "Ordered"}, headers=CSRF).json()["status"] == "done"
+        assert c.delete(f"/api/tasks/{tid}", headers=CSRF).status_code == 400          # already done

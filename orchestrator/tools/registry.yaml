@@ -31,25 +31,62 @@ tools:
     kind: builtin
     handler: list_tasks
     roles: ["*"]
-    description: List scheduled and recurring tasks (local tasks plus active n8n workflows).
+    description: >-
+      List open tasks (with ids, owner, due time, follow-up state) the person owns or asked for, the
+      shared list, and (for admins) active n8n workflows.
     input_schema:
       type: object
-      properties: {}
+      properties:
+        include_finished: {type: boolean}
 
   - name: add_task
     kind: builtin
     handler: add_task
-    roles: [admin, cofounder]
+    roles: ["*"]
     description: >-
-      Add a task to Alfred's task list, shown on the dashboard. This only records it;
-      it does not schedule execution.
+      Add a task, optionally for someone else (admins/cofounders), with a due time and a follow-up:
+      at the due time Alfred asks the owner whether it's done (telegram = message with Done / Not yet
+      buttons, call = phone call), repeats daily up to 3 times, and reports back to whoever asked.
+      E.g. "ask Max to send the invoice by Friday noon and follow up". Resolve relative times first.
     input_schema:
       type: object
       properties:
-        title: {type: string, description: What the task is.}
-        schedule: {type: string, description: "Free text or cron expression, e.g. 'every Monday 08:00'."}
-        next_run_at: {type: string, description: Optional ISO-8601 timestamp of the next occurrence.}
+        title: {type: string, description: What has to be done, phrased as the task.}
+        person: {type: string, description: "Owner's name or id; omit for the requester."}
+        due: {type: string, description: "ISO 8601 local due time, e.g. 2026-10-02T12:00."}
+        follow_up: {type: string, enum: [none, telegram, call], description: "Default: telegram if a due time is given, else none."}
+        notes: {type: string, description: Optional detail for the owner.}
       required: [title]
+
+  - name: complete_task
+    kind: builtin
+    handler: complete_task
+    roles: ["*"]
+    description: Mark a task done (by id), with an optional result; the requester is told.
+    input_schema:
+      type: object
+      properties:
+        task_id: {type: integer}
+        result: {type: string, description: "Optional outcome, e.g. 'Invoice sent to the client at 11:40.'"}
+      required: [task_id]
+
+  - name: update_task
+    kind: builtin
+    handler: update_task
+    roles: ["*"]
+    description: >-
+      Change a task (new due time restarts the follow-ups; a new owner; follow-up kind; title), say
+      it isn't done yet (action not_yet: asks again tomorrow and tells the requester), or cancel it.
+    input_schema:
+      type: object
+      properties:
+        task_id: {type: integer}
+        action: {type: string, enum: [update, not_yet, cancel], description: Default update.}
+        due: {type: string, description: ISO 8601 local time.}
+        person: {type: string, description: New owner's name or id.}
+        follow_up: {type: string, enum: [none, telegram, call]}
+        title: {type: string}
+      required: [task_id]
 
   - name: list_active_sessions
     kind: builtin
@@ -106,6 +143,7 @@ tools:
         person: {type: string, description: "Registered person's name, first name, or user id."}
         purpose: {type: string, description: "What to ask or tell them, e.g. 'Ask whether he can send the invoice by Friday.'"}
         opening_line: {type: string, description: Optional first sentence; a polite default is used otherwise.}
+        urgent: {type: boolean, description: "Only when the requester says it's urgent: rings even during the person's quiet hours."}
       required: [person]
 
   - name: schedule_call
@@ -257,6 +295,21 @@ tools:
       properties:
         memory_id: {type: integer}
       required: [memory_id]
+
+  - name: configure_quiet_hours
+    kind: builtin
+    handler: configure_quiet_hours
+    roles: ["*"]
+    description: >-
+      Show or change the current person's quiet hours (when calls others ask for wait and messages
+      arrive silently). mode: default (the household default), custom (with start/end HH:MM), off.
+      Call without arguments to just read the current setting.
+    input_schema:
+      type: object
+      properties:
+        mode: {type: string, enum: [default, custom, "off"]}
+        start: {type: string, description: "HH:MM local, for custom"}
+        end: {type: string, description: "HH:MM local, for custom"}
 
   - name: end_call
     kind: builtin

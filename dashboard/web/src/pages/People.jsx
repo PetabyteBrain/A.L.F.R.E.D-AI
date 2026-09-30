@@ -265,7 +265,8 @@ export default function People({ assistant, me }) {
           onCancel={() => setCallee(null)}
           onDone={(r) => {
             setCallee(null);
-            setNotice(r.status === "pending" ? `Call to ${r.target_name} scheduled for ${r.run_at_local}.`
+            setNotice(r.held_for_quiet_hours ? `${r.target_name} is in quiet hours; the call goes out at ${r.run_at_local}.`
+              : r.status === "pending" ? `Call to ${r.target_name} scheduled for ${r.run_at_local}.`
               : `Dialing ${r.target_name}… watch the Live tab.`);
           }}
         />

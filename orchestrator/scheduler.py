@@ -14,7 +14,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
-from . import db, sessions, usage
+from . import db, quiet, sessions, usage
 from .config import settings
 from .identity import registry
 from .identity.registry import Person
@@ -122,23 +122,41 @@ def _call_brief(target: Person, requester: Person | None, purpose: str) -> str:
 
 # --- create / list / cancel ------------------------------------------------------------------
 
+def _held_by_quiet_hours(target_id: int, requested_by: int | None, urgent: bool,
+                         at: datetime | None = None) -> datetime | None:
+    """When a call someone else asked for must wait for the target's quiet hours to end."""
+    if urgent or requested_by == target_id:
+        return None
+    return quiet.quiet_until(target_id, at)
+
+
 async def request_call(target_ref, *, requested_by: Person | None, purpose: str = "", when: str | None = None,
-                       opening_line: str = "") -> dict:
-    """Create a call request; dials right away if it's due now. Returns the row."""
+                       opening_line: str = "", urgent: bool = False) -> dict:
+    """Create a call request; dials right away if it's due now. Returns the row.
+
+    A call for someone in their quiet hours is moved to when they end, unless the requester is
+    the target themselves or marked it urgent."""
     if not (settings.twilio_enabled and settings.elevenlabs_enabled and settings.public_base_url):
         raise ScheduleError("Telephony isn't fully configured.")
     target = resolve_person(target_ref)
     _check_callable(target)
     run_at = parse_when(when)
+    held = _held_by_quiet_hours(target.id, requested_by.id if requested_by else None, urgent, run_at)
+    if held:
+        run_at = held
     purpose = (purpose or "").strip()[:600]
     now = db.now_iso()
     rid = db.execute(
-        "INSERT INTO scheduled_calls(target_user_id, requested_by, run_at, purpose, opening_line, status, "
-        "created_at, updated_at) VALUES (?,?,?,?,?, 'pending', ?, ?)",
+        "INSERT INTO scheduled_calls(target_user_id, requested_by, run_at, purpose, opening_line, status, urgent, "
+        "created_at, updated_at) VALUES (?,?,?,?,?, 'pending', ?, ?, ?)",
         (target.id, requested_by.id if requested_by else None, run_at.isoformat(timespec="seconds"),
-         purpose, (opening_line or "").strip()[:300], now, now),
+         purpose, (opening_line or "").strip()[:300], int(bool(urgent)), now, now),
     )
     who = requested_by.display_name if requested_by else "system"
+    if held:
+        db.log_activity("call", f"{who}'s call to {target.display_name} waits for their quiet hours to end "
+                                f"({_local(run_at)})", user_id=target.id)
+        return {**get(rid), "held_for_quiet_hours": True}
     if run_at <= _now() + timedelta(seconds=30):
         db.log_activity("call", f"{who} asked to call {target.display_name} now", user_id=target.id)
         await dispatch(rid)
@@ -203,6 +221,12 @@ async def dispatch(request_id: int) -> None:
     requester = registry.get_person(row["requested_by"]) if row["requested_by"] else None
     if target is None:
         _set(request_id, status="failed", result="The person is no longer active.")
+        return
+    held = _held_by_quiet_hours(target.id, row["requested_by"], bool(row["urgent"]))
+    if held:  # e.g. a retry or a change of quiet hours since it was scheduled
+        _set(request_id, run_at=held.isoformat(timespec="seconds"))
+        db.log_activity("call", f"Call to {target.display_name} held until their quiet hours end ({_local(held)})",
+                        user_id=target.id)
         return
     busy = db.query_one("SELECT 1 FROM sessions WHERE user_id = ? AND channel = 'call' AND status = 'active'",
                         (target.id,))
