@@ -37,7 +37,23 @@ CREATE TABLE IF NOT EXISTS user_identifiers (
     type          TEXT NOT NULL CHECK (type IN ('telegram','phone','email','dashboard')),
     value         TEXT NOT NULL,
     password_hash TEXT,                       -- only for type='dashboard'
+    verified_at   TEXT,                       -- phone/telegram only count once verified (code check)
     UNIQUE (type, value)
+);
+
+-- One pending confirmation code per phone/Telegram connection (see identity/verification.py).
+CREATE TABLE IF NOT EXISTS identifier_verifications (
+    identifier_id INTEGER PRIMARY KEY REFERENCES user_identifiers(id) ON DELETE CASCADE,
+    code_hash     TEXT NOT NULL,
+    expires_at    TEXT NOT NULL,
+    attempts      INTEGER NOT NULL DEFAULT 0,
+    requested_by  INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    sent_at       TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS verification_sends (   -- rate limit for code calls/messages
+    identifier_value TEXT NOT NULL,
+    requested_by     INTEGER,
+    ts               TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS sessions (
@@ -262,9 +278,27 @@ def _migrate_sessions_channel_check() -> None:
         conn.close()
 
 
+def _migrate_identifier_verified_at() -> None:
+    """Connections that existed before verification was introduced were already in use: keep
+    them working by marking them verified."""
+    conn = sqlite3.connect(settings.db_path, timeout=10)
+    try:
+        if not conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='user_identifiers'").fetchone():
+            return
+        cols = {r[1] for r in conn.execute("PRAGMA table_info(user_identifiers)")}
+        if "verified_at" in cols:
+            return
+        with conn:
+            conn.execute("ALTER TABLE user_identifiers ADD COLUMN verified_at TEXT")
+            conn.execute("UPDATE user_identifiers SET verified_at = ?", (now_iso(),))
+    finally:
+        conn.close()
+
+
 def init_db() -> None:
     settings.db_path.parent.mkdir(parents=True, exist_ok=True)
     _migrate_sessions_channel_check()
+    _migrate_identifier_verified_at()
     with tx() as conn:
         conn.execute("PRAGMA journal_mode = WAL")
         conn.executescript(SCHEMA)

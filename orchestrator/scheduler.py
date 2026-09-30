@@ -81,7 +81,7 @@ def resolve_person(ref) -> Person:
 
 def _check_callable(target: Person) -> None:
     if not registry.phone_for(target.id):
-        raise ScheduleError(f"{target.display_name} has no phone number in the registry.")
+        raise ScheduleError(f"{target.display_name} has no verified phone number in the registry.")
     if not registry.role_allows_channel(target.role, "call"):
         raise ScheduleError(f"{target.display_name}'s role ({target.role}) has no phone access.")
 
@@ -290,7 +290,7 @@ async def _notify(requester: Person | None, target: Person | None, text: str) ->
     db.log_activity("call", f"Report to {requester.display_name}: {text[:300]}", user_id=requester.id)
     if not settings.telegram_enabled:
         return
-    if not db.query_one("SELECT 1 FROM user_identifiers WHERE user_id = ? AND type = 'telegram'", (requester.id,)):
+    if not registry.telegram_for(requester.id):
         return
     try:
         from .telegram_handler import send_to_user

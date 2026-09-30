@@ -20,6 +20,9 @@ from ..config import settings
 log = logging.getLogger(__name__)
 
 IDENTIFIER_TYPES = ("telegram", "phone", "email", "dashboard")
+# Connections that let someone reach (or be reached by) the assistant only count once their
+# owner proved control of them with a confirmation code (identity/verification.py).
+VERIFY_TYPES = ("phone", "telegram")
 # The web chat lives in the dashboard, so it follows dashboard access.
 CHANNEL_PERMISSION = {"telegram": "can_telegram", "call": "can_call", "dashboard": "can_dashboard",
                       "web": "can_dashboard"}
@@ -77,10 +80,17 @@ def lookup(id_type: str, value: str) -> Person | None:
     """Pure lookup — no permission check, no logging."""
     row = db.query_one(
         "SELECT u.id, u.display_name, u.role FROM user_identifiers i "
-        "JOIN users u ON u.id = i.user_id WHERE i.type = ? AND i.value = ? AND u.active = 1",
+        "JOIN users u ON u.id = i.user_id "
+        "WHERE i.type = ? AND i.value = ? AND u.active = 1 AND i.verified_at IS NOT NULL",
         (id_type, normalize(id_type, value)),
     )
     return Person(**row) if row else None
+
+
+def is_pending_verification(id_type: str, value: str) -> bool:
+    return bool(db.query_one(
+        "SELECT 1 FROM user_identifiers WHERE type = ? AND value = ? AND verified_at IS NULL",
+        (id_type, normalize(id_type, value))))
 
 
 def role_allows_channel(role: str, channel: str) -> bool:
@@ -93,7 +103,8 @@ def resolve(channel: str, id_type: str, value: str, *, record_success: bool = Fa
     """Resolve an inbound identifier for a channel. Returns None → caller must drop silently."""
     person = lookup(id_type, value)
     if person is None:
-        _record_attempt(channel, f"{id_type}:{value}", False, "unregistered")
+        detail = "not yet verified" if is_pending_verification(id_type, value) else "unregistered"
+        _record_attempt(channel, f"{id_type}:{value}", False, detail)
         return None
     if not role_allows_channel(person.role, channel):
         _record_attempt(channel, f"{id_type}:{value}", False, f"role '{person.role}' has no {channel} access")
@@ -109,12 +120,24 @@ def get_person(user_id: int) -> Person | None:
 
 
 def identifiers_for(user_id: int) -> list[dict]:
-    return db.query("SELECT id, type, value FROM user_identifiers WHERE user_id = ? ORDER BY type", (user_id,))
+    return db.query("SELECT id, type, value, verified_at FROM user_identifiers WHERE user_id = ? ORDER BY type",
+                    (user_id,))
+
+
+def _verified_value(user_id: int, id_type: str) -> str | None:
+    row = db.query_one("SELECT value FROM user_identifiers WHERE user_id = ? AND type = ? "
+                       "AND verified_at IS NOT NULL ORDER BY id LIMIT 1", (user_id, id_type))
+    return row["value"] if row else None
 
 
 def phone_for(user_id: int) -> str | None:
-    row = db.query_one("SELECT value FROM user_identifiers WHERE user_id = ? AND type = 'phone' LIMIT 1", (user_id,))
-    return row["value"] if row else None
+    """The number Alfred may call: verified ones only."""
+    return _verified_value(user_id, "phone")
+
+
+def telegram_for(user_id: int) -> str | None:
+    """The Telegram ID Alfred may message: verified ones only."""
+    return _verified_value(user_id, "telegram")
 
 
 # --- dashboard passwords -----------------------------------------------------------------
@@ -273,20 +296,30 @@ def _identifier_conflict(id_type: str, value: str, exclude_id: int | None = None
         raise RegistryError(f"That {id_type} is already linked to a registered person.")
 
 
-def add_identifier(user_id: int, id_type: str, value: str, password_hash: str | None = None) -> int:
+def add_identifier(user_id: int, id_type: str, value: str, password_hash: str | None = None,
+                   *, verified: bool = False) -> int:
+    """New phone/Telegram connections start unverified unless `verified` (trusted CLI)."""
     v = validate_identifier(id_type, value)
     _identifier_conflict(id_type, v)
     if id_type == "dashboard" and db.query_one(
             "SELECT 1 FROM user_identifiers WHERE user_id = ? AND type = 'dashboard'", (user_id,)):
         raise RegistryError("This person already has a dashboard login.")
+    trusted = verified or id_type not in VERIFY_TYPES
     return db.execute(
-        "INSERT INTO user_identifiers(user_id, type, value, password_hash) VALUES (?,?,?,?)",
-        (user_id, id_type, v, password_hash),
+        "INSERT INTO user_identifiers(user_id, type, value, password_hash, verified_at) VALUES (?,?,?,?,?)",
+        (user_id, id_type, v, password_hash, db.now_iso() if trusted else None),
     )
 
 
 def get_identifier(identifier_id: int) -> dict | None:
-    return db.query_one("SELECT id, user_id, type, value FROM user_identifiers WHERE id = ?", (identifier_id,))
+    return db.query_one("SELECT id, user_id, type, value, verified_at FROM user_identifiers WHERE id = ?",
+                        (identifier_id,))
+
+
+def mark_verified(identifier_id: int) -> None:
+    with db.tx() as conn:
+        conn.execute("UPDATE user_identifiers SET verified_at = ? WHERE id = ?", (db.now_iso(), identifier_id))
+        conn.execute("DELETE FROM identifier_verifications WHERE identifier_id = ?", (identifier_id,))
 
 
 def update_identifier(identifier_id: int, value: str) -> dict:
@@ -295,6 +328,13 @@ def update_identifier(identifier_id: int, value: str) -> dict:
         raise RegistryError("Unknown connection.")
     v = validate_identifier(ident["type"], value)
     _identifier_conflict(ident["type"], v, exclude_id=identifier_id)
+    if v == ident["value"]:
+        return ident
+    if ident["type"] in VERIFY_TYPES:  # a new number/ID has to be confirmed again
+        with db.tx() as conn:
+            conn.execute("UPDATE user_identifiers SET value = ?, verified_at = NULL WHERE id = ?", (v, identifier_id))
+            conn.execute("DELETE FROM identifier_verifications WHERE identifier_id = ?", (identifier_id,))
+        return {**ident, "value": v, "verified_at": None}
     db.execute("UPDATE user_identifiers SET value = ? WHERE id = ?", (v, identifier_id))
     return {**ident, "value": v}
 
@@ -323,8 +363,8 @@ def set_dashboard_login(user_id: int, username: str, password: str | None) -> No
     else:
         if password is None:
             raise RegistryError("A new dashboard login needs a password.")
-        db.execute("INSERT INTO user_identifiers(user_id, type, value, password_hash) VALUES (?,?,?,?)",
-                   (user_id, "dashboard", uname, hash_password(password)))
+        db.execute("INSERT INTO user_identifiers(user_id, type, value, password_hash, verified_at) "
+                   "VALUES (?,?,?,?,?)", (user_id, "dashboard", uname, hash_password(password), db.now_iso()))
 
 
 def check_password(user_id: int, password: str) -> bool:
@@ -337,17 +377,18 @@ def check_password(user_id: int, password: str) -> bool:
 
 
 def upsert_identifier(user_id: int, id_type: str, value: str, password_hash: str | None = None) -> None:
-    """CLI/bootstrap only: attach (or re-attach) an identifier without conflict errors."""
+    """CLI/bootstrap only (trusted, so verified): attach or re-attach an identifier."""
     value = normalize(id_type, value)
     existing = db.query_one("SELECT id, user_id FROM user_identifiers WHERE type = ? AND value = ?", (id_type, value))
     if existing:
         db.execute(
-            "UPDATE user_identifiers SET user_id = ?, password_hash = COALESCE(?, password_hash) WHERE id = ?",
-            (user_id, password_hash, existing["id"]),
+            "UPDATE user_identifiers SET user_id = ?, password_hash = COALESCE(?, password_hash), "
+            "verified_at = COALESCE(verified_at, ?) WHERE id = ?",
+            (user_id, password_hash, db.now_iso(), existing["id"]),
         )
     else:
-        db.execute("INSERT INTO user_identifiers(user_id, type, value, password_hash) VALUES (?,?,?,?)",
-                   (user_id, id_type, value, password_hash))
+        db.execute("INSERT INTO user_identifiers(user_id, type, value, password_hash, verified_at) VALUES (?,?,?,?,?)",
+                   (user_id, id_type, value, password_hash, db.now_iso()))
 
 
 def bootstrap_admin() -> None:

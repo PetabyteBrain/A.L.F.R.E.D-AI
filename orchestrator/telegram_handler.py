@@ -15,12 +15,17 @@ from telegram.ext import Application, ContextTypes, MessageHandler, filters
 
 from . import agent_core, db, sessions
 from .config import settings
-from .identity import registry
+from .identity import registry, verification
 
 log = logging.getLogger(__name__)
 
 TG_LIMIT = 4000
 _app: Application | None = None
+_bot_username: str | None = None
+
+
+def bot_username() -> str | None:
+    return _bot_username
 
 
 def _chunks(text: str) -> list[str]:
@@ -60,8 +65,19 @@ async def on_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
 
     person = registry.resolve("telegram", "telegram", str(user.id))
     if person is None:
-        log.info("Dropped Telegram message from unregistered id %s (@%s)", user.id, user.username)
-        return  # silent by design
+        # The one exception to silence: an ID with a pending confirmation code (added on the
+        # dashboard) sending that code. Everyone else still gets no reply at all.
+        status, verified = verification.claim_telegram(str(user.id), msg.text or "")
+        if status == "verified":
+            first = verified.display_name.split()[0] if verified else ""
+            await msg.reply_text(f"Thank you{', ' + first if first else ''}. This Telegram account is now "
+                                 f"verified; {settings.assistant_name} at your service.")
+        elif status == "wrong":
+            await msg.reply_text("That isn't the code shown on the dashboard. Please send the 6-digit code "
+                                 "exactly as shown.")
+        else:
+            log.info("Dropped Telegram message from unregistered id %s (@%s)", user.id, user.username)
+        return
 
     text = msg.text or msg.caption
     if not text:
@@ -90,19 +106,19 @@ async def send_to_user(user_id: int, text: str, note: str | None = None, record:
     """Proactive message to a registered person (tools, n8n callbacks)."""
     if _app is None:
         raise RuntimeError("Telegram bot is not running.")
-    row = db.query_one("SELECT value FROM user_identifiers WHERE user_id = ? AND type = 'telegram' LIMIT 1", (user_id,))
-    if not row:
-        raise ValueError(f"User {user_id} has no Telegram ID in the registry.")
-    session_id = sessions.telegram_session_for(user_id, row["value"])
+    tg = registry.telegram_for(user_id)
+    if not tg:
+        raise ValueError(f"User {user_id} has no verified Telegram ID in the registry.")
+    session_id = sessions.telegram_session_for(user_id, tg)
     for part in _chunks(text):
-        await _app.bot.send_message(chat_id=int(row["value"]), text=part, disable_web_page_preview=True)
+        await _app.bot.send_message(chat_id=int(tg), text=part, disable_web_page_preview=True)
     if record:
         sessions.add_turn(session_id, "assistant", text)
     db.log_activity("message", f"Proactive Telegram message{f' ({note})' if note else ''}", user_id, session_id)
 
 
 async def start() -> None:
-    global _app
+    global _app, _bot_username
     if not settings.telegram_enabled:
         log.warning("TELEGRAM_BOT_TOKEN not set — Telegram channel disabled.")
         db.set_health("telegram", False, "not configured")
@@ -113,6 +129,7 @@ async def start() -> None:
     await _app.start()
     await _app.updater.start_polling(allowed_updates=["message"])
     me = await _app.bot.get_me()
+    _bot_username = me.username
     db.set_health("telegram", True, f"polling as @{me.username}")
     log.info("Telegram bot @%s polling", me.username)
 

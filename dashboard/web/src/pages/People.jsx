@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { api } from "../api.js";
 import { fmtTime } from "../format.js";
 import { usePoll } from "../hooks.js";
@@ -22,11 +22,11 @@ function PersonEditor({ personId, roles, me, onClose, onChanged }) {
     setForm({ display_name: view.display_name, role: view.role, active: view.active, notes: view.notes || "" });
     setLogin({ username: view.dashboard_username || "", password: "" });
   };
-  useEffect(() => {
-    api("/people")
-      .then((all) => { const v = all.find((x) => x.id === personId); if (v) load(v); else setMsg({ ok: "", err: "Person not found." }); })
-      .catch((e) => setMsg({ ok: "", err: e.message }));
-  }, [personId]);
+  const refresh = useCallback(() => api("/people")
+    .then((all) => { const v = all.find((x) => x.id === personId); if (v) load(v); else setMsg({ ok: "", err: "Person not found." }); })
+    .catch((e) => setMsg({ ok: "", err: e.message })), [personId]);
+  useEffect(() => { refresh(); }, [refresh]);
+  const changed = useCallback(() => { refresh(); onChanged(); }, [refresh, onChanged]);
   useEffect(() => {
     const onKey = (e) => { if (e.key === "Escape" && !busy && !confirmDelete) onClose(); };
     window.addEventListener("keydown", onKey);
@@ -99,6 +99,9 @@ function PersonEditor({ personId, roles, me, onClose, onChanged }) {
         <Connections
           connections={p.connections}
           busy={busy}
+          base="/connections"
+          canOverride
+          onChanged={changed}
           onAdd={(type, value) => run(() => api(`/people/${p.id}/connections`, { method: "POST", body: { type, value } }), "Connection added.")}
           onUpdate={(id, value) => run(() => api(`/connections/${Number(id)}`, { method: "PATCH", body: { value } }), "Connection updated.")}
           onRemove={(c) => run(() => api(`/connections/${Number(c.id)}`, { method: "DELETE" }), "Connection removed.")}
@@ -230,7 +233,7 @@ export default function People({ assistant, me }) {
               <div className="meta">{p.connections.map((i) => `${i.type}: ${i.value}`).join(" · ") || "no connections"}</div>
             </div>
             <div className="row-actions">
-              {p.active && p.connections.some((i) => i.type === "phone") && (
+              {p.active && p.connections.some((i) => i.type === "phone" && i.verified) && (
                 <button className="btn small" onClick={() => setCallee(p)}>Call</button>
               )}
               <button className="btn primary small" onClick={() => setEditing(p.id)}>Edit</button>
@@ -257,7 +260,7 @@ export default function People({ assistant, me }) {
       {callee && (
         <CallDialog
           assistant={assistant}
-          targets={(people || []).filter((x) => x.active && x.connections.some((i) => i.type === "phone"))}
+          targets={(people || []).filter((x) => x.active && x.connections.some((i) => i.type === "phone" && i.verified))}
           initialTarget={callee}
           onCancel={() => setCallee(null)}
           onDone={(r) => {

@@ -539,7 +539,16 @@ select option { background: var(--bg); color: var(--text-strong); }
 .connections { display: grid; gap: 8px; }
 .conn-row { display: grid; grid-template-columns: 90px 1fr auto auto; gap: 8px; align-items: center; }
 .conn-row.add { grid-template-columns: 120px 1fr auto; margin-top: 4px; padding-top: 10px; border-top: 1px dashed var(--line); }
-.conn-type { font: 600 10px var(--font-display); letter-spacing: .18em; text-transform: uppercase; color: var(--accent); }
+.conn-type { font: 600 10px var(--font-display); letter-spacing: .18em; text-transform: uppercase; color: var(--accent);
+  display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
+.conn-type .tag { font-size: 8px; padding: 2px 5px; }
+.conn-item + .conn-item { margin-top: 8px; }
+.verify { margin: 6px 0 2px 98px; padding: 8px 10px; border-left: 2px solid rgb(var(--warn-rgb) / .6); background: rgb(var(--warn-rgb) / .05); }
+.verify-actions, .verify-code { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.verify-actions > span, .verify-code > span.small { flex: 1 1 260px; }
+.verify-code input { width: 120px; text-align: center; font: 600 18px var(--font-mono); letter-spacing: .3em; }
+.big-code { font: 600 22px var(--font-mono); letter-spacing: .3em; color: var(--accent); padding: 4px 10px;
+  border: 1px solid var(--line-strong); background: rgb(var(--accent-rgb) / .06); user-select: all; }
 .hint { margin-top: -2px; }
 .profile-grid { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 28px; }
 .modal.editor { width: min(760px, 100%); max-height: calc(100vh - 32px); overflow-y: auto; gap: 10px; }
@@ -549,7 +558,8 @@ select option { background: var(--bg); color: var(--text-strong); }
 @media (max-width: 700px) {
   .form-grid, .profile-grid { grid-template-columns: 1fr; }
   .conn-row { grid-template-columns: 1fr auto auto; }
-  .conn-row .conn-type { grid-column: 1 / -1; }
+  .conn-row .conn-type { grid-column: 1 / -1; flex-direction: row; align-items: center; }
+  .verify { margin-left: 0; }
   .conn-row.add { grid-template-columns: 1fr; }
   .person-row { flex-direction: column; align-items: stretch; }
 }

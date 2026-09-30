@@ -63,6 +63,8 @@ export default function Profile({ assistant, refreshMe }) {
           <Connections
             connections={me.connections}
             busy={busy}
+            base="/profile/connections"
+            onChanged={reload}
             onAdd={(type, value) => run(() => api("/profile/connections", { method: "POST", body: { type, value } }), "Connection added.")}
             onUpdate={(id, value) => run(() => api(`/profile/connections/${Number(id)}`, { method: "PATCH", body: { value } }), "Connection updated.")}
             onRemove={(c) => run(() => api(`/profile/connections/${Number(c.id)}`, { method: "DELETE" }), "Connection removed.")}

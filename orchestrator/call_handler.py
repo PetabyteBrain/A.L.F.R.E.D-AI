@@ -175,7 +175,7 @@ async def place_outbound_call(user_id: int, *, opening_line: str, reason: str = 
     person = registry.get_person(user_id)
     number = registry.phone_for(user_id)
     if person is None or not number:
-        raise ValueError(f"User {user_id} is not registered with a phone number.")
+        raise ValueError(f"User {user_id} has no verified phone number.")
     if not registry.role_allows_channel(person.role, "call"):
         raise PermissionError(f"Role '{person.role}' has no call access.")
 

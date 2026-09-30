@@ -54,10 +54,10 @@ async def _deliver(body: dict) -> None:
         return
     from .telegram_handler import send_to_user
     try:
-        tg = db.query_one("SELECT value FROM user_identifiers WHERE user_id = ? AND type = 'telegram'", (person.id,))
+        tg = registry.telegram_for(person.id)
         if not tg:
             return
-        tg_session = sessions.telegram_session_for(person.id, tg["value"])
+        tg_session = sessions.telegram_session_for(person.id, tg)
         note = json.dumps({k: body.get(k) for k in ("correlation_id", "message", "result")}, ensure_ascii=False)[:6000]
         reply = await agent_core.respond(
             person, "telegram", tg_session,

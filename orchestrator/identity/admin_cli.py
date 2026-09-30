@@ -111,20 +111,20 @@ def main(argv: list[str] | None = None) -> None:
     elif args.cmd == "add":
         uid = registry.add_user(args.name, args.role, args.notes)
         if args.telegram:
-            registry.add_identifier(uid, "telegram", args.telegram)
+            registry.add_identifier(uid, "telegram", args.telegram, verified=True)
         if args.phone:
-            registry.add_identifier(uid, "phone", args.phone)
+            registry.add_identifier(uid, "phone", args.phone, verified=True)
         if args.email:
-            registry.add_identifier(uid, "email", args.email)
+            registry.add_identifier(uid, "email", args.email, verified=True)
         if args.dashboard:
-            registry.add_identifier(uid, "dashboard", args.dashboard, registry.hash_password(_prompt_password()))
+            registry.add_identifier(uid, "dashboard", args.dashboard, registry.hash_password(_prompt_password()), verified=True)
         db.log_activity("system", f"Registry: added {args.name} ({args.role})", user_id=uid)
         print(f"Added #{uid}.")
         _print_people()
 
     elif args.cmd == "link":
         pw_hash = registry.hash_password(_prompt_password()) if args.type == "dashboard" else None
-        registry.add_identifier(args.user_id, args.type, args.value, pw_hash)
+        registry.add_identifier(args.user_id, args.type, args.value, pw_hash, verified=True)
         print("Linked.")
 
     elif args.cmd == "unlink":

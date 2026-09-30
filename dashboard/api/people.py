@@ -8,6 +8,8 @@ Rules enforced here, not in the UI:
 - The last active admin can't be demoted, disabled or deleted; nobody can delete themselves or
   remove their own dashboard login.
 - Any change to someone's role, status, password or login revokes their dashboard sessions.
+- New or changed phone/Telegram connections stay inactive until verified with a code
+  (orchestrator/identity/verification.py); only admins can mark one verified by hand.
 """
 from __future__ import annotations
 
@@ -17,7 +19,7 @@ from fastapi import APIRouter, Depends, HTTPException, Path, Request
 from pydantic import BaseModel, ConfigDict, Field
 
 from orchestrator import db
-from orchestrator.identity import registry
+from orchestrator.identity import registry, verification
 from orchestrator.identity.registry import Person, RegistryError
 
 from . import security
@@ -48,9 +50,20 @@ def _person_view(user_id: int) -> dict:
     row = db.query_one("SELECT id, display_name, role, active, notes, created_at FROM users WHERE id = ?", (user_id,))
     if not row:
         raise HTTPException(status_code=404, detail="Unknown person.")
-    idents = db.query("SELECT id, type, value FROM user_identifiers WHERE user_id = ? ORDER BY type, id", (user_id,))
+    idents = db.query("SELECT id, type, value, verified_at FROM user_identifiers WHERE user_id = ? "
+                      "ORDER BY type, id", (user_id,))
     row["active"] = bool(row["active"])
-    row["connections"] = [i for i in idents if i["type"] != "dashboard"]
+    row["connections"] = []
+    for i in idents:
+        if i["type"] == "dashboard":
+            continue
+        needs = i["type"] in registry.VERIFY_TYPES
+        pend = verification.pending(i["id"]) if needs and not i["verified_at"] else None
+        row["connections"].append({
+            "id": i["id"], "type": i["type"], "value": i["value"],
+            "needs_verification": needs, "verified": bool(i["verified_at"]) or not needs,
+            "pending_until": pend["expires_at"] if pend else None,
+        })
     login = next((i for i in idents if i["type"] == "dashboard"), None)
     row["dashboard_username"] = login["value"] if login else None
     last = db.query_one("SELECT MAX(last_seen_at) AS t FROM dashboard_sessions WHERE user_id = ?", (user_id,))
@@ -80,6 +93,10 @@ class ConnectionCreate(Strict):
 
 class ConnectionUpdate(Strict):
     value: str = Field(min_length=1, max_length=254)
+
+
+class CodeCheck(Strict):
+    code: str = Field(min_length=1, max_length=12)
 
 
 class LoginSet(Strict):
@@ -180,6 +197,42 @@ async def admin_delete_connection(identifier_id: int = Path(ge=1), person: Perso
     return _person_view(ident["user_id"])
 
 
+async def _start_verification(ident: dict, person: Person) -> dict:
+    try:
+        return await verification.start(ident["id"], person)
+    except RegistryError as e:
+        raise _fail(e)
+
+
+def _check_code(ident: dict, code: str) -> dict:
+    try:
+        verification.check(ident["id"], code)
+    except RegistryError as e:
+        raise _fail(e)
+    return {"ok": True}
+
+
+@router.post("/connections/{identifier_id}/verify")
+async def admin_start_verification(identifier_id: int = Path(ge=1), person: Person = Depends(admin_only)) -> dict:
+    return await _start_verification(_editable_connection(identifier_id, None), person)
+
+
+@router.post("/connections/{identifier_id}/verify/check")
+async def admin_check_code(body: CodeCheck, identifier_id: int = Path(ge=1),
+                           person: Person = Depends(admin_only)) -> dict:
+    return _check_code(_editable_connection(identifier_id, None), body.code)
+
+
+@router.post("/connections/{identifier_id}/mark-verified")
+async def admin_mark_verified(identifier_id: int = Path(ge=1), person: Person = Depends(admin_only)) -> dict:
+    """Admin override, e.g. for a number the admin knows personally. Logged."""
+    ident = _editable_connection(identifier_id, None)
+    registry.mark_verified(identifier_id)
+    db.log_activity("access", f"Registry: {person.display_name} marked a {ident['type']} of #{ident['user_id']} "
+                    "verified without a code", user_id=ident["user_id"])
+    return _person_view(ident["user_id"])
+
+
 @router.put("/people/{user_id}/login")
 async def admin_set_login(body: LoginSet, request: Request, user_id: int = Path(ge=1),
                           person: Person = Depends(admin_only)) -> dict:
@@ -268,6 +321,17 @@ async def delete_own_connection(identifier_id: int = Path(ge=1), person: Person 
     registry.delete_identifier(identifier_id)
     db.log_activity("system", f"Profile: {person.display_name} removed a {ident['type']}", user_id=person.id)
     return await get_profile(person)
+
+
+@router.post("/profile/connections/{identifier_id}/verify")
+async def start_own_verification(identifier_id: int = Path(ge=1), person: Person = Depends(current_person)) -> dict:
+    return await _start_verification(_editable_connection(identifier_id, person.id), person)
+
+
+@router.post("/profile/connections/{identifier_id}/verify/check")
+async def check_own_code(body: CodeCheck, identifier_id: int = Path(ge=1),
+                         person: Person = Depends(current_person)) -> dict:
+    return _check_code(_editable_connection(identifier_id, person.id), body.code)
 
 
 @router.post("/profile/password")

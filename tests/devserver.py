@@ -28,7 +28,7 @@ def seed() -> None:
     admin = db.query_one("SELECT id FROM users WHERE role='admin'")["id"]
     registry.upsert_identifier(admin, "dashboard", "admin", registry.hash_password("devpassword123"))
     friend = registry.add_user("Alex Friend", "friend")
-    registry.add_identifier(friend, "telegram", "200000002")
+    registry.add_identifier(friend, "telegram", "200000002", verified=True)
 
     s = sessions.start_session(admin, "call", external_id="CAdemo")
     sessions.add_turn(s, "assistant", "Good evening, sir. Alfred here. How may I be of service?")

@@ -239,7 +239,8 @@ async def call_targets(person: Person = Depends(current_person)) -> list[dict]:
         return []
     rows = db.query(
         "SELECT DISTINCT u.id, u.display_name FROM users u JOIN user_identifiers i ON i.user_id = u.id "
-        "JOIN roles r ON r.name = u.role WHERE u.active = 1 AND i.type = 'phone' AND r.can_call = 1 "
+        "JOIN roles r ON r.name = u.role WHERE u.active = 1 AND i.type = 'phone' AND i.verified_at IS NOT NULL "
+        "AND r.can_call = 1 "
         "ORDER BY u.display_name")
     return rows
 

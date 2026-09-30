@@ -76,7 +76,8 @@ async def recent_activity(ctx, limit: int = 15) -> list[dict]:
 async def list_people(ctx) -> list[dict]:
     people = db.query("SELECT id, display_name, role FROM users WHERE active = 1 ORDER BY id")
     for p in people:
-        types = db.query("SELECT DISTINCT type FROM user_identifiers WHERE user_id = ?", (p["id"],))
+        types = db.query("SELECT DISTINCT type FROM user_identifiers WHERE user_id = ? AND verified_at IS NOT NULL",
+                         (p["id"],))
         p["reachable_via"] = sorted(t["type"] for t in types if t["type"] in ("telegram", "phone"))
     return people
 

@@ -35,8 +35,8 @@ def setup_db():
     admin = db.query_one("SELECT id FROM users WHERE role='admin'")["id"]
     registry.upsert_identifier(admin, "dashboard", "admin", registry.hash_password("correct horse battery"))
     friend = registry.add_user("Friend Person", "friend")
-    registry.add_identifier(friend, "telegram", "22222222")
-    registry.add_identifier(friend, "phone", "+41 78 000 00 00")
+    registry.add_identifier(friend, "telegram", "22222222", verified=True)
+    registry.add_identifier(friend, "phone", "+41 78 000 00 00", verified=True)
     yield
 
 
@@ -912,3 +912,81 @@ def test_every_call_opens_with_recording_notice():
     assert ch.with_recording_notice("Good morning, Max. Alfred here.") == \
         f"Good morning, Max. Alfred here. {ch.RECORDING_NOTICE}"
     assert ch.with_recording_notice(greeting) == greeting            # never said twice
+
+
+def test_connection_verification(monkeypatch):
+    from fastapi.testclient import TestClient
+    from orchestrator.identity import verification
+    from orchestrator.main import app
+    from orchestrator.telegram_handler import on_message  # noqa: F401  (import check)
+    calls = []
+
+    async def fake_call(number, code):
+        calls.append((number, code))
+    monkeypatch.setattr(verification, "_call_with_code", fake_call)
+
+    with TestClient(app) as c:
+        c.post("/api/login", json={"username": "admin", "password": "correct horse battery"}, headers=CSRF)
+        me = c.post("/api/profile/connections", json={"type": "phone", "value": "079 000 01 02"}, headers=CSRF).json()
+        phone = next(x for x in me["connections"] if x["value"] == "+41790000102")
+        assert phone["needs_verification"] and not phone["verified"] and phone["pending_until"] is None
+        # unverified: can't call in, isn't called
+        assert registry.lookup("phone", "+41790000102") is None
+        assert registry.resolve("call", "phone", "+41790000102") is None
+        assert db.query_one("SELECT detail FROM access_attempts ORDER BY id DESC LIMIT 1")["detail"] == "not yet verified"
+
+        r = c.post(f"/api/profile/connections/{phone['id']}/verify", headers=CSRF).json()
+        assert r["method"] == "call" and "code" not in r            # a phone code is never shown on screen
+        number, code = calls[-1]
+        assert number == "+41790000102" and len(code) == 6
+        assert c.post(f"/api/profile/connections/{phone['id']}/verify", headers=CSRF).status_code == 400  # cooldown
+        wrong = "000000" if code != "000000" else "111111"
+        r = c.post(f"/api/profile/connections/{phone['id']}/verify/check", json={"code": wrong}, headers=CSRF)
+        assert r.status_code == 400 and "4 tries left" in r.json()["detail"]
+        assert c.post(f"/api/profile/connections/{phone['id']}/verify/check", json={"code": code},
+                      headers=CSRF).status_code == 200
+        assert registry.lookup("phone", "+41790000102") is not None
+
+        # changing the number makes it unverified again
+        me = c.patch(f"/api/profile/connections/{phone['id']}", json={"value": "079 000 01 03"}, headers=CSRF).json()
+        assert not next(x for x in me["connections"] if x["id"] == phone["id"])["verified"]
+        assert registry.lookup("phone", "+41790000103") is None
+
+        # Telegram: code shown on the dashboard, proven by sending it from that account
+        me = c.post("/api/profile/connections", json={"type": "telegram", "value": "987654321"}, headers=CSRF).json()
+        tg = next(x for x in me["connections"] if x["value"] == "987654321")
+        r = c.post(f"/api/profile/connections/{tg['id']}/verify", headers=CSRF).json()
+        assert r["method"] == "telegram" and len(r["code"]) == 6
+        assert verification.claim_telegram("55555", r["code"]) == ("none", None)      # stranger: stay silent
+        assert verification.claim_telegram("987654321", "hello")[0] == "wrong"
+        status, who = verification.claim_telegram("987654321", f"/start {r['code']}")
+        assert status == "verified" and who.is_admin
+        assert registry.telegram_for(who.id) in ("111", "987654321") and registry.lookup("telegram", "987654321")
+        assert verification.claim_telegram("987654321", r["code"]) == ("none", None)   # nothing pending any more
+
+        # admin override, admin only
+        me = c.post("/api/profile/connections", json={"type": "phone", "value": "079 000 01 04"}, headers=CSRF).json()
+        pid = next(x for x in me["connections"] if x["value"] == "+41790000104")["id"]
+        view = c.post(f"/api/connections/{pid}/mark-verified", headers=CSRF).json()
+        assert next(x for x in view["connections"] if x["id"] == pid)["verified"]
+        # email needs no code
+        me = c.post("/api/profile/connections", json={"type": "email", "value": "max@example.com"}, headers=CSRF).json()
+        assert next(x for x in me["connections"] if x["type"] == "email")["verified"]
+
+
+def test_verification_rate_limit_per_connection(monkeypatch):
+    from orchestrator.identity import verification
+    async def fake_call(number, code):
+        pass
+    monkeypatch.setattr(verification, "_call_with_code", fake_call)
+    monkeypatch.setattr(verification, "RESEND_AFTER", verification.timedelta(0))
+    admin = registry.lookup("telegram", "111")
+    iid = registry.add_identifier(admin.id, "phone", "079 000 01 05")
+    import asyncio
+    for _ in range(verification.MAX_SENDS_PER_CONNECTION):
+        asyncio.run(verification.start(iid, admin))
+    try:
+        asyncio.run(verification.start(iid, admin))
+        raise AssertionError("expected the daily limit")
+    except registry.RegistryError as e:
+        assert "Too many codes" in str(e)
