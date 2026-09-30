@@ -5,6 +5,7 @@ import { usePoll } from "../hooks.js";
 import { Empty, ErrorNote, Tag } from "../components/common.jsx";
 import { Panel } from "../components/hud.jsx";
 import CallQueue from "../components/CallQueue.jsx";
+import Reminders from "../components/Reminders.jsx";
 
 export default function Tasks({ isAdmin, me, assistant }) {
   const { data: t, error, reload } = usePoll(() => api("/tasks"), 30000);
@@ -37,6 +38,7 @@ export default function Tasks({ isAdmin, me, assistant }) {
   return (
     <Panel code="04" title="Tasks & calls">
       <ErrorNote error={error || formError} />
+      <Reminders me={me} assistant={assistant} />
       <CallQueue me={me} assistant={assistant} />
       <h3 className="sub">Tasks</h3>
       {isAdmin && (

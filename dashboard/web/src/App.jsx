@@ -21,7 +21,7 @@ const TABS = [
   { id: "live", label: "Live", title: "Live operations", kicker: "Channels in progress", Page: Live },
   { id: "chat", label: "Chat", title: "Chat", kicker: "Talk to your butler", Page: Chat },
   { id: "history", label: "Archive", title: "Archive", kicker: "Recordings & transcripts", Page: Recordings },
-  { id: "tasks", label: "Tasks", title: "Tasks & calls", kicker: "Queue & schedule", Page: Tasks },
+  { id: "tasks", label: "Tasks", title: "Tasks & calls", kicker: "Reminders, calls & tasks", Page: Tasks },
   { id: "activity", label: "Log", title: "Event log", kicker: "Everything that happened", Page: Activity },
   { id: "health", label: "Systems", title: "Systems", kicker: "Diagnostics", Page: Health },
   { id: "people", label: "Personnel", title: "Personnel", kicker: "Registry & access", Page: People, admin: true },

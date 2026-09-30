@@ -990,3 +990,112 @@ def test_verification_rate_limit_per_connection(monkeypatch):
         raise AssertionError("expected the daily limit")
     except registry.RegistryError as e:
         assert "Too many codes" in str(e)
+
+
+def test_reminder_recurrence_keeps_local_time_across_dst():
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    from orchestrator import reminders
+    tz = ZoneInfo("Europe/Zurich")
+    # Saturday 24 Oct 2026 08:00 (CEST) -> Sunday 25 Oct 08:00 (CET, after the clocks go back)
+    sat = datetime(2026, 10, 24, 8, 0, tzinfo=tz)
+    nxt = reminders.next_occurrence(sat, "daily").astimezone(tz)
+    assert (nxt.day, nxt.hour, nxt.minute) == (25, 8, 0)
+    fri = datetime(2026, 10, 23, 8, 0, tzinfo=tz)
+    assert reminders.next_occurrence(fri, "weekdays").astimezone(tz).day == 26          # skips the weekend
+    jan31 = datetime(2027, 1, 31, 9, 0, tzinfo=tz)
+    assert reminders.next_occurrence(jan31, "monthly").astimezone(tz).day == 28           # clamps to Feb
+
+
+def test_reminders_deliver_ack_escalate_and_repeat(monkeypatch):
+    import asyncio
+    from datetime import timedelta
+    from orchestrator import reminders, scheduler, telegram_handler
+    from orchestrator.config import settings
+    admin = registry.lookup("telegram", "111")
+    friend = registry.lookup("telegram", "22222222")
+    sent, calls = [], []
+
+    async def fake_send(user_id, text, note=None, record=True, buttons=None):
+        sent.append((user_id, text, buttons))
+
+    async def fake_request_call(target, *, requested_by, purpose="", when=None, opening_line=""):
+        calls.append((target, purpose))
+        return {}
+    monkeypatch.setattr(telegram_handler, "send_to_user", fake_send)
+    monkeypatch.setattr(scheduler, "request_call", fake_request_call)
+    monkeypatch.setattr(type(settings), "telegram_enabled", property(lambda s: True))
+    monkeypatch.setattr(type(settings), "twilio_enabled", property(lambda s: True))
+    monkeypatch.setattr(type(settings), "elevenlabs_enabled", property(lambda s: True))
+    monkeypatch.setattr(type(settings), "public_base_url", property(lambda s: "https://x.test"), raising=False)
+
+    # friends can't set reminders for other people; admins can
+    try:
+        reminders.create(created_by=friend, text="x", when="2026-12-01T10:00", target_ref=admin.id)
+        raise AssertionError("friend reminded someone else")
+    except reminders.ReminderError:
+        pass
+    try:
+        reminders.create(created_by=admin, text="x", when="2020-01-01T10:00")
+        raise AssertionError("past time accepted")
+    except reminders.ReminderError:
+        pass
+
+    soon = (reminders._now() + timedelta(minutes=5)).astimezone(reminders._tz()).strftime("%Y-%m-%dT%H:%M")
+    r = reminders.create(created_by=admin, text="Water the plants", when=soon, target_ref="Friend",
+                         recurrence="daily", escalate=True)
+    assert r["user_id"] == friend.id and r["status"] == "pending"
+    db.execute("UPDATE reminders SET due_at = ? WHERE id = ?", (reminders._iso(reminders._now()), r["id"]))
+
+    asyncio.run(reminders.tick())
+    assert sent and sent[-1][0] == friend.id and "Water the plants" in sent[-1][1] and "(from Test)" in sent[-1][1]
+    assert sent[-1][2][0][0][1] == f"rem:done:{r['id']}"
+    assert reminders.get(r["id"])["status"] == "sent"
+    nxt = db.query_one("SELECT * FROM reminders WHERE id != ? AND text = 'Water the plants' AND status = 'pending'",
+                       (r["id"],))
+    assert nxt and nxt["recurrence"] == "daily"                                    # series continues
+
+    asyncio.run(reminders.tick())
+    assert len(sent) == 1                                                          # not delivered twice
+    # ignored for 10 minutes -> escalated to a phone call
+    db.execute("UPDATE reminders SET sent_at = ? WHERE id = ?",
+               (reminders._iso(reminders._now() - timedelta(minutes=11)), r["id"]))
+    asyncio.run(reminders.tick())
+    assert calls and calls[-1][0] == friend.id and "not acknowledged" in calls[-1][1]
+    assert reminders.get(r["id"])["status"] == "done"
+
+    # snooze / done from the buttons (only the recipient)
+    try:
+        reminders.acknowledge(nxt["id"], admin.__class__(id=999, display_name="x", role="friend"))
+        raise AssertionError("stranger acknowledged")
+    except reminders.ReminderError:
+        pass
+    s = reminders.acknowledge(nxt["id"], friend, snooze_minutes=10)
+    assert s["status"] == "pending"
+    reminders.cancel(nxt["id"], admin)
+    assert reminders.get(nxt["id"])["status"] == "cancelled"
+
+    # nobody reachable -> failed, not silently lost
+    lonely = registry.add_user("No Channels", "friend")
+    lp = registry.get_person(lonely)
+    r2 = reminders.create(created_by=lp, text="Nothing", when=soon)
+    db.execute("UPDATE reminders SET due_at = ? WHERE id = ?", (reminders._iso(reminders._now()), r2["id"]))
+    asyncio.run(reminders.tick())
+    assert reminders.get(r2["id"])["status"] == "failed"
+
+
+def test_reminders_api():
+    from datetime import datetime, timedelta
+    from fastapi.testclient import TestClient
+    from orchestrator.main import app
+    soon = (datetime.now() + timedelta(days=3)).replace(hour=9, minute=30).strftime("%Y-%m-%dT%H:%M")
+    with TestClient(app) as c:
+        assert c.get("/api/reminders").status_code == 401
+        c.post("/api/login", json={"username": "admin", "password": "correct horse battery"}, headers=CSRF)
+        r = c.post("/api/reminders", json={"text": "Call the bank", "when": soon, "recurrence": "weekly"},
+                   headers=CSRF)
+        assert r.status_code == 200 and r.json()["due_local"].endswith("09:30")
+        rid = r.json()["id"]
+        assert any(x["id"] == rid for x in c.get("/api/reminders").json())
+        assert c.post("/api/reminders", json={"text": "x", "when": "yesterday"}, headers=CSRF).status_code in (400, 422)
+        assert c.delete(f"/api/reminders/{rid}", headers=CSRF).json()["status"] == "cancelled"

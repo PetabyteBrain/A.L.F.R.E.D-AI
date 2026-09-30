@@ -148,6 +148,52 @@ tools:
         request_id: {type: integer}
       required: [request_id]
 
+  - name: set_reminder
+    kind: builtin
+    handler: set_reminder
+    roles: ["*"]
+    description: >-
+      Set a reminder: "remind me at 17:00 to call the bank", "every weekday at 8:30 remind me to
+      take my pills". Delivered on Telegram with Done/Snooze buttons (or by phone with
+      channel=call). escalate=true phones them if the Telegram reminder isn't acknowledged within
+      10 minutes. Resolve relative times against the current local time and pass ISO local time.
+      Admins and cofounders can also set reminders for other registered people.
+    input_schema:
+      type: object
+      properties:
+        text: {type: string, description: What to remind them about, phrased as the reminder itself.}
+        when: {type: string, description: "ISO 8601 local time of the (first) reminder, e.g. 2026-10-01T17:00."}
+        recurrence: {type: string, enum: [none, daily, weekdays, weekly, monthly]}
+        channel: {type: string, enum: [telegram, call], description: Default telegram.}
+        escalate: {type: boolean, description: Phone them if the Telegram reminder isn't acknowledged in 10 minutes.}
+        person: {type: string, description: "Someone else's name or id; omit for the requester."}
+      required: [text, when]
+
+  - name: list_reminders
+    kind: builtin
+    handler: list_reminders
+    roles: ["*"]
+    description: List open reminders (the person's own and those they set for others), with ids.
+    input_schema:
+      type: object
+      properties:
+        include_finished: {type: boolean}
+
+  - name: update_reminder
+    kind: builtin
+    handler: update_reminder
+    roles: ["*"]
+    description: >-
+      Mark a reminder done, snooze it (snooze_minutes), or cancel it (and so end its series), by
+      id from list_reminders.
+    input_schema:
+      type: object
+      properties:
+        reminder_id: {type: integer}
+        action: {type: string, enum: [done, snooze, cancel]}
+        snooze_minutes: {type: integer, description: "For snooze; default 10."}
+      required: [reminder_id, action]
+
   - name: end_call
     kind: builtin
     handler: end_call

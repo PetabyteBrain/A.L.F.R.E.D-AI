@@ -16,12 +16,13 @@ from fastapi.responses import FileResponse, HTMLResponse, PlainTextResponse, Res
 from fastapi.staticfiles import StaticFiles
 
 from dashboard.api.chat import router as chat_router
+from dashboard.api.reminders import router as reminders_router
 from dashboard.api.google import router as google_router
 from dashboard.api.people import router as people_router
 from dashboard.api.routes import router as dashboard_router
 from dashboard.api.security import SecurityMiddleware
 
-from . import call_handler, db, health, n8n_callback, scheduler, sessions, telegram_handler
+from . import call_handler, db, health, n8n_callback, reminders, scheduler, sessions, telegram_handler
 from .config import settings
 from .identity import registry
 from .tools import registry as tool_registry
@@ -51,18 +52,17 @@ async def lifespan(app: FastAPI):
     await telegram_handler.start()
     bg = asyncio.create_task(health.background_loop())
     sched = asyncio.create_task(scheduler.background_loop())
+    remind = asyncio.create_task(reminders.background_loop())
     log.info("%s up — telegram=%s phone=%s n8n=%s model=%s",
              settings.assistant_name, settings.telegram_enabled, settings.twilio_enabled and settings.elevenlabs_enabled,
              settings.n8n_enabled, settings.claude_model)
     try:
         yield
     finally:
-        bg.cancel()
-        sched.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await bg
-        with contextlib.suppress(asyncio.CancelledError):
-            await sched
+        for task in (bg, sched, remind):
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
         await telegram_handler.stop()
         db.log_activity("system", f"{settings.assistant_name} stopped")
 
@@ -83,6 +83,7 @@ app.include_router(dashboard_router)
 app.include_router(people_router)
 app.include_router(google_router)
 app.include_router(chat_router)
+app.include_router(reminders_router)
 def _legal(name: str) -> FileResponse:
     path = WEB_DIR / "legal" / f"{name}.html"
     if not path.is_file():

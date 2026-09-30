@@ -41,6 +41,26 @@ CREATE TABLE IF NOT EXISTS user_identifiers (
     UNIQUE (type, value)
 );
 
+-- Reminders (orchestrator/reminders.py): one row per occurrence.
+CREATE TABLE IF NOT EXISTS reminders (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id      INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,   -- who gets reminded
+    created_by   INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    text         TEXT NOT NULL,
+    due_at       TEXT NOT NULL,                     -- UTC ISO
+    recurrence   TEXT CHECK (recurrence IN ('daily','weekdays','weekly','monthly')),
+    channel      TEXT NOT NULL DEFAULT 'telegram' CHECK (channel IN ('telegram','call')),
+    escalate     INTEGER NOT NULL DEFAULT 0,        -- Telegram not acknowledged in 10 min -> phone call
+    status       TEXT NOT NULL DEFAULT 'pending'
+                 CHECK (status IN ('pending','sending','sent','done','cancelled','failed')),
+    sent_at      TEXT,
+    acked_at     TEXT,
+    escalated_at TEXT,
+    error        TEXT,
+    created_at   TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_reminders_due ON reminders(status, due_at);
+
 -- One pending confirmation code per phone/Telegram connection (see identity/verification.py).
 CREATE TABLE IF NOT EXISTS identifier_verifications (
     identifier_id INTEGER PRIMARY KEY REFERENCES user_identifiers(id) ON DELETE CASCADE,

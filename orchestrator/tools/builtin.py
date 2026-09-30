@@ -90,6 +90,43 @@ async def send_telegram_message(ctx, user_id: int, text: str) -> str:
 
 
 @handler
+async def set_reminder(ctx, text: str, when: str, recurrence: str = "none", channel: str = "telegram",
+                       escalate: bool = False, person: str = "") -> dict:
+    from .. import reminders
+    try:
+        r = reminders.create(created_by=ctx.person, text=text, when=when, target_ref=person or None,
+                             recurrence=recurrence, channel=channel, escalate=escalate)
+    except reminders.ReminderError as e:
+        return {"error": str(e)}
+    return {"reminder_id": r["id"], "for": r["person_name"], "at_local_time": r["due_local"],
+            "recurrence": r["recurrence"] or "once", "channel": r["channel"], "escalate": r["escalate"]}
+
+
+@handler
+async def list_reminders(ctx, include_finished: bool = False) -> list[dict]:
+    from .. import reminders
+    return [{"id": r["id"], "for": r["person_name"], "text": r["text"], "at_local_time": r["due_local"],
+             "recurrence": r["recurrence"] or "once", "channel": r["channel"], "status": r["status"]}
+            for r in reminders.list_for(ctx.person, include_done=include_finished, limit=30)]
+
+
+@handler
+async def update_reminder(ctx, reminder_id: int, action: str, snooze_minutes: int = 10) -> dict:
+    from .. import reminders
+    try:
+        if action == "cancel":
+            r = reminders.cancel(int(reminder_id), ctx.person)
+        elif action in ("done", "snooze"):
+            r = reminders.acknowledge(int(reminder_id), ctx.person,
+                                      snooze_minutes=(snooze_minutes or 10) if action == "snooze" else 0)
+        else:
+            return {"error": "action must be done, snooze or cancel"}
+    except reminders.ReminderError as e:
+        return {"error": str(e)}
+    return {"reminder_id": r["id"], "status": r["status"], "at_local_time": r["due_local"]}
+
+
+@handler
 async def place_call(ctx, person: str, purpose: str = "", opening_line: str = "") -> dict:
     from .. import scheduler
     try:

@@ -9,9 +9,9 @@ import asyncio
 import contextlib
 import logging
 
-from telegram import Update
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.constants import ChatAction, ChatType
-from telegram.ext import Application, ContextTypes, MessageHandler, filters
+from telegram.ext import Application, CallbackQueryHandler, ContextTypes, MessageHandler, filters
 
 from . import agent_core, db, sessions
 from .config import settings
@@ -102,19 +102,51 @@ async def on_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         await msg.reply_text(part, disable_web_page_preview=True)
 
 
-async def send_to_user(user_id: int, text: str, note: str | None = None, record: bool = True) -> None:
-    """Proactive message to a registered person (tools, n8n callbacks)."""
+async def send_to_user(user_id: int, text: str, note: str | None = None, record: bool = True,
+                       buttons: list[list[tuple[str, str]]] | None = None) -> None:
+    """Proactive message to a registered person (tools, n8n callbacks, reminders).
+    `buttons`: rows of (label, callback_data) shown under the last message part."""
     if _app is None:
         raise RuntimeError("Telegram bot is not running.")
     tg = registry.telegram_for(user_id)
     if not tg:
         raise ValueError(f"User {user_id} has no verified Telegram ID in the registry.")
     session_id = sessions.telegram_session_for(user_id, tg)
-    for part in _chunks(text):
-        await _app.bot.send_message(chat_id=int(tg), text=part, disable_web_page_preview=True)
+    parts = _chunks(text)
+    markup = InlineKeyboardMarkup([[InlineKeyboardButton(label, callback_data=data) for label, data in row]
+                                   for row in buttons]) if buttons else None
+    for i, part in enumerate(parts):
+        await _app.bot.send_message(chat_id=int(tg), text=part, disable_web_page_preview=True,
+                                    reply_markup=markup if i == len(parts) - 1 else None)
     if record:
         sessions.add_turn(session_id, "assistant", text)
     db.log_activity("message", f"Proactive Telegram message{f' ({note})' if note else ''}", user_id, session_id)
+
+
+async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Inline buttons under reminders: rem:done:<id> / rem:snooze:<id>."""
+    from . import reminders
+    q = update.callback_query
+    if not q or not q.from_user:
+        return
+    person = registry.resolve("telegram", "telegram", str(q.from_user.id))
+    if person is None:
+        return  # silent, like messages
+    kind, _, rest = (q.data or "").partition(":")
+    action, _, rid = rest.partition(":")
+    if kind != "rem" or not rid.isdigit() or action not in ("done", "snooze"):
+        await q.answer()
+        return
+    try:
+        row = reminders.acknowledge(int(rid), person, snooze_minutes=10 if action == "snooze" else 0)
+    except reminders.ReminderError as e:
+        await q.answer(str(e), show_alert=False)
+        return
+    note = "✓ Done" if action == "done" else f"⏳ Snoozed until {row['due_local'][-5:]}"
+    await q.answer(note)
+    with contextlib.suppress(Exception):
+        await q.edit_message_text(f"{q.message.text}\n{note}", reply_markup=None)
+    db.log_activity("task", f"{person.display_name}: reminder #{rid} {action}", user_id=person.id)
 
 
 async def start() -> None:
@@ -124,10 +156,11 @@ async def start() -> None:
         db.set_health("telegram", False, "not configured")
         return
     _app = Application.builder().token(settings.telegram_bot_token).concurrent_updates(True).build()
+    _app.add_handler(CallbackQueryHandler(on_button))
     _app.add_handler(MessageHandler(filters.ALL, on_message))
     await _app.initialize()
     await _app.start()
-    await _app.updater.start_polling(allowed_updates=["message"])
+    await _app.updater.start_polling(allowed_updates=["message", "callback_query"])
     me = await _app.bot.get_me()
     _bot_username = me.username
     db.set_health("telegram", True, f"polling as @{me.username}")
