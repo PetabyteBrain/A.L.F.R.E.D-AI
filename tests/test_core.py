@@ -1109,3 +1109,74 @@ def test_reminders_api():
         assert any(x["id"] == rid for x in c.get("/api/reminders").json())
         assert c.post("/api/reminders", json={"text": "x", "when": "yesterday"}, headers=CSRF).status_code in (400, 422)
         assert c.delete(f"/api/reminders/{rid}", headers=CSRF).json()["status"] == "cancelled"
+
+
+def test_daily_briefing(monkeypatch):
+    import asyncio, json
+    from datetime import timedelta
+    from types import SimpleNamespace as NS
+    from orchestrator import agent_core, briefing, reminders, telegram_handler
+    from orchestrator.config import settings
+    friend = registry.lookup("telegram", "22222222")
+    sent, prompts = [], []
+
+    async def fake_geo(place):
+        return {"location": "Lucerne, Switzerland", "lat": 47.14, "lon": 7.25}
+
+    async def fake_weather(lat, lon):
+        return {"conditions": "light rain", "high_c": 14, "low_c": 8, "rain_chance_pct": 70, "precip_mm": 3.1}
+
+    async def fake_send(user_id, text, note=None, record=True, buttons=None):
+        sent.append((user_id, text, note))
+
+    class FakeMessages:
+        async def create(self, **kw):
+            prompts.append(kw)
+            return NS(content=[NS(type="text", text="Good morning, Friend. Light rain today.")], usage=None)
+    monkeypatch.setattr(briefing, "geocode", fake_geo)
+    monkeypatch.setattr(briefing, "_weather", fake_weather)
+    monkeypatch.setattr(telegram_handler, "send_to_user", fake_send)
+    monkeypatch.setattr(agent_core, "_client", NS(messages=FakeMessages()))
+    monkeypatch.setattr(type(settings), "anthropic_api_key", property(lambda s: "sk-test"), raising=False)
+    monkeypatch.setattr(type(settings), "telegram_enabled", property(lambda s: True))
+
+    try:
+        asyncio.run(briefing.update_settings(friend.id, time_local="7.30"))
+        raise AssertionError("bad time accepted")
+    except briefing.BriefingError:
+        pass
+    now = briefing._now_local()
+    due = (now - timedelta(minutes=1)).strftime("%H:%M") if now.hour or now.minute else "00:00"
+    s = asyncio.run(briefing.update_settings(friend.id, enabled=True, time_local=due, location="Lucerne"))
+    assert s["enabled"] and s["location"].startswith("Lucerne") and s["last_sent_on"] == now.date().isoformat()
+    db.execute("UPDATE briefings SET last_sent_on = NULL WHERE user_id = ?", (friend.id,))   # pretend it's due
+
+    soon = (reminders._now() + timedelta(minutes=30)).astimezone(reminders._tz())
+    if soon.date() == now.date():
+        reminders.create(created_by=friend, text="Buy milk", when=soon.strftime("%Y-%m-%dT%H:%M"))
+    data = asyncio.run(briefing.gather(friend))
+    assert data["weather"]["conditions"] == "light rain" and "calendar_today" not in data  # no calendar linked
+    assert "n8n_failed_runs_last_24h" not in data                                         # admins only
+
+    async def run_tick():
+        await briefing.tick()
+        await briefing.tick()                     # claimed once: not sent twice
+        await asyncio.sleep(0.05)
+        await asyncio.gather(*briefing._running)
+    asyncio.run(run_tick())
+    assert len(sent) == 1 and sent[0][0] == friend.id and sent[0][2] == "daily briefing"
+    facts = json.loads(prompts[-1]["messages"][0]["content"])
+    assert facts["weather"]["place"].startswith("Lucerne") and "never invent" in prompts[-1]["system"]
+
+
+def test_briefing_api():
+    from fastapi.testclient import TestClient
+    from orchestrator.main import app
+    with TestClient(app) as c:
+        assert c.get("/api/briefing").status_code == 401
+        c.post("/api/login", json={"username": "admin", "password": "correct horse battery"}, headers=CSRF)
+        assert c.get("/api/briefing").json()["time_local"] == "07:30"
+        r = c.put("/api/briefing", json={"time_local": "06:45", "days": "weekdays"}, headers=CSRF).json()
+        assert r["time_local"] == "06:45" and r["days"] == "weekdays" and not r["enabled"]
+        assert c.put("/api/briefing", json={"time_local": "25:00"}, headers=CSRF).status_code == 400
+        assert c.put("/api/briefing", json={"channel": "fax"}, headers=CSRF).status_code == 422

@@ -194,6 +194,34 @@ tools:
         snooze_minutes: {type: integer, description: "For snooze; default 10."}
       required: [reminder_id, action]
 
+  - name: get_briefing
+    kind: builtin
+    handler: get_briefing
+    roles: ["*"]
+    description: >-
+      Today's facts for the person: weather (if a town is set), today's calendar, reminders, planned
+      calls, recent call outcomes, open tasks (and failed n8n runs for admins). Use it for "what's my
+      day like", "give me my briefing", "anything I should know today".
+    input_schema:
+      type: object
+      properties: {}
+
+  - name: configure_briefing
+    kind: builtin
+    handler: configure_briefing
+    roles: ["*"]
+    description: >-
+      Turn the person's automatic daily briefing on or off, or change its time (HH:MM local),
+      days (daily or weekdays), delivery (telegram or call) or weather town. Only pass what changes.
+    input_schema:
+      type: object
+      properties:
+        enabled: {type: boolean}
+        time: {type: string, description: "HH:MM local time, e.g. 07:30"}
+        days: {type: string, enum: [daily, weekdays]}
+        channel: {type: string, enum: [telegram, call]}
+        location: {type: string, description: "Town for the weather, e.g. Lucerne; empty string removes it."}
+
   - name: end_call
     kind: builtin
     handler: end_call

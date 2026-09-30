@@ -582,6 +582,7 @@ input[type="datetime-local"] { color-scheme: dark; }
 .call-result { margin-top: 6px; padding: 6px 10px; border-left: 2px solid var(--ok); background: rgb(var(--ok-rgb) / .06);
   color: var(--text-strong); font-size: 14px; }
 .gcal { margin-top: 8px; }
+.briefing { margin-top: 18px; }
 .gcal-linked { display: grid; gap: 6px; justify-items: start; }
 
 .seg { display: flex; border: 1px solid var(--line); }

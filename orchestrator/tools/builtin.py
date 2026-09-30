@@ -127,6 +127,24 @@ async def update_reminder(ctx, reminder_id: int, action: str, snooze_minutes: in
 
 
 @handler
+async def get_briefing(ctx) -> dict:
+    from .. import briefing
+    return await briefing.gather(ctx.person)
+
+
+@handler
+async def configure_briefing(ctx, enabled: bool | None = None, time: str | None = None, days: str | None = None,
+                             channel: str | None = None, location: str | None = None) -> dict:
+    from .. import briefing
+    try:
+        s = await briefing.update_settings(ctx.person.id, enabled=enabled, time_local=time, days=days,
+                                           channel=channel, location=location)
+    except briefing.BriefingError as e:
+        return {"error": str(e)}
+    return {k: s[k] for k in ("enabled", "time_local", "days", "channel", "location")}
+
+
+@handler
 async def place_call(ctx, person: str, purpose: str = "", opening_line: str = "") -> dict:
     from .. import scheduler
     try:

@@ -3,6 +3,7 @@ import { api } from "../api.js";
 import { usePoll } from "../hooks.js";
 import { ErrorNote, Tag } from "../components/common.jsx";
 import Connections from "../components/Connections.jsx";
+import BriefingCard from "../components/BriefingCard.jsx";
 import GoogleCalendarCard from "../components/GoogleCalendarCard.jsx";
 import { Panel } from "../components/hud.jsx";
 
@@ -89,6 +90,7 @@ export default function Profile({ assistant, refreshMe }) {
             <button className="btn primary" type="submit" disabled={busy}>Update password</button>
           </form>
           <GoogleCalendarCard assistant={assistant} />
+          <BriefingCard assistant={assistant} />
         </section>
       </div>
     </Panel>

@@ -61,6 +61,20 @@ CREATE TABLE IF NOT EXISTS reminders (
 );
 CREATE INDEX IF NOT EXISTS idx_reminders_due ON reminders(status, due_at);
 
+-- Daily briefing settings per person (orchestrator/briefing.py).
+CREATE TABLE IF NOT EXISTS briefings (
+    user_id      INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    enabled      INTEGER NOT NULL DEFAULT 0,
+    time_local   TEXT NOT NULL DEFAULT '07:30',
+    days         TEXT NOT NULL DEFAULT 'daily' CHECK (days IN ('daily','weekdays')),
+    channel      TEXT NOT NULL DEFAULT 'telegram' CHECK (channel IN ('telegram','call')),
+    location     TEXT,                              -- weather place (name only is sent to Open-Meteo)
+    lat          REAL,
+    lon          REAL,
+    last_sent_on TEXT,                              -- local date of the last scheduled briefing
+    updated_at   TEXT
+);
+
 -- One pending confirmation code per phone/Telegram connection (see identity/verification.py).
 CREATE TABLE IF NOT EXISTS identifier_verifications (
     identifier_id INTEGER PRIMARY KEY REFERENCES user_identifiers(id) ON DELETE CASCADE,

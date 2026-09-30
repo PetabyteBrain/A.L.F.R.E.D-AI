@@ -17,12 +17,13 @@ from fastapi.staticfiles import StaticFiles
 
 from dashboard.api.chat import router as chat_router
 from dashboard.api.reminders import router as reminders_router
+from dashboard.api.briefing import router as briefing_router
 from dashboard.api.google import router as google_router
 from dashboard.api.people import router as people_router
 from dashboard.api.routes import router as dashboard_router
 from dashboard.api.security import SecurityMiddleware
 
-from . import call_handler, db, health, n8n_callback, reminders, scheduler, sessions, telegram_handler
+from . import briefing, call_handler, db, health, n8n_callback, reminders, scheduler, sessions, telegram_handler
 from .config import settings
 from .identity import registry
 from .tools import registry as tool_registry
@@ -53,13 +54,14 @@ async def lifespan(app: FastAPI):
     bg = asyncio.create_task(health.background_loop())
     sched = asyncio.create_task(scheduler.background_loop())
     remind = asyncio.create_task(reminders.background_loop())
+    brief = asyncio.create_task(briefing.background_loop())
     log.info("%s up — telegram=%s phone=%s n8n=%s model=%s",
              settings.assistant_name, settings.telegram_enabled, settings.twilio_enabled and settings.elevenlabs_enabled,
              settings.n8n_enabled, settings.claude_model)
     try:
         yield
     finally:
-        for task in (bg, sched, remind):
+        for task in (bg, sched, remind, brief):
             task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await task
@@ -84,6 +86,7 @@ app.include_router(people_router)
 app.include_router(google_router)
 app.include_router(chat_router)
 app.include_router(reminders_router)
+app.include_router(briefing_router)
 def _legal(name: str) -> FileResponse:
     path = WEB_DIR / "legal" / f"{name}.html"
     if not path.is_file():
