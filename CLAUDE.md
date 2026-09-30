@@ -51,7 +51,11 @@ the original spec is in `docs/archive/original-spec.md`. Keep the plan updated w
 ## Verification, reminders, briefing, memory, voice
 - Phone/Telegram connections only count once `verified_at` is set (`identity/verification.py`);
   anything that reaches a person (resolve, phone_for, telegram_for) must use verified ones.
-- Background loops in `main.lifespan`: health, scheduler (calls), reminders, briefing.
+- Background loops in `main.lifespan`: health, scheduler (calls), reminders, briefing, tasks.
+- Quiet hours (`orchestrator/quiet.py`): anything contacting a person on someone else's behalf
+  must respect them (calls via `scheduler.request_call` do automatically; Telegram via
+  `send_to_user` goes silent by default). Pass `silent=False` only for things the person set up.
+- New columns on existing tables go in `db.ADDED_COLUMNS` (applied on start).
 - `memory.prompt_block` goes into `_dynamic_system` only, never into STATIC_SYSTEM (cache).
 - Calls speak streamed text sentence by sentence (`call_handler.split_speakable`, `_turn`).
 
