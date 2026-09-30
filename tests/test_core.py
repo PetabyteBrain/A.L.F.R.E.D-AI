@@ -902,3 +902,13 @@ def test_web_chat_requires_dashboard_role():
     from orchestrator.identity import registry as reg
     assert reg.role_allows_channel("admin", "web")
     assert not reg.role_allows_channel("friend", "web")
+
+
+def test_every_call_opens_with_recording_notice():
+    from types import SimpleNamespace as NS
+    from orchestrator import call_handler as ch
+    greeting = ch._greeting(NS(is_admin=False, display_name="Max Mustermann"))
+    assert ch.RECORDING_NOTICE in greeting and greeting.endswith("How may I be of service?")
+    assert ch.with_recording_notice("Good morning, Max. Alfred here.") == \
+        f"Good morning, Max. Alfred here. {ch.RECORDING_NOTICE}"
+    assert ch.with_recording_notice(greeting) == greeting            # never said twice

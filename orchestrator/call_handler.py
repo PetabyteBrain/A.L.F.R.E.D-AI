@@ -98,13 +98,22 @@ def _call_finished(session_id: str, outcome: str) -> None:
     asyncio.create_task(scheduler.on_call_finished(session_id, outcome))
 
 
+# Every call is recorded (audio + transcript), so every call opens by saying so.
+RECORDING_NOTICE = "Just so you know, this call is recorded."
+
+
+def with_recording_notice(line: str) -> str:
+    line = line.strip()
+    return line if RECORDING_NOTICE in line else f"{line} {RECORDING_NOTICE}".strip()
+
+
 def _greeting(person: Person) -> str:
     from datetime import datetime
     from zoneinfo import ZoneInfo
     hour = datetime.now(ZoneInfo(settings.timezone)).hour
     part = "morning" if 5 <= hour < 12 else "afternoon" if hour < 18 else "evening"
     who = "sir" if person.is_admin else person.display_name.split()[0]
-    return f"Good {part}, {who}. {settings.assistant_name} here. How may I be of service?"
+    return f"Good {part}, {who}. {settings.assistant_name} here. {RECORDING_NOTICE} How may I be of service?"
 
 
 # --- webhooks ----------------------------------------------------------------------------
@@ -175,7 +184,8 @@ async def place_outbound_call(user_id: int, *, opening_line: str, reason: str = 
         db.execute("UPDATE scheduled_calls SET session_id = ? WHERE id = ?", (sid, request_id))
     extra = extra_system or (f"This is an outbound call you placed. Reason: {reason}" if reason
                              else "This is an outbound call you placed.")
-    _pending[sid] = PendingCall(sid, person.id, secrets.token_urlsafe(24), opening_line, extra)
+    _pending[sid] = PendingCall(sid, person.id, secrets.token_urlsafe(24), with_recording_notice(opening_line),
+                                extra)
     q = urlencode({"session_id": sid})
 
     def _create():
