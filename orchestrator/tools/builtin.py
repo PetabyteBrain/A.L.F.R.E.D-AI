@@ -145,6 +145,36 @@ async def configure_briefing(ctx, enabled: bool | None = None, time: str | None 
 
 
 @handler
+async def remember(ctx, text: str) -> dict:
+    from .. import memory
+    try:
+        m = memory.add(ctx.person, text)
+    except memory.MemoryNoteError as e:
+        return {"error": str(e)}
+    return {"saved": True, "memory_id": m["id"]}
+
+
+@handler
+async def update_memory(ctx, memory_id: int, text: str) -> dict:
+    from .. import memory
+    try:
+        m = memory.update(int(memory_id), ctx.person, text)
+    except memory.MemoryNoteError as e:
+        return {"error": str(e)}
+    return {"updated": True, "memory_id": m["id"]}
+
+
+@handler
+async def forget_memory(ctx, memory_id: int) -> dict:
+    from .. import memory
+    try:
+        memory.delete(int(memory_id), ctx.person)
+    except memory.MemoryNoteError as e:
+        return {"error": str(e)}
+    return {"deleted": True}
+
+
+@handler
 async def place_call(ctx, person: str, purpose: str = "", opening_line: str = "") -> dict:
     from .. import scheduler
     try:

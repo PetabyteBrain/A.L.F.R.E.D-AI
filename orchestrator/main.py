@@ -18,6 +18,7 @@ from fastapi.staticfiles import StaticFiles
 from dashboard.api.chat import router as chat_router
 from dashboard.api.reminders import router as reminders_router
 from dashboard.api.briefing import router as briefing_router
+from dashboard.api.memory import router as memory_router
 from dashboard.api.google import router as google_router
 from dashboard.api.people import router as people_router
 from dashboard.api.routes import router as dashboard_router
@@ -87,6 +88,7 @@ app.include_router(google_router)
 app.include_router(chat_router)
 app.include_router(reminders_router)
 app.include_router(briefing_router)
+app.include_router(memory_router)
 def _legal(name: str) -> FileResponse:
     path = WEB_DIR / "legal" / f"{name}.html"
     if not path.is_file():

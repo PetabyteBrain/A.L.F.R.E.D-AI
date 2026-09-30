@@ -4,6 +4,7 @@ import { usePoll } from "../hooks.js";
 import { ErrorNote, Tag } from "../components/common.jsx";
 import Connections from "../components/Connections.jsx";
 import BriefingCard from "../components/BriefingCard.jsx";
+import MemoryCard from "../components/MemoryCard.jsx";
 import GoogleCalendarCard from "../components/GoogleCalendarCard.jsx";
 import { Panel } from "../components/hud.jsx";
 
@@ -91,6 +92,7 @@ export default function Profile({ assistant, refreshMe }) {
           </form>
           <GoogleCalendarCard assistant={assistant} />
           <BriefingCard assistant={assistant} />
+          <MemoryCard assistant={assistant} />
         </section>
       </div>
     </Panel>

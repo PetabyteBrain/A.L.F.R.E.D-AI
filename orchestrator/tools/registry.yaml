@@ -222,6 +222,42 @@ tools:
         channel: {type: string, enum: [telegram, call]}
         location: {type: string, description: "Town for the weather, e.g. Lucerne; empty string removes it."}
 
+  - name: remember
+    kind: builtin
+    handler: remember
+    roles: ["*"]
+    description: >-
+      Save a short long-term note for the current person (a preference, routine, key person or
+      date). It will be in your context in all their future conversations. Not for secrets.
+    input_schema:
+      type: object
+      properties:
+        text: {type: string, description: "One short factual note, e.g. 'Prefers calls after 9:00.'"}
+      required: [text]
+
+  - name: update_memory
+    kind: builtin
+    handler: update_memory
+    roles: ["*"]
+    description: Replace the text of one of the current person's notes (id shown in your notes).
+    input_schema:
+      type: object
+      properties:
+        memory_id: {type: integer}
+        text: {type: string}
+      required: [memory_id, text]
+
+  - name: forget_memory
+    kind: builtin
+    handler: forget_memory
+    roles: ["*"]
+    description: Delete one of the current person's notes (id shown in your notes).
+    input_schema:
+      type: object
+      properties:
+        memory_id: {type: integer}
+      required: [memory_id]
+
   - name: end_call
     kind: builtin
     handler: end_call

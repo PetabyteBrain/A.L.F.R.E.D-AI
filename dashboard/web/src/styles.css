@@ -583,6 +583,11 @@ input[type="datetime-local"] { color-scheme: dark; }
   color: var(--text-strong); font-size: 14px; }
 .gcal { margin-top: 8px; }
 .briefing { margin-top: 18px; }
+.memory { margin-top: 18px; }
+.memo-list { display: grid; gap: 6px; }
+.memo-row { display: flex; gap: 6px; align-items: center; }
+.memo-row input { flex: 1; min-width: 0; }
+.memo-row.add { margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--line); }
 .gcal-linked { display: grid; gap: 6px; justify-items: start; }
 
 .seg { display: flex; border: 1px solid var(--line); }

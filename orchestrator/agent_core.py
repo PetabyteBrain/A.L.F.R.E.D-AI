@@ -14,7 +14,7 @@ from zoneinfo import ZoneInfo
 
 import anthropic
 
-from . import db, sessions, usage
+from . import db, memory, sessions, usage
 from .config import settings
 from .identity.registry import Person
 from .tools import registry as tool_registry
@@ -90,6 +90,10 @@ Tools:
   a reminder message, use update_reminder.
 - Daily briefing: get_briefing for "what's my day like"; configure_briefing to switch the
   automatic morning briefing on/off or change its time, days, channel or weather town.
+- Memory: when someone asks you to remember something, or states a lasting preference or fact
+  worth keeping (how they like to be called, routines, key people and dates), save it with
+  remember and say so briefly. Keep notes short and factual; fix or drop outdated ones with
+  update_memory / forget_memory. Never store passwords, codes, card or account numbers.
 - Calendar tools act only on the current person's own Google Calendar. Check existing events
   before proposing times; confirm before deleting.
 - If a tool fails, say so plainly and suggest a next step. Don't retry the same failing
@@ -108,6 +112,9 @@ def _dynamic_system(person: Person, channel: str, extra: str | None) -> str:
         f"Channel: {channel}.",
         f"Local time: {now} ({settings.timezone}).",
     ]
+    notes = memory.prompt_block(person.id)
+    if notes:
+        lines.append(notes)
     if extra:
         lines.append(extra)
     return "\n".join(lines)

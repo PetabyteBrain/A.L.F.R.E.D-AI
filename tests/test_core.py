@@ -1233,3 +1233,50 @@ def test_telegram_voice_note_round_trip(monkeypatch):
     Voice.duration = 900
     asyncio.run(th.on_message(upd, None))
     assert replies and replies[0][0] == "text" and "under 5 minutes" in replies[0][1]
+
+
+def test_long_term_memory_is_private_and_reaches_the_prompt(monkeypatch):
+    import asyncio
+    from types import SimpleNamespace as NS
+    from fastapi.testclient import TestClient
+    from orchestrator import agent_core, memory
+    from orchestrator.config import settings
+    from orchestrator.main import app
+    admin = registry.lookup("telegram", "111")
+    friend = registry.lookup("telegram", "22222222")
+
+    m = memory.add(admin, "Max prefers calls after 9:00.")
+    for secret in ("My password is hunter22", "Card 4111 1111 1111 1111", "IBAN CH93 0076 2011 6238 5295 7"):
+        try:
+            memory.add(admin, secret)
+            raise AssertionError(f"stored a secret: {secret}")
+        except memory.MemoryNoteError:
+            pass
+    try:
+        memory.delete(m["id"], friend)                     # can't touch someone else's notes
+        raise AssertionError("friend deleted admin's note")
+    except memory.MemoryNoteError:
+        pass
+
+    seen = []
+
+    class FakeMessages:
+        async def create(self, **kw):
+            seen.append(kw["system"][1]["text"])
+            return NS(stop_reason="end_turn", content=[NS(type="text", text="ok")], usage=None)
+    monkeypatch.setattr(agent_core, "_client", NS(messages=FakeMessages()))
+    monkeypatch.setattr(type(settings), "anthropic_api_key", property(lambda s: "sk-test"), raising=False)
+    asyncio.run(agent_core._run(admin, "telegram", "s1", "hi", None))
+    asyncio.run(agent_core._run(friend, "telegram", "s2", "hi", None))
+    assert "Max prefers calls after 9:00." in seen[0] and f"[{m['id']}]" in seen[0]
+    assert "Max" not in seen[1]                           # never in anyone else's conversation
+
+    with TestClient(app) as c:
+        c.post("/api/login", json={"username": "admin", "password": "correct horse battery"}, headers=CSRF)
+        notes = c.post("/api/memory", json={"text": "Likes his coffee black."}, headers=CSRF).json()
+        assert [n["text"] for n in notes][:2] == ["Likes his coffee black.", "Max prefers calls after 9:00."]
+        nid = notes[0]["id"]
+        assert c.patch(f"/api/memory/{nid}", json={"text": "Likes coffee black, no sugar."}, headers=CSRF).json()[0]["text"] \
+            == "Likes coffee black, no sugar."
+        assert c.post("/api/memory", json={"text": "pin: 1234"}, headers=CSRF).status_code == 400
+        assert all(n["id"] != nid for n in c.delete(f"/api/memory/{nid}", headers=CSRF).json())

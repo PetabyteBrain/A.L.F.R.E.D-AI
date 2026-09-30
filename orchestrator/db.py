@@ -61,6 +61,17 @@ CREATE TABLE IF NOT EXISTS reminders (
 );
 CREATE INDEX IF NOT EXISTS idx_reminders_due ON reminders(status, due_at);
 
+-- Long-term memory notes (orchestrator/memory.py); only used in the owner's own conversations.
+CREATE TABLE IF NOT EXISTS memories (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    created_by  INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    text        TEXT NOT NULL,
+    created_at  TEXT NOT NULL,
+    updated_at  TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_memories_user ON memories(user_id);
+
 -- Daily briefing settings per person (orchestrator/briefing.py).
 CREATE TABLE IF NOT EXISTS briefings (
     user_id      INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
