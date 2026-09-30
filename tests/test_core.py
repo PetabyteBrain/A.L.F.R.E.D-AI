@@ -753,3 +753,89 @@ def test_session_state_endpoint():
         assert c.get("/api/session").json() == {"authenticated": False}
         c.post("/api/login", json={"username": "admin", "password": "correct horse battery"}, headers=CSRF)
         assert c.get("/api/session").json() == {"authenticated": True, "first_name": "Test"}
+
+
+def test_sessions_table_migrates_to_allow_web(monkeypatch, tmp_path):
+    import dataclasses, sqlite3
+    from orchestrator import db as dbmod
+    old = tmp_path / "old.db"
+    c = sqlite3.connect(old)
+    c.executescript("""
+        CREATE TABLE users (id INTEGER PRIMARY KEY, display_name TEXT);
+        CREATE TABLE sessions (
+            id TEXT PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id),
+            channel TEXT NOT NULL CHECK (channel IN ('call','telegram')),
+            direction TEXT NOT NULL DEFAULT 'inbound', external_id TEXT, started_at TEXT NOT NULL,
+            last_activity_at TEXT NOT NULL, ended_at TEXT, status TEXT NOT NULL DEFAULT 'active');
+        CREATE TABLE transcripts (id INTEGER PRIMARY KEY, session_id TEXT NOT NULL REFERENCES sessions(id),
+            turn_index INTEGER, speaker TEXT, text TEXT, ts TEXT);
+        INSERT INTO users VALUES (1, 'Old User');
+        INSERT INTO sessions VALUES ('tg-1', 1, 'telegram', 'inbound', NULL, '2026-01-01', '2026-01-01', NULL, 'ended');
+        INSERT INTO transcripts VALUES (1, 'tg-1', 0, 'user', 'hello', '2026-01-01');
+    """)
+    c.commit(); c.close()
+    monkeypatch.setattr(dbmod, "settings", dataclasses.replace(dbmod.settings, db_path=old))
+    dbmod.init_db()
+    c = sqlite3.connect(old)
+    assert "'web'" in c.execute("SELECT sql FROM sqlite_master WHERE name='sessions'").fetchone()[0]
+    assert c.execute("SELECT channel FROM sessions WHERE id='tg-1'").fetchone()[0] == "telegram"   # data kept
+    c.execute("INSERT INTO sessions VALUES ('web-1', 1, 'web', 'inbound', NULL, 'x', 'x', NULL, 'active')")
+    assert c.execute("PRAGMA foreign_key_check").fetchall() == []
+    assert c.execute("SELECT COUNT(*) FROM transcripts").fetchone()[0] == 1
+    c.close()
+    dbmod.init_db()  # idempotent
+
+
+def test_web_chat(monkeypatch):
+    from types import SimpleNamespace as NS
+    from fastapi.testclient import TestClient
+    from orchestrator import agent_core
+    from orchestrator.config import settings
+    from orchestrator.main import app
+    from dashboard.api import chat as chatmod
+    seen = []
+
+    class FakeMessages:
+        async def create(self, **kw):
+            seen.append(kw)
+            return NS(stop_reason="end_turn", content=[NS(type="text", text=f"Reply #{len(seen)}")], usage=None)
+    monkeypatch.setattr(agent_core, "_client", NS(messages=FakeMessages()))
+    monkeypatch.setattr(type(settings), "anthropic_api_key", property(lambda self: "sk-test"), raising=False)
+
+    with TestClient(app) as c:
+        assert c.post("/api/chat", json={"message": "hi"}, headers=CSRF).status_code == 401
+        c.post("/api/login", json={"username": "admin", "password": "correct horse battery"}, headers=CSRF)
+        assert c.post("/api/chat", json={"message": "hi"}).status_code == 403            # CSRF header required
+        assert c.post("/api/chat", json={"message": ""}, headers=CSRF).status_code == 422
+        assert c.post("/api/chat", json={"message": "x" * 4001}, headers=CSRF).status_code == 422
+        assert c.post("/api/chat/reset", headers=CSRF).status_code == 200
+        assert c.get("/api/chat/history").json() == []
+
+        r = c.post("/api/chat", json={"message": "What can you do?"}, headers=CSRF).json()
+        assert r["reply"] == "Reply #1" and r["session_id"].startswith("web-")
+        # web channel: no phone-only tools, calendar-free admin still gets its normal tools
+        names = {t["name"] for t in seen[0]["tools"]}
+        assert "end_call" not in names and "add_task" in names
+        assert "Channel: web." in seen[0]["system"][1]["text"]
+
+        c.post("/api/chat", json={"message": "And then?"}, headers=CSRF)
+        assert [m["role"] for m in seen[1]["messages"]] == ["user", "assistant", "user"]   # remembers the thread
+        hist = c.get("/api/chat/history").json()
+        assert [h["speaker"] for h in hist] == ["user", "assistant", "user", "assistant"]
+
+        # new conversation: history cleared, earlier turns no longer sent to the model
+        c.post("/api/chat/reset", headers=CSRF)
+        assert c.get("/api/chat/history").json() == []
+        c.post("/api/chat", json={"message": "Fresh start"}, headers=CSRF)
+        assert [m["role"] for m in seen[-1]["messages"]] == ["user"]
+
+        # rate limit
+        monkeypatch.setattr(chatmod, "chat_throttle", chatmod.security.Throttle(window_s=300, max_failures=1))
+        assert c.post("/api/chat", json={"message": "one"}, headers=CSRF).status_code == 200
+        assert c.post("/api/chat", json={"message": "two"}, headers=CSRF).status_code == 429
+
+
+def test_web_chat_requires_dashboard_role():
+    from orchestrator.identity import registry as reg
+    assert reg.role_allows_channel("admin", "web")
+    assert not reg.role_allows_channel("friend", "web")

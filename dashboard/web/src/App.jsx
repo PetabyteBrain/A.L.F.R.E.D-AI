@@ -15,9 +15,11 @@ import Health from "./pages/Health.jsx";
 import People from "./pages/People.jsx";
 import Profile from "./pages/Profile.jsx";
 import Usage from "./pages/Usage.jsx";
+import Chat from "./pages/Chat.jsx";
 
 const TABS = [
   { id: "live", label: "Live", title: "Live operations", kicker: "Channels in progress", Page: Live },
+  { id: "chat", label: "Chat", title: "Chat", kicker: "Talk to your butler", Page: Chat },
   { id: "history", label: "Archive", title: "Archive", kicker: "Recordings & transcripts", Page: Recordings },
   { id: "tasks", label: "Tasks", title: "Tasks & calls", kicker: "Queue & schedule", Page: Tasks },
   { id: "activity", label: "Log", title: "Event log", kicker: "Everything that happened", Page: Activity },

@@ -32,7 +32,7 @@ function SessionCard({ s, isAdmin, onEnd, assistant }) {
         <div>
           <div className="live-name">{s.display_name}</div>
           <div className="live-meta">
-            <Tag>{isCall ? "voice" : "telegram"} · {s.direction}</Tag>
+            <Tag>{isCall ? "voice" : s.channel === "web" ? "web chat" : "telegram"} · {s.direction}</Tag>
             <span className="mono">T+{fmtDur(s.duration_s)}</span>
             <span className="mono dim">idle {fmtDur(s.idle_s)}</span>
           </div>
@@ -91,7 +91,7 @@ export default function Live({ isAdmin, assistant }) {
           title={target.channel === "call" ? "Terminate call" : "Close session"}
           body={target.channel === "call"
             ? <>Hang up the call with <b>{target.display_name}</b> now? The line is dropped via the carrier; the recording and transcript so far are kept.</>
-            : <>Close the Telegram session with <b>{target.display_name}</b>? Their conversation history is kept.</>}
+            : <>Close the {target.channel === "web" ? "web chat" : "Telegram"} session with <b>{target.display_name}</b>? Their conversation history is kept.</>}
           confirmLabel={target.channel === "call" ? "Terminate" : "Close"}
           busy={busy}
           error={endError}

@@ -143,7 +143,7 @@ async def active_sessions(person: Person = Depends(current_person)) -> list[dict
 async def list_sessions(
     person: Person = Depends(current_person),
     user_id: int | None = Query(default=None, ge=1),
-    channel: str | None = Query(default=None, pattern="^(call|telegram)$"),
+    channel: str | None = Query(default=None, pattern="^(call|telegram|web)$"),
     date: str | None = Query(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$"),
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0, le=100_000),
@@ -373,7 +373,7 @@ async def overview(person: Person = Depends(current_person)) -> dict:
     counts = db.query_one(
         "SELECT SUM(status = 'active') AS active, "
         "SUM(substr(started_at,1,10) = ? AND channel = 'call') AS calls_today, "
-        "SUM(substr(started_at,1,10) = ? AND channel = 'telegram') AS chats_today "
+        "SUM(substr(started_at,1,10) = ? AND channel IN ('telegram', 'web')) AS chats_today "
         "FROM sessions s WHERE 1=1" + where,
         [today, today] + params,
     ) or {}

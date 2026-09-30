@@ -35,7 +35,8 @@ LIVE: dict[str, LiveState] = {}
 
 def new_session_id(channel: str) -> str:
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")
-    return f"{'tg' if channel == 'telegram' else 'call'}-{stamp}-{secrets.token_hex(3)}"
+    prefix = {"telegram": "tg", "call": "call", "web": "web"}.get(channel, channel)
+    return f"{prefix}-{stamp}-{secrets.token_hex(3)}"
 
 
 def start_session(user_id: int, channel: str, direction: str = "inbound", external_id: str | None = None) -> str:
@@ -48,7 +49,8 @@ def start_session(user_id: int, channel: str, direction: str = "inbound", extern
     )
     LIVE[sid] = LiveState(session_id=sid, user_id=user_id, channel=channel)
     db.log_activity(channel if channel == "call" else "message",
-                    f"{'Call' if channel == 'call' else 'Telegram session'} started ({direction})",
+                    f"{ {'call': 'Call', 'telegram': 'Telegram session', 'web': 'Web chat'}.get(channel, channel)} "
+                    f"started ({direction})",
                     user_id=user_id, session_id=sid)
     return sid
 
@@ -91,12 +93,13 @@ def add_turn(session_id: str, speaker: str, text: str) -> None:
 def history(user_id: int, channel: str, exclude_session: str | None = None, limit: int | None = None) -> list[dict]:
     """Last N user/assistant turns for this (channel, user), oldest first, API-ready."""
     limit = limit or settings.history_turns
+    reset = db.query_one("SELECT after_id FROM context_resets WHERE user_id = ? AND channel = ?", (user_id, channel))
     rows = db.query(
         "SELECT t.speaker, t.text FROM transcripts t JOIN sessions s ON s.id = t.session_id "
         "WHERE s.user_id = ? AND s.channel = ? AND t.speaker IN ('user','assistant') "
-        "AND (? IS NULL OR s.id != ?) "
+        "AND (? IS NULL OR s.id != ?) AND t.id > ? "
         "ORDER BY t.ts DESC, t.id DESC LIMIT ?",
-        (user_id, channel, exclude_session, exclude_session, limit),
+        (user_id, channel, exclude_session, exclude_session, reset["after_id"] if reset else 0, limit),
     )
     rows.reverse()
     msgs: list[dict] = []
@@ -135,12 +138,41 @@ def telegram_session_for(user_id: int, chat_id: str) -> str:
     return start_session(user_id, "telegram", external_id=chat_id)
 
 
+def web_session_for(user_id: int) -> str:
+    """Dashboard chat: reuse the open session while it's active, like Telegram."""
+    cutoff = (datetime.now(timezone.utc) - timedelta(minutes=settings.telegram_session_idle_minutes)).isoformat(
+        timespec="seconds"
+    )
+    row = db.query_one(
+        "SELECT id FROM sessions WHERE user_id = ? AND channel = 'web' AND status = 'active' "
+        "AND last_activity_at >= ? ORDER BY started_at DESC LIMIT 1",
+        (user_id, cutoff),
+    )
+    if row:
+        if row["id"] not in LIVE:
+            LIVE[row["id"]] = LiveState(session_id=row["id"], user_id=user_id, channel="web")
+        return row["id"]
+    return start_session(user_id, "web")
+
+
+def reset_context(user_id: int, channel: str) -> None:
+    """Start a fresh conversation: earlier turns stay stored but are no longer sent to the model."""
+    for row in db.query("SELECT id FROM sessions WHERE user_id = ? AND channel = ? AND status = 'active'",
+                        (user_id, channel)):
+        end_session(row["id"])
+    last = db.query_one("SELECT COALESCE(MAX(id), 0) AS id FROM transcripts")["id"]
+    db.execute("INSERT INTO context_resets(user_id, channel, after_id, ts) VALUES (?,?,?,?) "
+               "ON CONFLICT(user_id, channel) DO UPDATE SET after_id = excluded.after_id, ts = excluded.ts",
+               (user_id, channel, last, db.now_iso()))
+
+
 def close_idle_sessions() -> None:
     cutoff = (datetime.now(timezone.utc) - timedelta(minutes=settings.telegram_session_idle_minutes)).isoformat(
         timespec="seconds"
     )
     for row in db.query(
-        "SELECT id FROM sessions WHERE channel = 'telegram' AND status = 'active' AND last_activity_at < ?", (cutoff,)
+        "SELECT id FROM sessions WHERE channel IN ('telegram', 'web') AND status = 'active' AND last_activity_at < ?",
+        (cutoff,)
     ):
         end_session(row["id"])
 

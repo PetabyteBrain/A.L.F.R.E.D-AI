@@ -15,6 +15,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, HTMLResponse, PlainTextResponse, Response
 from fastapi.staticfiles import StaticFiles
 
+from dashboard.api.chat import router as chat_router
 from dashboard.api.google import router as google_router
 from dashboard.api.people import router as people_router
 from dashboard.api.routes import router as dashboard_router
@@ -81,6 +82,7 @@ app.include_router(n8n_callback.router)
 app.include_router(dashboard_router)
 app.include_router(people_router)
 app.include_router(google_router)
+app.include_router(chat_router)
 def _legal(name: str) -> FileResponse:
     path = WEB_DIR / "legal" / f"{name}.html"
     if not path.is_file():

@@ -43,7 +43,7 @@ CREATE TABLE IF NOT EXISTS user_identifiers (
 CREATE TABLE IF NOT EXISTS sessions (
     id         TEXT PRIMARY KEY,
     user_id    INTEGER NOT NULL REFERENCES users(id),
-    channel    TEXT NOT NULL CHECK (channel IN ('call','telegram')),
+    channel    TEXT NOT NULL CHECK (channel IN ('call','telegram','web')),
     direction  TEXT NOT NULL DEFAULT 'inbound',
     external_id TEXT,                         -- Twilio CallSid / Telegram chat id
     started_at TEXT NOT NULL,
@@ -184,6 +184,14 @@ CREATE TABLE IF NOT EXISTS oauth_states (
     created_at    TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS context_resets (
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    channel  TEXT NOT NULL,
+    after_id INTEGER NOT NULL,                -- only transcript rows with id > after_id count as context
+    ts       TEXT NOT NULL,
+    PRIMARY KEY (user_id, channel)
+);
+
 CREATE TABLE IF NOT EXISTS health (
     service    TEXT PRIMARY KEY,
     ok         INTEGER NOT NULL,
@@ -224,8 +232,39 @@ def tx() -> Iterator[sqlite3.Connection]:
         conn.close()
 
 
+def _migrate_sessions_channel_check() -> None:
+    """Databases created before the web chat only allow channel IN ('call','telegram').
+    SQLite can't alter a CHECK constraint, so rebuild the table (official 12-step procedure),
+    with foreign keys off for the swap and verified afterwards."""
+    conn = sqlite3.connect(settings.db_path, timeout=10)
+    try:
+        row = conn.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='sessions'").fetchone()
+        if not row or "'web'" in row[0]:
+            return
+        conn.execute("PRAGMA foreign_keys = OFF")
+        conn.execute("BEGIN")
+        conn.execute(row[0].replace("CREATE TABLE sessions", "CREATE TABLE sessions_new", 1)
+                     .replace("CHECK (channel IN ('call','telegram'))", "CHECK (channel IN ('call','telegram','web'))"))
+        conn.execute("INSERT INTO sessions_new SELECT * FROM sessions")
+        conn.execute("DROP TABLE sessions")
+        conn.execute("ALTER TABLE sessions_new RENAME TO sessions")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id, channel, started_at)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_sessions_status ON sessions(status)")
+        problems = conn.execute("PRAGMA foreign_key_check").fetchall()
+        if problems:
+            raise RuntimeError(f"foreign key check failed after migration: {problems[:3]}")
+        conn.execute("COMMIT")
+    except Exception:
+        conn.execute("ROLLBACK") if conn.in_transaction else None
+        raise
+    finally:
+        conn.execute("PRAGMA foreign_keys = ON")
+        conn.close()
+
+
 def init_db() -> None:
     settings.db_path.parent.mkdir(parents=True, exist_ok=True)
+    _migrate_sessions_channel_check()
     with tx() as conn:
         conn.execute("PRAGMA journal_mode = WAL")
         conn.executescript(SCHEMA)

@@ -20,7 +20,9 @@ from ..config import settings
 log = logging.getLogger(__name__)
 
 IDENTIFIER_TYPES = ("telegram", "phone", "email", "dashboard")
-CHANNEL_PERMISSION = {"telegram": "can_telegram", "call": "can_call", "dashboard": "can_dashboard"}
+# The web chat lives in the dashboard, so it follows dashboard access.
+CHANNEL_PERMISSION = {"telegram": "can_telegram", "call": "can_call", "dashboard": "can_dashboard",
+                      "web": "can_dashboard"}
 DEFAULT_COUNTRY_CODE = os.environ.get("DEFAULT_COUNTRY_CODE", "41")
 
 _hasher = PasswordHasher()
