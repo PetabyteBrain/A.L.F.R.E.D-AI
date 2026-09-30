@@ -48,6 +48,13 @@ the original spec is in `docs/archive/original-spec.md`. Keep the plan updated w
   `requires: google` in registry.yaml only appear for people with a linked calendar.
 - Usage metering: `orchestrator/usage.py`; record every new billable API call there.
 
+## Verification, reminders, briefing, memory, voice
+- Phone/Telegram connections only count once `verified_at` is set (`identity/verification.py`);
+  anything that reaches a person (resolve, phone_for, telegram_for) must use verified ones.
+- Background loops in `main.lifespan`: health, scheduler (calls), reminders, briefing.
+- `memory.prompt_block` goes into `_dynamic_system` only, never into STATIC_SYSTEM (cache).
+- Calls speak streamed text sentence by sentence (`call_handler.split_speakable`, `_turn`).
+
 ## Testing
 - `.venv/Scripts/python -m pytest -q` — offline; includes a simulated Twilio call through the
   media-stream WebSocket with fake STT/TTS/agent.
