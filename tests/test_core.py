@@ -1180,3 +1180,56 @@ def test_briefing_api():
         assert r["time_local"] == "06:45" and r["days"] == "weekdays" and not r["enabled"]
         assert c.put("/api/briefing", json={"time_local": "25:00"}, headers=CSRF).status_code == 400
         assert c.put("/api/briefing", json={"channel": "fax"}, headers=CSRF).status_code == 422
+
+
+def test_telegram_voice_note_round_trip(monkeypatch):
+    import asyncio
+    from types import SimpleNamespace as NS
+    from orchestrator import agent_core, telegram_handler as th
+    from orchestrator.config import settings
+    from orchestrator.stt_tts import elevenlabs
+    replies, seen = [], {}
+
+    async def fake_transcribe(data, filename="voice.ogg", mime="audio/ogg"):
+        assert data == b"OggS-fake"
+        return "remind me to call the bank", "eng"
+
+    async def fake_tts(text):
+        seen["tts"] = text
+        return b"OggS-reply"
+
+    async def fake_respond(person, channel, session_id, text, *, extra_system=None, **kw):
+        seen.update(text=text, extra=extra_system)
+        return "Very good, sir. I'll remind you."
+    monkeypatch.setattr(elevenlabs, "transcribe_file", fake_transcribe)
+    monkeypatch.setattr(elevenlabs, "synthesize_voice_note", fake_tts)
+    monkeypatch.setattr(agent_core, "respond", fake_respond)
+    monkeypatch.setattr(type(settings), "elevenlabs_enabled", property(lambda s: True))
+
+    class File:
+        async def download_as_bytearray(self):
+            return bytearray(b"OggS-fake")
+
+    class Voice:
+        duration, file_size, mime_type = 4, 9000, "audio/ogg"
+        async def get_file(self):
+            return File()
+
+    class Msg:
+        chat_id, text, caption, audio, video_note = 111, None, None, None, None
+        voice = Voice()
+        async def reply_voice(self, voice, caption=None):
+            replies.append(("voice", voice, caption))
+        async def reply_text(self, text, **kw):
+            replies.append(("text", text))
+
+    upd = NS(effective_message=Msg(), effective_user=NS(id=111, username="t"), effective_chat=NS(id=111, type="private"))
+    asyncio.run(th.on_message(upd, None))
+    assert seen["text"] == "(voice message) remind me to call the bank" and "spoken" in seen["extra"]
+    assert replies == [("voice", b"OggS-reply", "Very good, sir. I'll remind you.")]
+
+    # a long recording is refused before anything is downloaded or transcribed
+    replies.clear()
+    Voice.duration = 900
+    asyncio.run(th.on_message(upd, None))
+    assert replies and replies[0][0] == "text" and "under 5 minutes" in replies[0][1]

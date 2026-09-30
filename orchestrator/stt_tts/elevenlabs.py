@@ -127,3 +127,33 @@ class ElevenLabsTTS(TTS):
             return True, f"{d.get('tier', '?')}: {d.get('character_count', '?')}/{d.get('character_limit', '?')} chars"
         except Exception as e:  # noqa: BLE001
             return False, str(e)[:200]
+
+
+# --- Telegram voice notes: whole-file transcription and Ogg/Opus synthesis ---------------------
+
+BATCH_STT_MODEL = "scribe_v2"
+
+
+async def transcribe_file(data: bytes, filename: str = "voice.ogg", mime: str = "audio/ogg") -> tuple[str, str]:
+    """Transcribe a recorded clip (e.g. a Telegram voice note). Returns (text, language_code)."""
+    async with httpx.AsyncClient(timeout=httpx.Timeout(90.0, connect=5.0)) as c:
+        r = await c.post(f"{API}/v1/speech-to-text", headers={"xi-api-key": settings.elevenlabs_api_key},
+                         data={"model_id": BATCH_STT_MODEL}, files={"file": (filename, data, mime)})
+    if r.status_code >= 400:
+        db.set_health("elevenlabs_stt", False, f"batch HTTP {r.status_code}")
+        raise RuntimeError(f"ElevenLabs STT {r.status_code}: {r.text[:200]}")
+    j = r.json()
+    return (j.get("text") or "").strip(), j.get("language_code") or ""
+
+
+async def synthesize_voice_note(text: str) -> bytes:
+    """Speech as Ogg/Opus, which Telegram shows as a voice message (no transcoding needed)."""
+    async with httpx.AsyncClient(timeout=httpx.Timeout(60.0, connect=5.0)) as c:
+        r = await c.post(f"{API}/v1/text-to-speech/{settings.elevenlabs_voice_id}",
+                         params={"output_format": "opus_48000_64"},
+                         headers={"xi-api-key": settings.elevenlabs_api_key},
+                         json={"text": text, "model_id": settings.elevenlabs_tts_model})
+    if r.status_code >= 400:
+        db.set_health("elevenlabs_tts", False, f"HTTP {r.status_code}")
+        raise RuntimeError(f"ElevenLabs TTS {r.status_code}: {r.text[:200]}")
+    return r.content

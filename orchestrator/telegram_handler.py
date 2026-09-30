@@ -44,10 +44,10 @@ def _chunks(text: str) -> list[str]:
     return out or ["…"]
 
 
-async def _keep_typing(chat_id: int, stop: asyncio.Event) -> None:
+async def _keep_typing(chat_id: int, stop: asyncio.Event, action: str = ChatAction.TYPING) -> None:
     while not stop.is_set():
         with contextlib.suppress(Exception):
-            await _app.bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING)
+            await _app.bot.send_chat_action(chat_id=chat_id, action=action)
         with contextlib.suppress(asyncio.TimeoutError):
             await asyncio.wait_for(stop.wait(), timeout=4.5)
 
@@ -79,18 +79,27 @@ async def on_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
             log.info("Dropped Telegram message from unregistered id %s (@%s)", user.id, user.username)
         return
 
-    text = msg.text or msg.caption
-    if not text:
-        await msg.reply_text("I can only read text messages for now.")
-        return
-
     session_id = sessions.telegram_session_for(person.id, str(chat.id))
-    db.log_activity("message", f"Telegram from {person.display_name}: {text[:80]}", person.id, session_id)
+    voice = msg.voice or msg.audio or msg.video_note
+    extra = None
+    if voice:
+        text = await _transcribe(msg, voice, person, session_id)
+        if text is None:
+            return
+        extra = VOICE_NOTE_SYSTEM
+    else:
+        text = msg.text or msg.caption
+        if not text:
+            await msg.reply_text("I can read text and listen to voice messages; that one I can't open.")
+            return
+    db.log_activity("message", f"Telegram {'voice ' if voice else ''}from {person.display_name}: {text[:80]}",
+                    person.id, session_id)
 
     stop = asyncio.Event()
     typing = asyncio.create_task(_keep_typing(chat.id, stop))
     try:
-        reply = await agent_core.respond(person, "telegram", session_id, text)
+        reply = await agent_core.respond(person, "telegram", session_id, f"{VOICE_PREFIX}{text}" if voice else text,
+                                         extra_system=extra)
     except Exception:
         log.exception("Agent failure for Telegram message")
         reply = "Something broke on my side. It's been logged."
@@ -98,8 +107,75 @@ async def on_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         stop.set()
         await typing
 
+    if voice and settings.elevenlabs_enabled and len(reply) <= VOICE_REPLY_MAX_CHARS:
+        if await _reply_with_voice(msg, reply, person, session_id):
+            return
     for part in _chunks(reply):
         await msg.reply_text(part, disable_web_page_preview=True)
+
+
+# --- voice notes ---------------------------------------------------------------------------------
+# Voice in -> transcribed (ElevenLabs Scribe) -> normal reply -> sent back as a voice note too.
+
+VOICE_PREFIX = "(voice message) "
+VOICE_MAX_SECONDS = 300
+VOICE_REPLY_MAX_CHARS = 1500          # longer answers go out as text only (TTS cost, listening time)
+VOICE_NOTE_SYSTEM = ("The person sent a Telegram voice message (transcribed above). Your reply is sent back as a "
+                     "voice message with the text as caption, so write it to be spoken: natural sentences, no "
+                     "Markdown, lists, URLs or emoji, and keep it brief unless they asked for detail.")
+
+
+async def _transcribe(msg, voice, person, session_id: str) -> str | None:
+    from .stt_tts import elevenlabs
+    if not settings.elevenlabs_enabled:
+        await msg.reply_text("Voice messages need speech recognition, which isn't set up. Please type instead.")
+        return None
+    seconds = getattr(voice, "duration", 0) or 0
+    if seconds > VOICE_MAX_SECONDS or (voice.file_size or 0) > 20_000_000:
+        await msg.reply_text("That recording is a bit long for me. Please keep voice messages under 5 minutes.")
+        return None
+    stop = asyncio.Event()
+    typing = asyncio.create_task(_keep_typing(msg.chat_id, stop))
+    try:
+        f = await voice.get_file()
+        data = bytes(await f.download_as_bytearray())
+        mime = getattr(voice, "mime_type", None) or "audio/ogg"
+        text, _lang = await elevenlabs.transcribe_file(data, "voice" + (".ogg" if "ogg" in mime else ".bin"), mime)
+    except Exception:
+        log.exception("Voice transcription failed")
+        await msg.reply_text("I couldn't listen to that one just now. Could you try again, or type it?")
+        return None
+    finally:
+        stop.set()
+        await typing
+    from . import usage
+    usage.record_stt(seconds, user_id=person.id, session_id=session_id)
+    if not text:
+        await msg.reply_text("I couldn't make out any words in that. Could you try again?")
+        return None
+    return text
+
+
+async def _reply_with_voice(msg, reply: str, person, session_id: str) -> bool:
+    from . import usage
+    from .stt_tts import elevenlabs
+    stop = asyncio.Event()
+    rec = asyncio.create_task(_keep_typing(msg.chat_id, stop, ChatAction.RECORD_VOICE))
+    try:
+        audio = await elevenlabs.synthesize_voice_note(reply)
+    except Exception:
+        log.exception("Voice reply synthesis failed")
+        return False
+    finally:
+        stop.set()
+        await rec
+    usage.record_tts(len(reply), user_id=person.id, session_id=session_id)
+    caption = reply if len(reply) <= 1024 else None
+    await msg.reply_voice(voice=audio, caption=caption)
+    if caption is None:
+        for part in _chunks(reply):
+            await msg.reply_text(part, disable_web_page_preview=True)
+    return True
 
 
 async def send_to_user(user_id: int, text: str, note: str | None = None, record: bool = True,
