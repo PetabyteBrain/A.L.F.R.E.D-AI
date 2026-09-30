@@ -222,6 +222,7 @@ html.js .reveal.in { opacity: 1; transform: none; }
 .cards .card:nth-child(2), .steps li:nth-child(2) { transition-delay: .08s; }
 .cards .card:nth-child(3), .steps li:nth-child(3) { transition-delay: .16s; }
 .cards .card:nth-child(5) { transition-delay: .08s; } .cards .card:nth-child(6) { transition-delay: .16s; }
+.cards .card:nth-child(8) { transition-delay: .08s; } .cards .card:nth-child(9) { transition-delay: .16s; }
 
 /* ---------- responsive ---------- */
 @media (max-width: 1000px) {

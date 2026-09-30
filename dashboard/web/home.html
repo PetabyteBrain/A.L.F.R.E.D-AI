@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="referrer" content="no-referrer">
-  <meta name="description" content="Alfred is a private AI butler: it answers the phone, calls people on your behalf, chats by message and manages your Google Calendar on request. Invitation only.">
+  <meta name="description" content="Alfred is a private AI butler: it answers the phone, calls people on your behalf, reminds you, follows up on tasks, briefs you each morning, chats by text or voice and manages your Google Calendar on request. Invitation only.">
   <title>Alfred · Private AI butler</title>
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <script type="module" src="/src/home/home.js"></script>
@@ -41,13 +41,14 @@
         <p class="kicker"><span class="blip"></span>Personal butler system · online</p>
         <h1 id="headline" data-text="At your service.">At your service.</h1>
         <p class="lead">Alfred is a private AI butler you can <strong>phone</strong>, <strong>message</strong>
-          or run from a <strong>secure dashboard</strong>. It answers questions, places and schedules calls on
-          your behalf, keeps track of tasks and, if you link it, manages your Google Calendar.</p>
+          (by text or voice) or talk to on a <strong>secure dashboard</strong>. It calls people on your behalf,
+          reminds you, follows up on tasks until they're done, briefs you every morning, remembers how you like
+          things and, if you link it, manages your Google Calendar.</p>
         <ul class="boot" aria-label="System status">
           <li><span>voice interface</span><b>ready</b></li>
-          <li><span>secure channels</span><b>ready</b></li>
-          <li><span>call scheduler</span><b>ready</b></li>
-          <li><span>calendar module</span><b>ready</b></li>
+          <li><span>call &amp; follow-up scheduler</span><b>ready</b></li>
+          <li><span>reminders &amp; briefings</span><b>ready</b></li>
+          <li><span>quiet hours</span><b>observed</b></li>
         </ul>
         <div class="cta">
           <a class="btn primary big" href="/app" data-auth="guest">Sign in</a>
@@ -94,13 +95,13 @@
         <div class="readout r1"><span>VOICE</span><b>ONLINE</b></div>
         <div class="readout r2"><span>CHANNELS</span><b>PHONE · CHAT · WEB</b></div>
         <div class="readout r3"><span>ACCESS</span><b>INVITE ONLY</b></div>
-        <div class="readout r4"><span>CALENDAR</span><b>ON REQUEST</b></div>
+        <div class="readout r4"><span>QUIET HOURS</span><b>OBSERVED</b></div>
       </div>
     </section>
 
     <section class="strip reveal" aria-label="Highlights">
       <div><span class="k">Channels</span><span class="v">Phone · Message · Web</span></div>
-      <div><span class="k">Voice</span><span class="v">Natural, real-time</span></div>
+      <div><span class="k">Voice</span><span class="v">Calls &amp; voice notes</span></div>
       <div><span class="k">Access</span><span class="v">Invitation only</span></div>
       <div><span class="k">Privacy</span><span class="v">No ads · no tracking</span></div>
     </section>
@@ -112,32 +113,47 @@
         <article class="card reveal">
           <div class="card-top"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h4l2 5-2.5 1.5a11 11 0 0 0 5 5L16 12l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 4 5a2 2 0 0 1 2-2z"/></svg><span class="idx">01</span></div>
           <h3>Answers the phone</h3>
-          <p>Registered people call Alfred and talk naturally. Every call is transcribed so nothing gets lost.</p>
+          <p>Call Alfred and talk naturally; it starts answering while it's still thinking. Every call is recorded and transcribed, and Alfred says so at the start.</p>
         </article>
         <article class="card reveal">
           <div class="card-top"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h6v6M21 3l-8 8"/><path d="M8 5H5a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></svg><span class="idx">02</span></div>
           <h3>Calls on your behalf</h3>
-          <p>“Call Max tomorrow at nine and ask about the invoice.” Alfred makes the call, then reports the answer back to you.</p>
+          <p>“Call Max tomorrow at nine and ask about the invoice.” Alfred makes the call and reports the answer back to you, and it never rings anyone during their quiet hours unless you say it's urgent.</p>
         </article>
         <article class="card reveal">
-          <div class="card-top"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/><path d="M8.5 12h.01M12 12h.01M15.5 12h.01"/></svg><span class="idx">03</span></div>
-          <h3>Chats by message</h3>
-          <p>Quick questions, reminders and updates by text, with the same memory of your conversation.</p>
+          <div class="card-top"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/><path d="M9 10v3M12 8.5v6M15 10v3"/></svg><span class="idx">03</span></div>
+          <h3>Chats by text or voice</h3>
+          <p>Message Alfred or use the web chat, where replies stream in as they're written. Send a voice message and Alfred answers with one.</p>
         </article>
         <article class="card reveal">
-          <div class="card-top"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4M8 14h3v3H8z"/></svg><span class="idx">04</span></div>
+          <div class="card-top"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg><span class="idx">04</span></div>
+          <h3>Reminders that stick</h3>
+          <p>“Remind me every weekday at 8:30.” A message with Done and Snooze buttons, or a phone call. Ignore it and Alfred can ring you instead.</p>
+        </article>
+        <article class="card reveal">
+          <div class="card-top"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg><span class="idx">05</span></div>
+          <h3>Morning briefing</h3>
+          <p>At a time you choose: the weather, your calendar, today's reminders and calls, and anything that happened overnight. By message or read to you on a call.</p>
+        </article>
+        <article class="card reveal">
+          <div class="card-top"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6h11M9 12h11M9 18h11"/><path d="m3.5 6 1.5 1.5L7.5 5M3.5 12l1.5 1.5 2.5-2.5"/><circle cx="5" cy="18" r="1.5"/></svg><span class="idx">06</span></div>
+          <h3>Follows up on tasks</h3>
+          <p>“Ask Max to send the invoice by Friday and follow up.” When it's due, Alfred checks in with Max, asks again if needed, and tells you the outcome.</p>
+        </article>
+        <article class="card reveal">
+          <div class="card-top"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4M8 14h3v3H8z"/></svg><span class="idx">07</span></div>
           <h3>Manages your calendar</h3>
           <p>Link your own Google Calendar and Alfred checks your schedule and adds, moves or removes events when you ask.</p>
         </article>
         <article class="card reveal">
-          <div class="card-top"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 2 4 14h7l-1 8 9-12h-7z"/></svg><span class="idx">05</span></div>
-          <h3>Runs automations</h3>
-          <p>Alfred triggers and reports on routine automations, from daily alerts to multi-step workflows.</p>
+          <div class="card-top"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h12v18l-6-4-6 4z"/><path d="M9.5 8h5"/></svg><span class="idx">08</span></div>
+          <h3>Remembers what matters</h3>
+          <p>Tell Alfred once how you like things. It keeps short notes, uses them only with you, and you can see and edit them at any time.</p>
         </article>
         <article class="card reveal">
-          <div class="card-top"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><path d="M14 17.5h7M17.5 14v7"/></svg><span class="idx">06</span></div>
+          <div class="card-top"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><path d="M14 17.5h7M17.5 14v7"/></svg><span class="idx">09</span></div>
           <h3>Command dashboard</h3>
-          <p>Live calls and chats, transcripts, scheduled calls, tasks and system health in one secure place.</p>
+          <p>Live calls and chats, transcripts, tasks, reminders, scheduled calls, automations and system health in one secure place.</p>
         </article>
       </div>
     </section>
@@ -146,9 +162,9 @@
       <p class="kicker reveal"><span class="blip"></span>Protocol</p>
       <h2 class="reveal">How it works</h2>
       <ol class="steps">
-        <li class="reveal"><span class="num">1</span><h3>You ask</h3><p>Call, send a message or use the dashboard: “Remind me at five”, “what's on my calendar tomorrow?”, “call Max Mustermann and ask if he's coming”.</p></li>
-        <li class="reveal"><span class="num">2</span><h3>Alfred acts</h3><p>It understands the request, checks what it's allowed to do for you, and handles it: a call, a calendar change, a task, an automation.</p></li>
-        <li class="reveal"><span class="num">3</span><h3>You get the result</h3><p>Answers come back where you asked, and outcomes of calls made for you are reported to you afterwards.</p></li>
+        <li class="reveal"><span class="num">1</span><h3>You ask</h3><p>Call, send a text or voice message, or use the dashboard: “Remind me at five”, “what's my day like?”, “call Max Mustermann and ask if he's coming”.</p></li>
+        <li class="reveal"><span class="num">2</span><h3>Alfred acts</h3><p>It understands the request, checks what it's allowed to do for you, and handles it: a call, a reminder, a task with a follow-up, a calendar change, an automation.</p></li>
+        <li class="reveal"><span class="num">3</span><h3>You get the result</h3><p>Answers come back where you asked. Calls made and tasks followed up for you are reported back, at a considerate hour.</p></li>
       </ol>
     </section>
 
@@ -168,9 +184,11 @@
       <div class="panel reveal">
         <p class="kicker"><span class="blip"></span>Privacy</p>
         <h2>Private by design</h2>
-        <p>Access is limited to registered people and what their role allows. No advertising, no tracking
-          cookies, no selling of data. Calls are recorded and transcribed so they can be reviewed; everyone
-          can see and correct their own details.</p>
+        <p>Access is limited to registered people and what their role allows, and a new phone number or
+          messaging account only works once it's confirmed with a code. No advertising, no tracking cookies,
+          no selling of data. Calls are recorded and transcribed so they can be reviewed. Everyone can see and
+          correct their own details, including the notes Alfred keeps for them, and set quiet hours when
+          Alfred won't disturb them.</p>
         <p class="small">Read the <a href="/privacy-policy">Privacy Policy</a> and the
           <a href="/terms-of-service">Terms of Service</a>. Questions or data requests:
           <a href="mailto:contact@example.com">contact@example.com</a>.</p>

@@ -1,24 +1,43 @@
 # Alfred
 
-Personal AI butler (persona modelled on Alfred Pennyworth) reachable by **phone** (Twilio, Swiss number) and **Telegram**, backed by
-**Claude Haiku 4.5**, wired into **n8n**, with a password-protected **dashboard** for live
-sessions, recordings/transcripts, tasks, activity and health. Only people in the registry
-get answers; everyone else is ignored silently.
+Personal AI butler (persona modelled on Alfred Pennyworth) reachable by **phone** (Twilio, Swiss
+number), **Telegram** (text and voice notes) and a **web chat**, backed by **Claude Haiku 4.5**,
+wired into **n8n**, with a password-protected **dashboard**. Only people in the registry get
+answers; everyone else is ignored silently.
 
 Runs as one Docker container on **alfred-server** (`/home/user/alfred`). The project, service,
 container and hostname keep their original `alfred` names (alfred.example.com, `docker compose exec alfred`);
 only the assistant's persona and branding are "Alfred" (`ASSISTANT_NAME`). The dashboard has two skins:
 **Stark** (holographic HUD) and **Batcave** (bat-signal yellow on gunmetal).
 
+## What Alfred can do
+
+| Area | What it does | Where |
+|---|---|---|
+| Phone | Answers registered callers, speaks sentence by sentence as the reply streams in, says "one moment" while a tool runs, announces that calls are recorded, hangs up by itself when done | call |
+| Calls for you | "Call Max tomorrow at 9 and ask about the invoice": dials now or later, retries no-answer, summarises the call and reports back | any channel, dashboard |
+| Chat | Telegram (text + voice notes answered with voice) and the dashboard Chat tab with live-streamed replies | Telegram, web |
+| Reminders | One-off or recurring (daily/weekdays/weekly/monthly), Telegram with Done/Snooze or a call, optional escalation to a call if ignored | any channel, Tasks tab |
+| Daily briefing | Weather (Open-Meteo), today's calendar, reminders, planned calls, overnight call outcomes, tasks; by Telegram or call at a set time | Profile |
+| Tasks & follow-ups | Tasks with owner, due time and follow-up: Alfred checks in with the owner (Telegram buttons or a call), up to 3 times, and tells the requester | any channel, Tasks tab |
+| Memory | Short per-person notes ("prefers calls after 9") used in that person's conversations only; editable | any channel, Profile |
+| Calendar | Per-user Google Calendar: list, create, move, delete events (Limited Use) | any channel, Profile |
+| Automations | Full n8n API for the admin, webhook tools, async results via callback | any channel |
+| Quiet hours | Household default (22:00-07:00) + per person; calls others asked for wait, messages go silent, "urgent" overrides | Profile |
+| Safety | Registry-only access, roles, code verification of new phone/Telegram connections, hardened dashboard | everywhere |
+| Dashboard | Live sessions (terminate), archive with audio, tasks/reminders/calls, event log, health, people, API usage and cost | `/app` |
+
 ```
 Phone ──► Twilio ──► /twilio/voice ─► identity ─► <Stream> ─► /twilio/stream (WS)
                                                          │ mu-law 8k
                                                          ├─► ElevenLabs Scribe v2 RT (STT)
-                                                         ├─► Agent Core (Claude) ─► tools ─► n8n
-                                                         └─◄ ElevenLabs Flash TTS ◄─┘
-Telegram ◄─► long polling ─► identity ─► Agent Core
+                                                         ├─► Agent Core (Claude, streamed) ─► tools ─► n8n
+                                                         └─◄ ElevenLabs Flash TTS (per sentence) ◄─┘
+Telegram ◄─► long polling ─► identity ─► Agent Core   (voice notes: Scribe batch + Ogg/Opus TTS)
 Dashboard (React) ─► /api/* (Argon2 login, server-side sessions) ─► SQLite + /data/storage
+                     /api/chat/stream (SSE)
 n8n ─► /n8n/callback (X-Alfred-Secret) ─► Agent Core ─► Telegram
+Background loops: calls · reminders · task follow-ups · briefings · health (quiet-hours aware)
 ```
 
 The full, current project plan (architecture, data model, phases, roadmap) is in
@@ -28,10 +47,10 @@ The full, current project plan (architecture, data model, phases, roadmap) is in
 
 | Phase | What | State |
 |---|---|---|
-| 1 | Telegram + Agent Core + identity registry + SQLite logging | built, needs `ANTHROPIC_API_KEY` + `TELEGRAM_BOT_TOKEN` |
-| 2 | n8n full REST API tools + role-gated registry + `echo_test` | built, needs `N8N_API_KEY`; import `infra/n8n/alfred-echo.workflow.json` |
-| 3 | Twilio Media Streams + ElevenLabs STT/TTS + stereo recording | built, needs Twilio + ElevenLabs keys and a public URL |
-| 4 | Dashboard (live, recordings, tasks, activity, health, people) | built |
+| 1 | Telegram + Agent Core + identity registry + SQLite logging | live |
+| 2 | n8n full REST API tools + role-gated registry + `echo_test` | live |
+| 3 | Twilio Media Streams + ElevenLabs STT/TTS + stereo recording | live |
+| 4 | Dashboard + additions (people, calls for others, calendar, usage, web chat, reminders, briefing, voice notes, memory, verification, quiet hours, task follow-ups) | live |
 | 5 | Jetson Whisper/Piper | swap point: `orchestrator/stt_tts/base.py` |
 | 6 | NAS storage | change `STORAGE_ROOT` + one bind mount in `docker-compose.yml` |
 
@@ -60,11 +79,16 @@ alfred-admin disable 2
 alfred-admin attempts          # who tried to reach Alfred without being registered
 ```
 
+Usually you'll do this on the dashboard instead: **Personnel** (admin) and **Profile** (everyone).
+
 - Telegram identity is the **numeric user ID** (e.g. via @userinfobot), never the @username.
 - Phone numbers are normalised to E.164; Swiss local format (`079…`) becomes `+4179…`.
+- Phone numbers and Telegram IDs added on the dashboard stay inactive until confirmed with a
+  code (Alfred calls with it, or the code is sent to the bot from that account); admins can mark
+  one verified by hand. CLI-added connections count as verified.
 - A role's channels (`telegram` / `call` / `dashboard`) are set per role; its tools are set in
   `orchestrator/tools/registry.yaml` (`roles: [admin, friend]`, or `"*"` for everyone).
-- Admin details in `.env` (`ADMIN_*`) are re-applied on every start.
+- `.env` `ADMIN_*` only seeds the very first admin; after that the database is the source of truth.
 
 ## Adding a capability
 
@@ -97,7 +121,8 @@ Telegram needs no public URL. Twilio does. Following the existing homelab patter
 ```
 data/alfred.db
 data/storage/{user_id}/{YYYY-MM-DD}/{session_id}/audio.wav        # calls: stereo, L=caller R=Alfred
-data/storage/{user_id}/{YYYY-MM-DD}/{session_id}/transcript.json  # calls + Telegram sessions
+data/storage/{user_id}/{YYYY-MM-DD}/{session_id}/transcript.json  # calls, Telegram and web sessions
+data/backups/                                                     # DB snapshots taken before migrations
 ```
 
 ## Dashboard security
@@ -132,13 +157,19 @@ The Docker build compiles the React app in a Node stage, so the Pi doesn't need 
 Deploy from Windows (local copy is the master):
 
 ```bash
-tar --exclude=.venv --exclude=node_modules --exclude=dist --exclude=data --exclude=data-dev --exclude=.env --exclude=__pycache__ -czf - . | ssh user@alfred-server 'mkdir -p ~/alfred && tar -xzf - -C ~/alfred'
+git archive HEAD | ssh user@alfred-server 'tar -xf - -C ~/alfred'
 ssh user@alfred-server 'cd ~/alfred && docker compose up -d --build'
 ```
 
-## Open questions (from the spec)
+Schema changes migrate themselves on start (`db.init_db`); take a DB snapshot into
+`data/backups/` first. Never pipe the archive into an ssh call that also runs
+`docker compose exec` (exec swallows stdin).
 
-- Roles beyond `admin`/`friend` and exactly what each gates.
-- First real n8n workflow.
+## Open questions
+
+- First real n8n workflow beyond the echo test and the daily weather alert.
 - Retention of recordings/transcripts once the NAS is in place.
-- Whether phone and Telegram context should ever merge per person (today: separate threads).
+- Whether phone, Telegram and web context should merge per person (today: separate threads;
+  memory notes are shared across all of them).
+
+The feature roadmap is in [docs/PROJECT_PLAN.md](docs/PROJECT_PLAN.md#10-roadmap--feature-expansions).
