@@ -1083,6 +1083,16 @@ def test_reminders_deliver_ack_escalate_and_repeat(monkeypatch):
     asyncio.run(reminders.tick())
     assert reminders.get(r2["id"])["status"] == "failed"
 
+    # a Telegram error doesn't escalate into a phone call
+    async def broken_send(*a, **kw):
+        raise RuntimeError("Telegram bot is not running.")
+    monkeypatch.setattr(telegram_handler, "send_to_user", broken_send)
+    n_calls = len(calls)
+    r3 = reminders.create(created_by=friend, text="Quiet one", when=soon)
+    db.execute("UPDATE reminders SET due_at = ? WHERE id = ?", (reminders._iso(reminders._now()), r3["id"]))
+    asyncio.run(reminders.tick())
+    assert reminders.get(r3["id"])["status"] == "failed" and len(calls) == n_calls
+
 
 def test_reminders_api():
     from datetime import datetime, timedelta

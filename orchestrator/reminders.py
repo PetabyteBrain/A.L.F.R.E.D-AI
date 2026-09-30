@@ -240,13 +240,16 @@ async def deliver(reminder_id: int) -> None:
     order = ("telegram", "call") if row["channel"] == "telegram" else ("call", "telegram")
     used, error = None, ""
     for ch in order:
+        # Fall back to the other channel only if this one isn't set up for the person; an error on
+        # the way (e.g. Telegram hiccup) must not turn a quiet message into a ringing phone.
         try:
             if await (_via_telegram(row) if ch == "telegram" else _via_call(row)):
                 used = ch
                 break
         except Exception as e:  # noqa: BLE001
             log.exception("Reminder %s via %s failed", reminder_id, ch)
-            error = str(e)[:300]
+            error = f"{ch}: {str(e)[:280]}"
+            break
     if used is None:
         db.execute("UPDATE reminders SET status = 'failed', error = ? WHERE id = ?",
                    (error or "No verified Telegram or phone to reach them.", reminder_id))
