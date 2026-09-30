@@ -835,6 +835,69 @@ def test_web_chat(monkeypatch):
         assert c.post("/api/chat", json={"message": "two"}, headers=CSRF).status_code == 429
 
 
+def test_web_chat_stream(monkeypatch):
+    import json
+    from types import SimpleNamespace as NS
+    from fastapi.testclient import TestClient
+    from orchestrator import agent_core
+    from orchestrator.config import settings
+    from orchestrator.main import app
+    rounds = []
+
+    class Stream:
+        def __init__(self, parts, final):
+            self.parts, self.final = parts, final
+        async def __aenter__(self):
+            return self
+        async def __aexit__(self, *exc):
+            return False
+        @property
+        async def text_stream(self):
+            for p in self.parts:
+                yield p
+        async def get_final_message(self):
+            return self.final
+
+    class FakeMessages:
+        def stream(self, **kw):
+            rounds.append(kw)
+            if len(rounds) == 1:   # preamble, then a tool call
+                return Stream(["Let me ", "check."], NS(stop_reason="tool_use", usage=None, content=[
+                    NS(type="text", text="Let me check."), NS(type="tool_use", id="t1", name="current_time", input={})]))
+            return Stream(["It is ", "**noon**."], NS(stop_reason="end_turn", usage=None,
+                                                         content=[NS(type="text", text="It is **noon**.")]))
+    monkeypatch.setattr(agent_core, "_client", NS(messages=FakeMessages()))
+    monkeypatch.setattr(type(settings), "anthropic_api_key", property(lambda self: "sk-test"), raising=False)
+
+    def events(c, message):
+        with c.stream("POST", "/api/chat/stream", json={"message": message}, headers=CSRF) as r:
+            assert r.status_code == 200 and r.headers["content-type"].startswith("text/event-stream")
+            body = "".join(r.iter_text())
+        return [json.loads(f[6:]) for f in body.split("\n\n") if f.startswith("data: ")]
+
+    with TestClient(app) as c:
+        assert c.post("/api/chat/stream", json={"message": "hi"}, headers=CSRF).status_code == 401
+        c.post("/api/login", json={"username": "admin", "password": "correct horse battery"}, headers=CSRF)
+        assert c.post("/api/chat/stream", json={"message": "hi"}).status_code == 403       # CSRF header required
+        assert c.post("/api/chat/stream", json={"message": ""}, headers=CSRF).status_code == 422
+        c.post("/api/chat/reset", headers=CSRF)
+
+        ev = events(c, "What time is it?")
+        assert [e["type"] for e in ev] == ["delta", "delta", "tool", "delta", "delta", "done"]
+        assert ev[2]["name"] == "current_time"
+        assert "".join(e["text"] for e in ev[3:5]) == "It is **noon**."
+        assert ev[-1]["reply"] == "It is **noon**." and ev[-1]["session_id"].startswith("web-")
+        assert rounds[1]["messages"][-1]["content"][0]["type"] == "tool_result"   # tool actually ran
+        hist = c.get("/api/chat/history").json()
+        assert [(h["speaker"], h["text"]) for h in hist] == [("user", "What time is it?"), ("assistant", "It is **noon**.")]
+
+        # a failing model call ends the stream with an error event, not a hung connection
+        async def boom(*a, **kw):
+            raise RuntimeError("kaputt")
+        monkeypatch.setattr(agent_core, "respond", boom)
+        assert [e["type"] for e in events(c, "again")] == ["error"]
+
+
 def test_web_chat_requires_dashboard_role():
     from orchestrator.identity import registry as reg
     assert reg.role_allows_channel("admin", "web")

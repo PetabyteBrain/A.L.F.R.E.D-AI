@@ -11,8 +11,8 @@ export class ApiError extends Error {
 let onUnauthorized = () => {};
 export const setUnauthorizedHandler = (fn) => { onUnauthorized = fn; };
 
-export async function api(path, { method = "GET", body } = {}) {
-  const headers = { Accept: "application/json" };
+async function request(path, { method = "GET", body, accept = "application/json" } = {}) {
+  const headers = { Accept: accept };
   if (method !== "GET") headers["X-Requested-With"] = "alfred";
   if (body !== undefined) headers["Content-Type"] = "application/json";
 
@@ -35,7 +35,32 @@ export async function api(path, { method = "GET", body } = {}) {
     } catch { /* not JSON */ }
     throw new ApiError(res.status, detail);
   }
-  return res.json();
+  return res;
+}
+
+export async function api(path, options) {
+  return (await request(path, options)).json();
+}
+
+// POST that answers with Server-Sent Events; calls onEvent(obj) for each `data:` line and
+// resolves when the server closes the stream.
+export async function apiStream(path, body, onEvent) {
+  const res = await request(path, { method: "POST", body, accept: "text/event-stream" });
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buf = "";
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buf += decoder.decode(value, { stream: true });
+    let cut;
+    while ((cut = buf.indexOf("\n\n")) >= 0) {
+      const frame = buf.slice(0, cut);
+      buf = buf.slice(cut + 2);
+      const data = frame.split("\n").filter((l) => l.startsWith("data: ")).map((l) => l.slice(6)).join("\n");
+      if (data) onEvent(JSON.parse(data));
+    }
+  }
 }
 
 // Only ever build audio URLs from numeric IDs returned by the API.

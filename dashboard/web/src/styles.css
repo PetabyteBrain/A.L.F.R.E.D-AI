@@ -645,7 +645,7 @@ main > .legal-links { margin-top: 8px; }
 
 /* ---------- chat ---------- */
 .hud.chat { display: flex; flex-direction: column; height: calc(100vh - 150px); min-height: 460px; padding-bottom: 12px; }
-.chat-scroll { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 14px; padding: 6px 4px 14px; scroll-behavior: smooth; }
+.chat-scroll { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 14px; padding: 6px 4px 14px; }
 .chat-empty { margin: auto; text-align: center; display: grid; justify-items: center; gap: 10px; max-width: 560px; padding: 20px; }
 .chat-empty h3 { margin: 6px 0 0; font: 700 20px var(--font-display); letter-spacing: .06em; color: var(--text-strong); }
 .chips { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
@@ -662,6 +662,14 @@ main > .legal-links { margin-top: 8px; }
   border: 1px solid var(--line); border-left: 2px solid var(--accent); }
 .msg.mine .bubble { background: rgb(255 255 255 / .06); border: 1px solid rgb(255 255 255 / .12); border-right: 2px solid var(--text); }
 .msg.failed .bubble { border-color: rgb(var(--bad-rgb) / .6); }
+/* live reply: blinking caret after the last line, and a status line while a tool runs */
+.msg.streaming .md > p:last-child::after, .msg.streaming .md > :is(ul, ol):last-child > li:last-child::after { content: ""; display: inline-block; width: .55em; height: 1.05em; margin-left: 2px;
+  vertical-align: -.15em; background: var(--accent); box-shadow: 0 0 8px var(--accent); animation: caret 1s steps(1) infinite; }
+@keyframes caret { 50% { opacity: 0; } }
+.tool-note { display: flex; align-items: center; gap: 8px; padding: 4px 0 2px; font: 400 12px var(--font-mono);
+  letter-spacing: .06em; color: var(--accent); }
+.tool-note .led { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 8px var(--accent); animation: dot 1.1s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { .msg.streaming .md *::after, .tool-note .led { animation: none; } }
 .fail-note { margin-top: 4px; font: 400 11px var(--font-mono); color: var(--bad); }
 .who { display: flex; gap: 10px; align-items: baseline; margin-bottom: 4px; font: 700 10px var(--font-display); letter-spacing: .18em;
   text-transform: uppercase; color: var(--accent); }

@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections import defaultdict
+from collections.abc import Awaitable, Callable
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -25,6 +26,9 @@ MAX_TOOL_ROUNDS = 8
 
 _client: anthropic.AsyncAnthropic | None = None
 _locks: dict[tuple[int, str], asyncio.Lock] = defaultdict(asyncio.Lock)
+
+# Optional live feed for a reply: ("delta", text) as the model writes, ("tool", name) before a tool runs.
+OnEvent = Callable[[str, str], Awaitable[None]]
 
 
 def client() -> anthropic.AsyncAnthropic:
@@ -123,14 +127,18 @@ async def respond(
     *,
     extra_system: str | None = None,
     record_user_turn: bool = True,
+    on_event: OnEvent | None = None,
 ) -> str:
-    """Run one exchange: history + new message -> (tools)* -> reply text. Persists both turns."""
+    """Run one exchange: history + new message -> (tools)* -> reply text. Persists both turns.
+
+    With `on_event`, the model's text is streamed to it while it is written (used by the web chat).
+    """
     async with _locks[(person.id, channel)]:
         live = sessions.LIVE.get(session_id)
         if live:
             live.busy = True
         try:
-            reply = await _run(person, channel, session_id, user_text, extra_system)
+            reply = await _run(person, channel, session_id, user_text, extra_system, on_event)
         finally:
             if live:
                 live.busy = False
@@ -140,7 +148,17 @@ async def respond(
         return reply
 
 
-async def _run(person: Person, channel: str, session_id: str, user_text: str, extra_system: str | None) -> str:
+async def _call_model(kwargs: dict, on_event: OnEvent | None):
+    if on_event is None:
+        return await client().messages.create(**kwargs)
+    async with client().messages.stream(**kwargs) as stream:
+        async for text in stream.text_stream:
+            await on_event("delta", text)
+        return await stream.get_final_message()
+
+
+async def _run(person: Person, channel: str, session_id: str, user_text: str, extra_system: str | None,
+               on_event: OnEvent | None = None) -> str:
     if not settings.anthropic_api_key:
         return "My language model isn't configured yet (ANTHROPIC_API_KEY is empty)."
 
@@ -158,7 +176,7 @@ async def _run(person: Person, channel: str, session_id: str, user_text: str, ex
             kwargs = dict(model=settings.claude_model, max_tokens=max_tokens, system=system, messages=messages)
             if tools:
                 kwargs["tools"] = tools
-            response = await client().messages.create(**kwargs)
+            response = await _call_model(kwargs, on_event)
         except anthropic.AuthenticationError:
             db.set_health("claude", False, "authentication failed")
             return "I can't reach my language model right now (authentication failed)."
@@ -182,6 +200,8 @@ async def _run(person: Person, channel: str, session_id: str, user_text: str, ex
             for block in response.content:
                 if block.type != "tool_use":
                     continue
+                if on_event:
+                    await on_event("tool", block.name)
                 out, is_error = await tool_registry.execute(block.name, dict(block.input or {}), ctx)
                 results.append({"type": "tool_result", "tool_use_id": block.id, "content": out, "is_error": is_error})
             messages.append({"role": "user", "content": results})

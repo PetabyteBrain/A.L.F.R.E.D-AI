@@ -93,7 +93,67 @@ def seed_live_call() -> None:
     threading.Thread(target=go, daemon=True).start()
 
 
+def fake_claude() -> None:
+    """A pretend model so the web chat streams without an API key: calendar-ish questions go
+    through a tool round first, everything else streams a canned butler reply word by word."""
+    import asyncio
+    from types import SimpleNamespace as NS
+    from orchestrator import agent_core
+    from orchestrator.config import settings
+
+    object.__setattr__(settings, "anthropic_api_key", "dev-fake")
+    reply = ("Certainly, sir. Here is what I can do from here:\n\n"
+             "- **Calls**: ring anyone in the registry, now or at a set time, and report back\n"
+             "- **Calendar**: read and arrange your Google Calendar\n"
+             "- **Tasks**: keep the list in order\n\n"
+             "Just say the word. `ANTHROPIC_API_KEY` is a fake one in this preview, naturally.")
+
+    class Stream:
+        def __init__(self, text, tool, delay=0.0):
+            self.text, self.tool, self.delay = text, tool, delay
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *exc):
+            return False
+
+        @property
+        async def text_stream(self):
+            await asyncio.sleep(self.delay)  # time to first token
+            for i, word in enumerate(self.text.split(" ")):
+                await asyncio.sleep(0.05)
+                yield (" " if i else "") + word
+
+        async def get_final_message(self):
+            content = [NS(type="text", text=self.text)]
+            if self.tool:
+                await asyncio.sleep(1.5)
+                content.append(NS(type="tool_use", id="tu1", name="current_time", input={}))
+            return NS(stop_reason="tool_use" if self.tool else "end_turn", content=content, usage=None)
+
+    class Messages:
+        def stream(self, **kw):
+            last = kw["messages"][-1]["content"]
+            if isinstance(last, str) and "calendar" in last.lower():
+                return Stream("Let me have a look.", tool=True)
+            if isinstance(last, list):
+                return Stream("Nothing on the calendar tomorrow, sir. A rare quiet day.", tool=False, delay=2.0)
+            return Stream(reply, tool=False)
+
+        async def create(self, **kw):
+            async with self.stream(**kw) as st:
+                return await st.get_final_message()
+
+    class Models:
+        async def retrieve(self, model):
+            return NS(id=model)
+
+    agent_core._client = NS(messages=Messages(), models=Models())
+
+
 if __name__ == "__main__":
     seed()
+    fake_claude()
     seed_live_call()
     uvicorn.run("orchestrator.main:app", host="127.0.0.1", port=8765)
