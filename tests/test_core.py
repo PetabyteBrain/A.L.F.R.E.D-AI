@@ -1280,3 +1280,74 @@ def test_long_term_memory_is_private_and_reaches_the_prompt(monkeypatch):
             == "Likes coffee black, no sugar."
         assert c.post("/api/memory", json={"text": "pin: 1234"}, headers=CSRF).status_code == 400
         assert all(n["id"] != nid for n in c.delete(f"/api/memory/{nid}", headers=CSRF).json())
+
+
+def test_split_speakable():
+    from orchestrator.call_handler import split_speakable
+    ready, rest = split_speakable("Certainly, sir. Mr. Smith rang at nine. And the")
+    assert ready == ["Certainly, sir.", "Mr. Smith rang at nine."] and rest == "And the"
+    ready, rest = split_speakable("OK. Fine")                  # too short to split off on its own
+    assert ready == [] and rest == "OK. Fine"
+    long = "word " * 60
+    ready, rest = split_speakable(long)
+    assert ready and len(ready[0]) <= 221 and (ready[0] + rest).split() == long.split()
+
+
+def test_call_reply_is_spoken_sentence_by_sentence(monkeypatch):
+    import asyncio
+    from types import SimpleNamespace as NS
+    from orchestrator import agent_core, call_handler
+    from orchestrator.stt_tts.base import Provider, STTStream, TTS
+
+    spoken, sent = [], []
+
+    class FakeTTS(TTS):
+        async def stream(self, text):
+            spoken.append(text)
+            yield b"\x10" * 160
+
+    class WS:
+        async def send_text(self, t):
+            sent.append(t)
+
+    class NoSTT(STTStream):
+        async def start(self): pass
+        async def send_audio(self, b): pass
+        async def close(self): pass
+
+    async def fake_respond(person, channel, sid, text, *, extra_system=None, on_event=None, **kw):
+        for d in ["Let me ", "check that for you, sir. "]:
+            await on_event("delta", d)
+        await on_event("tool", "calendar_list_events")
+        for d in ["You have two meetings", " today. The first is at ten", "."]:
+            await on_event("delta", d)
+        return "You have two meetings today. The first is at ten."
+    monkeypatch.setattr(agent_core, "respond", fake_respond)
+
+    person = registry.lookup("telegram", "111")
+    sid = sessions.start_session(person.id, "call")
+    pending = call_handler.PendingCall(sid, person.id, "tok", "Hello.")
+
+    async def run():
+        call = call_handler.CallSession(WS(), "MZ", pending, person, Provider("fake", NoSTT, FakeTTS()))
+        await call._turn("what's on today")
+        await asyncio.sleep(0.05)
+        assert spoken == ["Let me check that for you, sir.", "You have two meetings today.", "The first is at ten."]
+        assert call.speaking                                   # waiting for Twilio's last mark
+        # nothing spoken before a tool -> a short filler; a barge-in drops the rest of the turn
+        spoken.clear()
+
+        async def slow_respond(person, channel, sid, text, *, on_event=None, **kw):
+            await on_event("tool", "list_tasks")
+            await asyncio.sleep(0.05)
+            await on_event("delta", "This sentence is stale by now. ")
+            return "This sentence is stale by now."
+        monkeypatch.setattr(agent_core, "respond", slow_respond)
+        t = asyncio.create_task(call._turn("tasks?"))
+        await asyncio.sleep(0.01)
+        await call.interrupt()
+        await t
+        await asyncio.sleep(0.05)
+        assert spoken == [call_handler.FILLER]
+        call.recorder.close()
+    asyncio.run(run())

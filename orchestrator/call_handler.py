@@ -16,6 +16,7 @@ import contextlib
 import hmac
 import json
 import logging
+import re
 import secrets
 import time
 from dataclasses import dataclass, field
@@ -35,6 +36,27 @@ log = logging.getLogger(__name__)
 router = APIRouter()
 
 PENDING_TTL = 120  # seconds a stream token stays valid after the webhook answered
+FILLER = "One moment."   # said when a tool runs before anything else was said this turn
+
+_SENTENCE_END = re.compile(r"(?<=[.!?…:;])\s+")
+MIN_SENTENCE = 12        # don't split off tiny fragments ("Mr.", "OK.")
+MAX_UNSPOKEN = 220       # a very long sentence is split at a comma/space rather than waited for
+
+
+def split_speakable(text: str) -> tuple[list[str], str]:
+    """Split streamed text into complete sentences ready for TTS and the unfinished remainder."""
+    ready, start = [], 0
+    for m in _SENTENCE_END.finditer(text):
+        if m.start() - start >= MIN_SENTENCE:
+            ready.append(text[start:m.start()])
+            start = m.end()
+    rest = text[start:]
+    if len(rest) > MAX_UNSPOKEN:
+        cut = max(rest.rfind(", ", 0, MAX_UNSPOKEN), rest.rfind(" ", 0, MAX_UNSPOKEN))
+        if cut > MIN_SENTENCE:
+            ready.append(rest[:cut + 1])
+            rest = rest[cut + 1:].lstrip()
+    return ready, rest
 
 
 @dataclass
@@ -280,7 +302,10 @@ def request_hangup(session_id: str) -> bool:
     if call is None:
         return False
     call.hangup_requested = True
-    asyncio.create_task(call._hangup_fallback())
+    if not call.speaking:  # the goodbye has already been played
+        asyncio.create_task(call._hangup())
+    else:
+        asyncio.create_task(call._hangup_fallback())
     return True
 
 
@@ -304,6 +329,9 @@ class CallSession:
         self.stt = provider.stt_factory(self._on_partial, self._on_final)
         self._send_lock = asyncio.Lock()
         self._speak_task: asyncio.Task | None = None
+        self._say: asyncio.Queue[str] = asyncio.Queue()
+        self._tts_active = False
+        self._turn_id = 0
         self._worker: asyncio.Task | None = None
         self._mark_seq = 0
         self._pending_mark: str | None = None
@@ -347,9 +375,10 @@ class CallSession:
     def on_mark(self, name: str) -> None:
         if name == self._pending_mark:
             self._pending_mark = None
-            self._set_speaking(False)
-            if self.hangup_requested and not self.speaking:
-                asyncio.create_task(self._hangup())
+            if not self.speaking:
+                self._set_speaking(False)
+                if self.hangup_requested:
+                    asyncio.create_task(self._hangup())
 
     async def _hangup(self) -> None:
         if self._hanging_up:
@@ -383,36 +412,86 @@ class CallSession:
             text = await self.utterances.get()
             while not self.utterances.empty():  # merge anything said while we were busy
                 text += " " + self.utterances.get_nowait()
-            try:
-                reply = await agent_core.respond(self.person, "call", self.session_id, text,
-                                                 extra_system=self.extra_system)
-            except Exception:
-                log.exception("Agent failure during call")
-                reply = "Sorry, something went wrong on my side."
-            self._speak(reply)
+            await self._turn(text)
 
-    # speaking
+    async def _turn(self, text: str) -> None:
+        """One exchange. Claude's reply is streamed and spoken sentence by sentence, so the caller
+        hears the first sentence while the rest is still being written."""
+        turn = self._turn_id = self._turn_id + 1
+        heard_at = time.monotonic()
+        buf, state = [], {"spoken": False, "first": None}
+
+        def say(part: str) -> None:
+            part = part.strip()
+            if part and turn == self._turn_id:           # a barge-in makes this turn stale
+                if state["first"] is None:
+                    state["first"] = time.monotonic() - heard_at
+                state["spoken"] = True
+                self._enqueue(part)
+
+        async def on_event(kind: str, data: str) -> None:
+            if kind == "delta":
+                buf.append(data)
+                ready, rest = split_speakable("".join(buf))
+                buf[:] = [rest] if rest else []
+                for sentence in ready:
+                    say(sentence)
+            elif kind == "tool":
+                say("".join(buf))                         # e.g. "Let me check." before the tool runs
+                buf.clear()
+                if not state["spoken"]:
+                    say(FILLER)
+
+        try:
+            reply = await agent_core.respond(self.person, "call", self.session_id, text,
+                                             extra_system=self.extra_system, on_event=on_event)
+        except Exception:
+            log.exception("Agent failure during call")
+            reply = "Sorry, something went wrong on my side."
+        if not state["spoken"]:
+            say(reply)                                    # nothing streamed (e.g. an error message)
+        else:
+            say("".join(buf))
+        if state["first"] is not None:
+            log.info("Call %s: first words queued %.2fs after the caller finished", self.session_id, state["first"])
+            if self.live:
+                self.live.extra["latency_s"] = round(state["first"], 2)
+
+    # speaking: sentences queue up and are played in order by one player task
     @property
     def speaking(self) -> bool:
-        return (self._speak_task is not None and not self._speak_task.done()) or self._pending_mark is not None
+        return self._tts_active or not self._say.empty() or self._pending_mark is not None
 
     def _set_speaking(self, value: bool) -> None:
         if self.live:
             self.live.speaking = value
 
     def _speak(self, text: str) -> None:
-        if self._speak_task and not self._speak_task.done():
-            self._speak_task.cancel()
-        self._speak_task = asyncio.create_task(self._speak_run(text))
+        self._enqueue(text)
+
+    def _enqueue(self, text: str) -> None:
+        self._say.put_nowait(text)
+        self._set_speaking(True)
+        if self._speak_task is None or self._speak_task.done():
+            self._speak_task = asyncio.create_task(self._player())
+
+    async def _player(self) -> None:
+        while not self._say.empty():
+            text = self._say.get_nowait()
+            self._tts_active = True
+            try:
+                await self._speak_run(text)
+            finally:
+                self._tts_active = False
 
     async def _speak_run(self, text: str) -> None:
-        self._set_speaking(True)
         usage.record_tts(len(text), user_id=self.person.id, session_id=self.session_id)
         try:
             async for chunk in self.provider.tts.stream(text):
                 self.recorder.agent_audio(chunk)
                 await self._send({"event": "media", "streamSid": self.stream_sid,
                                   "media": {"payload": base64.b64encode(chunk).decode()}})
+            # Twilio echoes the mark once everything before it has played; the last one ends "speaking".
             self._mark_seq += 1
             self._pending_mark = f"reply-{self._mark_seq}"
             await self._send({"event": "mark", "streamSid": self.stream_sid, "mark": {"name": self._pending_mark}})
@@ -420,11 +499,16 @@ class CallSession:
             raise
         except Exception:
             log.exception("TTS failed")
-            self._set_speaking(False)
+            if self._say.empty():
+                self._set_speaking(False)
 
     async def interrupt(self) -> None:
+        self._turn_id += 1                                # drop whatever the current turn still streams
+        while not self._say.empty():
+            self._say.get_nowait()
         if self._speak_task and not self._speak_task.done():
             self._speak_task.cancel()
+        self._tts_active = False
         self._pending_mark = None
         self.recorder.clear_agent()
         self._set_speaking(False)

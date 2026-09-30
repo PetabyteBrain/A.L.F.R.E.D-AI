@@ -45,6 +45,8 @@ class Settings:
     elevenlabs_tts_model: str = field(default_factory=lambda: _env("ELEVENLABS_TTS_MODEL", "eleven_flash_v2_5"))
     elevenlabs_stt_model: str = field(default_factory=lambda: _env("ELEVENLABS_STT_MODEL", "scribe_v2_realtime"))
     stt_language: str = field(default_factory=lambda: _env("STT_LANGUAGE"))  # empty = auto-detect
+    # Pause (s) that counts as "the caller finished"; lower = snappier, too low cuts people off.
+    stt_vad_silence_secs: float = field(default_factory=lambda: float(_env("STT_VAD_SILENCE_SECS", "0.5") or 0.5))
     stt_tts_provider: str = field(default_factory=lambda: _env("STT_TTS_PROVIDER", "elevenlabs"))
 
     # --- n8n ---

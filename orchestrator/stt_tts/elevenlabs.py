@@ -35,7 +35,7 @@ class ElevenLabsSTT(STTStream):
             "model_id": settings.elevenlabs_stt_model,
             "audio_format": "ulaw_8000",
             "commit_strategy": "vad",
-            "vad_silence_threshold_secs": "0.6",
+            "vad_silence_threshold_secs": str(settings.stt_vad_silence_secs),
         }
         if settings.stt_language:
             params["language_code"] = settings.stt_language
