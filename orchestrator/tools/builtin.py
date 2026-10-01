@@ -185,6 +185,23 @@ async def configure_quiet_hours(ctx, mode: str | None = None, start: str | None 
 
 
 @handler
+async def search_conversations(ctx, query: str, person: str = "", channel: str = "", days: int = 0) -> dict:
+    from .. import search
+    from ..scheduler import ScheduleError, resolve_person
+    about = None
+    if person:
+        try:
+            about = resolve_person(person)
+        except ScheduleError as e:
+            return {"error": str(e)}
+    try:
+        hits = search.search(ctx.person, query, about=about, channel=channel or None, days=days or None)
+    except search.SearchError as e:
+        return {"error": str(e)}
+    return {"matches": hits} if hits else {"matches": [], "note": "Nothing found. Try other or fewer words."}
+
+
+@handler
 async def remember(ctx, text: str) -> dict:
     from .. import memory
     try:

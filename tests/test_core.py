@@ -1741,3 +1741,54 @@ def test_telegram_markdown_survives_odd_constructs():
     # a malformed paragraph is escaped on its own; the rest keeps its formatting
     bad = md_to_html("**fine**\n\n<b>*x**y*</b> **a *b** c*")
     assert well_formed(bad) and bad.startswith("<b>fine</b>")
+
+
+def test_conversation_search_scoping_and_matching():
+    import asyncio
+    from orchestrator import search
+    from orchestrator.tools import registry as tools
+    admin = registry.lookup("telegram", "111")
+    friend = registry.lookup("telegram", "22222222")
+
+    # admin's own Telegram chat
+    s1 = sessions.start_session(admin.id, "telegram")
+    sessions.add_turn(s1, "user", "Please remember the Zermatt chalet booking for February.")
+    sessions.add_turn(s1, "assistant", "Noted, sir: the chalet in Zermatt, February.")
+    # a call Alfred made to the friend on the admin's behalf
+    s2 = sessions.start_session(friend.id, "call", "outbound")
+    sessions.add_turn(s2, "assistant", "Hello, calling on behalf of Test about the invoices.")
+    sessions.add_turn(s2, "user", "The invoice goes out on Friday at noon.")
+    sessions.add_turn(s2, "assistant", "Thank you, I'll pass that on.")
+    now = db.now_iso()
+    db.execute("INSERT INTO scheduled_calls(target_user_id, requested_by, run_at, purpose, status, session_id, "
+               "created_at, updated_at) VALUES (?,?,?,?, 'done', ?, ?, ?)",
+               (friend.id, admin.id, now, "Ask about the invoice", s2, now, now))
+    # the friend's private web chat
+    s3 = sessions.start_session(friend.id, "web")
+    sessions.add_turn(s3, "user", "My secret zermatt plan is a surprise party.")
+
+    hits = search.search(admin, "invoice friday")                       # stemming: invoices ~ invoice
+    assert hits and hits[0]["conversation_with"] == "Friend Person" and hits[0]["call_requested_by"]
+    assert any("Friday" in c["text"] for c in hits[0]["context"]) and "«" in hits[0]["match"]
+    # admin sees everyone; the friend only their own + nothing of the admin's
+    assert {h["session_id"] for h in search.search(admin, "zermatt")} >= {s1, s3}
+    friend_hits = {h["session_id"] for h in search.search(friend, "zermatt")}
+    assert s3 in friend_hits and s1 not in friend_hits
+    # requested calls are found by the requester even though the call was with someone else
+    assert s2 in {h["session_id"] for h in search.search(admin, "noon", about=friend)}
+    # any-word fallback, and FTS syntax in the query can't break or widen the search
+    assert search.search(admin, "chalet nonexistentword")
+    assert search.search(friend, 'zermatt" OR "chalet') and \
+        s1 not in {h["session_id"] for h in search.search(friend, 'zermatt" OR "chalet')}
+    try:
+        search.search(admin, "?! *")
+        raise AssertionError("empty query accepted")
+    except search.SearchError:
+        pass
+    # through the tool, as the model calls it
+    out, err = asyncio.run(tools.execute("search_conversations", {"query": "chalet", "channel": "telegram"},
+                                         tools.ToolContext(admin, None, "web")))
+    assert not err and "Zermatt" in out
+    # index stays in sync with transcript edits
+    db.execute("UPDATE transcripts SET text = 'Booking moved to Verbier.' WHERE session_id = ? AND turn_index = 1", (s1,))
+    assert s1 in {h["session_id"] for h in search.search(admin, "verbier")}

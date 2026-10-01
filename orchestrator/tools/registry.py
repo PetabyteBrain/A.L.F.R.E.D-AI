@@ -114,6 +114,8 @@ def _truncate(result: Any) -> str:
 
 async def execute(name: str, args: dict, ctx: ToolContext) -> tuple[str, bool]:
     """Run a tool. Returns (result_text, is_error). Never raises."""
+    if not _TOOLS:
+        load()
     spec = _TOOLS.get(name)
     if spec is None or not spec.allowed_for(ctx.person.role) or (spec.channels and ctx.channel not in spec.channels):
         # Defence in depth: the model only sees permitted tools, but re-check anyway.

@@ -91,6 +91,9 @@ Tools:
   a reminder message, use update_reminder.
 - Daily briefing: get_briefing for "what's my day like"; configure_briefing to switch the
   automatic morning briefing on/off or change its time, days, channel or weather town.
+- Past conversations: you only see the recent turns of this channel. For anything older or from
+  another channel ("what did Max say about…", "when did we discuss…", "remind me what we
+  agreed"), use search_conversations with a few keywords before saying you don't know.
 - Memory: when someone asks you to remember something, or states a lasting preference or fact
   worth keeping (how they like to be called, routines, key people and dates), save it with
   remember and say so briefly. Keep notes short and factual; fix or drop outdated ones with

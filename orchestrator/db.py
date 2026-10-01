@@ -141,6 +141,20 @@ CREATE TABLE IF NOT EXISTS transcripts (
 );
 CREATE INDEX IF NOT EXISTS idx_transcripts_session ON transcripts(session_id, turn_index);
 
+-- Full-text index over transcripts for search_conversations (orchestrator/search.py).
+CREATE VIRTUAL TABLE IF NOT EXISTS transcripts_fts USING fts5(
+    text, content='transcripts', content_rowid='id', tokenize='porter unicode61 remove_diacritics 2');
+CREATE TRIGGER IF NOT EXISTS transcripts_fts_ai AFTER INSERT ON transcripts BEGIN
+    INSERT INTO transcripts_fts(rowid, text) VALUES (new.id, new.text);
+END;
+CREATE TRIGGER IF NOT EXISTS transcripts_fts_ad AFTER DELETE ON transcripts BEGIN
+    INSERT INTO transcripts_fts(transcripts_fts, rowid, text) VALUES ('delete', old.id, old.text);
+END;
+CREATE TRIGGER IF NOT EXISTS transcripts_fts_au AFTER UPDATE OF text ON transcripts BEGIN
+    INSERT INTO transcripts_fts(transcripts_fts, rowid, text) VALUES ('delete', old.id, old.text);
+    INSERT INTO transcripts_fts(rowid, text) VALUES (new.id, new.text);
+END;
+
 CREATE TABLE IF NOT EXISTS recordings (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
     session_id TEXT NOT NULL REFERENCES sessions(id),
@@ -398,6 +412,16 @@ def init_db() -> None:
             DEFAULT_ROLES,
         )
     _add_missing_columns()
+    _build_search_index()
+
+
+def _build_search_index() -> None:
+    """Fill the transcript search index once (existing databases, or after a restore)."""
+    with tx() as conn:
+        indexed = conn.execute("SELECT COUNT(*) FROM transcripts_fts_docsize").fetchone()[0]
+        total = conn.execute("SELECT COUNT(*) FROM transcripts").fetchone()[0]
+        if indexed != total:
+            conn.execute("INSERT INTO transcripts_fts(transcripts_fts) VALUES ('rebuild')")
 
 
 def execute(sql: str, params: tuple | list = ()) -> int:

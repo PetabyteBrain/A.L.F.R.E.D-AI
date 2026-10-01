@@ -260,6 +260,24 @@ tools:
         channel: {type: string, enum: [telegram, call]}
         location: {type: string, description: "Town for the weather, e.g. Lucerne; empty string removes it."}
 
+  - name: search_conversations
+    kind: builtin
+    handler: search_conversations
+    roles: ["*"]
+    description: >-
+      Search earlier conversations on every channel (phone calls, Telegram, web chat), beyond the
+      recent history you can see: "what did Max say about the invoice?", "when did we talk about
+      the venue?". Finds the person's own conversations and calls Alfred made on their behalf
+      (admins: everyone's). Returns dated matches with the surrounding turns. Use specific words.
+    input_schema:
+      type: object
+      properties:
+        query: {type: string, description: "Keywords, e.g. 'invoice Friday'. Not a full sentence."}
+        person: {type: string, description: "Only conversations with this registered person (name or id)."}
+        channel: {type: string, enum: [call, telegram, web]}
+        days: {type: integer, description: "Only the last N days."}
+      required: [query]
+
   - name: remember
     kind: builtin
     handler: remember
