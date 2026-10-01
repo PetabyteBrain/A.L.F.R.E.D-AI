@@ -149,7 +149,7 @@ async def restart(person: Person, session_id: str | None, host: str, container: 
 
 
 async def minecraft() -> dict:
-    h = next((x for x in hosts() if "minecraft" in x.get("role", "").lower()), None)
+    h = next((x for x in hosts() if x.get("minecraft")), None)     # explicit flag in homelab.yaml
     if not h:
         raise HomelabError("No Minecraft host configured.")
     return {"host": h["name"], **await _ops(h, "mc")}
