@@ -1,0 +1,6 @@
+# ai.txt — AI / machine-learning training permissions for alfred.example.com
+# No content on this site (text, images, code, audio) may be used to train, fine-tune or
+# evaluate AI models, or be collected into datasets. Contact: contact@example.com
+
+User-Agent: *
+Disallow: /

@@ -2082,3 +2082,21 @@ def test_meeting_invites_respect_quiet_hours(monkeypatch):
         asyncio.run(run())
     finally:
         quiet.set_person(friend.id, mode="default")
+
+
+def test_anti_scraping_signals():
+    from fastapi.testclient import TestClient
+    from orchestrator.main import app
+    with TestClient(app) as c:
+        r = c.get("/robots.txt")
+        if r.status_code == 404:                       # dashboard not built in this checkout
+            return
+        assert "User-agent: GPTBot" in r.text and "User-agent: ClaudeBot" in r.text and "Disallow: /" in r.text
+        assert "Allow: /privacy-policy" in r.text          # Google's OAuth review needs the public pages
+        assert c.get("/.well-known/tdmrep.json").json()[0]["tdm-reservation"] == 1
+        assert "Disallow: /" in c.get("/ai.txt").text
+        home = c.get("/")
+        assert home.headers["tdm-reservation"] == "1" and "noai" in home.headers["X-Robots-Tag"]
+        assert "noindex" not in home.headers["X-Robots-Tag"]
+        assert "noindex" in c.get("/app").headers["X-Robots-Tag"]
+        assert "noindex" in c.get("/api/session").headers["X-Robots-Tag"]

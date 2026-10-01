@@ -229,6 +229,12 @@ class SecurityMiddleware(BaseHTTPMiddleware):
             h.setdefault("Content-Security-Policy", CSP)
         if settings.cookie_secure:
             h.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+        # No AI training / dataset mining (EU TDM reservation + robots conventions; see robots.txt).
+        h.setdefault("tdm-reservation", "1")
+        h.setdefault("tdm-policy", f"{settings.public_base_url or ''}/terms-of-service")
+        private = path.startswith(("/api/", "/app", "/twilio/", "/n8n/", "/index.html"))
+        h.setdefault("X-Robots-Tag", "noindex, nofollow, noarchive, noai, noimageai" if private
+                     else "noarchive, noai, noimageai")
         if path.startswith("/api/"):
             h.setdefault("Cache-Control", "no-store")
         elif path in ("/app", "/app/", "/index.html"):
