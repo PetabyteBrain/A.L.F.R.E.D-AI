@@ -23,6 +23,16 @@ from orchestrator.storage.recordings import CallRecorder  # noqa: E402
 def seed() -> None:
     db.init_db()
     registry.bootstrap_admin()
+    # demo Systems rows (the real ones come from health/homelab checks on the Pi)
+    for svc, ok, detail in [
+        ("claude", True, "claude-haiku-4-5 reachable"), ("telegram", True, "polling as @Demo_Bot"),
+        ("jetson_speech", True, "cuda · whisper-large-v3-turbo · voice bm_george · stt 750 ms · tts 346 ms"),
+        ("backup", True, "last 3 h ago · db 408K + 30 recording files -> Jetson"),
+        ("host host-b", True, "host-b: load 0.28/4 cpu · mem 19% · disk / 25% · 58°C · 11/12 containers up · up 12.2 d"),
+        ("host host-h", False, "host-h: disk / 93% full"),
+        ("host jetson", True, "jetson: load 0.02/6 cpu · mem 69% · disk / 47% /ssd 6% · 50°C · 1/1 containers up"),
+    ]:
+        db.set_health(svc, ok, detail)
     if db.query_one("SELECT 1 FROM sessions LIMIT 1"):
         return
     admin = db.query_one("SELECT id FROM users WHERE role='admin'")["id"]

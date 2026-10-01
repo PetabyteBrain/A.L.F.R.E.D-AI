@@ -379,15 +379,25 @@ async def activity(person: Person = Depends(current_person), limit: int = Query(
     )
 
 
+def _health_rows(person: Person) -> list[dict]:
+    """Alfred's own systems for everyone with dashboard access; homelab machines for admins only."""
+    from orchestrator import homelab
+    rows = db.query("SELECT service, ok, detail, checked_at FROM health ORDER BY service")
+    return homelab.host_rows_visible(rows, person.is_admin)
+
+
 @router.get("/health")
 async def get_health(person: Person = Depends(current_person)) -> list[dict]:
-    return db.query("SELECT service, ok, detail, checked_at FROM health ORDER BY service")
+    return _health_rows(person)
 
 
 @router.post("/health/refresh")
 async def refresh_health(person: Person = Depends(admin_only)) -> list[dict]:
+    from orchestrator import homelab
     await health.check_all()
-    return db.query("SELECT service, ok, detail, checked_at FROM health ORDER BY service")
+    if homelab.enabled():
+        await homelab.poll_and_alert()
+    return _health_rows(person)
 
 
 @router.get("/overview")

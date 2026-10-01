@@ -75,9 +75,24 @@ async def _ops(host: dict, *args: str, timeout: float = 25) -> dict:
         return {"error": (text or err.decode(errors="replace"))[:200], "unreachable": proc.returncode == 255}
 
 
+def _safe_error(st: dict) -> str:
+    """Error category only: raw ssh/stderr text (user@ip, key details) never leaves the server log."""
+    err = st.get("error") or ""
+    if "Permission denied" in err:
+        return "access not set up"
+    if "timed out" in err.lower():
+        return "timed out"
+    if st.get("unreachable"):
+        return "unreachable"
+    if "allowlist" in err or "not allowed" in err or "bad container" in err:
+        return err[:120]                       # our own alfred-ops messages are safe to show
+    return "check failed"
+
+
 def summarize(name: str, st: dict) -> str:
     if st.get("error"):
-        return f"{name}: {'unreachable' if st.get('unreachable') else 'error'} ({st['error'][:80]})"
+        log.warning("Homelab %s: %s", name, st["error"][:300])
+        return f"{name}: {_safe_error(st)}"
     cs = st.get("containers") or []
     running = [c for c in cs if c.get("state") == "running"]
     bad = [c["name"] for c in cs if c.get("health") == "unhealthy"]
@@ -168,6 +183,7 @@ async def check_all() -> list[str]:
         name = r["host"]
         if r.get("error") and "Permission denied" in r["error"]:
             # Not down, just not set up yet (alfred-ops key not installed there): show, don't alert.
+            log.warning("Homelab %s: %s", name, r["error"][:300])
             db.set_health(f"host {name}", False, "access not set up (install alfred-ops, infra/ops/README.md)")
             continue
         if r.get("error"):
@@ -206,14 +222,40 @@ async def _notify_admins(text: str) -> None:
                 log.exception("Homelab alert to admin failed")
 
 
+_poll_lock = asyncio.Lock()
+
+
+async def poll_and_alert() -> None:
+    """One monitor pass; used by the loop and by "Run diagnostics", so alerts are never swallowed."""
+    async with _poll_lock:
+        msgs = await check_all()
+        if msgs:
+            db.log_activity("system", "Homelab: " + " | ".join(msgs)[:300])
+            await _notify_admins("Homelab\n" + "\n".join(msgs))
+
+
+def host_rows_visible(rows: list[dict], is_admin: bool) -> list[dict]:
+    """Systems rows for the dashboard: grouped, host rows only for admins and only configured hosts."""
+    configured = hosts() if HOSTS_FILE.exists() else []
+    roles = {f"host {h['name']}": h.get("role", "") for h in configured}
+    rank = {f"host {h['name']}": i for i, h in enumerate(configured)}
+    out = []
+    for r in rows:
+        if r["service"].startswith("host "):
+            if not is_admin or r["service"] not in roles:
+                continue
+            out.append({**r, "group": "homelab", "label": r["service"][5:], "role": roles[r["service"]],
+                        "order": rank[r["service"]]})
+        else:
+            out.append({**r, "group": "alfred", "label": r["service"], "role": ""})
+    return sorted(out, key=lambda r: (r["group"] != "alfred", r.get("order", 0)))
+
+
 async def background_loop() -> None:
     await asyncio.sleep(60)          # let everything start first
     while True:
         try:
-            msgs = await check_all()
-            if msgs:
-                db.log_activity("system", "Homelab: " + " | ".join(msgs)[:300])
-                await _notify_admins("Homelab\n" + "\n".join(msgs))
+            await poll_and_alert()
         except Exception:
             log.exception("Homelab monitor iteration failed")
         await asyncio.sleep(POLL_SECONDS)

@@ -1879,7 +1879,7 @@ def test_homelab_operator(monkeypatch):
     assert asyncio.run(homelab.check_all()) == []                                # first miss: quiet
     assert any("jetson" in m and "not reachable" in m for m in asyncio.run(homelab.check_all()))
     row = db.query_one("SELECT ok, detail FROM health WHERE service = 'host jetson'")
-    assert row["ok"] == 0 and "unreachable" in row["detail"]
+    assert row["ok"] == 0 and row["detail"] == "jetson: timed out" and "ssh" not in row["detail"]  # no raw errors
     # no key installed yet: shown on Systems, never alerted
     world["host-h"] = {"up": True}
     async def denied(host, *args, timeout=25):
@@ -1891,3 +1891,26 @@ def test_homelab_operator(monkeypatch):
         assert not any("host-h" in m for m in asyncio.run(homelab.check_all()))
     assert "access not set up" in db.query_one("SELECT detail FROM health WHERE service = 'host host-h'")["detail"]
     assert asyncio.run(homelab.status("host-b"))[0]["host"] == "host-b"      # configured name, not hostname
+
+
+
+def test_systems_rows_grouped_and_homelab_admin_only():
+    from fastapi.testclient import TestClient
+    from orchestrator.main import app
+    db.set_health("claude", True, "ok")
+    db.set_health("host host-b", True, "host-b: load 0.10/4 cpu")
+    db.set_health("host old-removed-box", True, "stale")
+    friend_cofounder = registry.add_user("Co Founder", "cofounder")
+    registry.set_dashboard_login(friend_cofounder, "cofounder1", "cofounderpass1")
+    with TestClient(app) as c:
+        c.post("/api/login", json={"username": "admin", "password": "correct horse battery"}, headers=CSRF)
+        rows = c.get("/api/health").json()
+        lab = [r for r in rows if r["group"] == "homelab"]
+        assert any(r["label"] == "host-b" and r["role"] for r in lab)
+        assert not any(r["service"] == "host old-removed-box" for r in rows)        # only configured hosts
+        assert any(r["group"] == "alfred" and r["service"] == "claude" for r in rows)
+        c.post("/api/logout", headers=CSRF)
+        c.post("/api/login", json={"username": "cofounder1", "password": "cofounderpass1"}, headers=CSRF)
+        rows = c.get("/api/health").json()
+        assert rows and all(r["group"] == "alfred" for r in rows)                  # no homelab for non-admins
+        assert c.post("/api/health/refresh", headers=CSRF).status_code == 403

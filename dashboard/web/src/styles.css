@@ -392,6 +392,11 @@ button.row { width: 100%; text-align: left; font: inherit; color: var(--text-str
 
 /* ---------- systems ---------- */
 .health-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; }
+.sys-group + .sys-group { margin-top: 26px; padding-top: 18px; border-top: 1px dashed var(--line); }
+.sys-group h3.sub { display: flex; align-items: center; gap: 12px; }
+.group-state { margin-left: auto; font: 400 11px var(--font-mono); letter-spacing: .08em; text-transform: none; }
+.group-state.ok { color: var(--ok); } .group-state.bad { color: var(--bad); }
+.sys-role { font: 400 11px var(--font-mono); color: var(--accent); letter-spacing: .04em; margin-top: -2px; }
 .sys-card { padding: 14px 16px; background: var(--fill); border: 1px solid var(--line); border-top: 2px solid var(--ok); display: grid; gap: 6px; }
 .sys-card.bad { border-top-color: var(--bad); background: rgb(var(--bad-rgb) / .06); }
 .sys-name { display: flex; align-items: center; gap: 10px; font: 700 13px var(--font-display); letter-spacing: .2em; text-transform: uppercase; color: var(--text-strong); }

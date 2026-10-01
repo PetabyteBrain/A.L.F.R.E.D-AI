@@ -9,7 +9,7 @@ to a shell.
     status                     host vitals + containers (JSON)
     logs <container> [lines]   last log lines of an allowlisted container (max 200)
     restart <container>        restart an allowlisted container
-    mc                         Minecraft: players online (needs an allowlisted Minecraft container)
+    mc                         Minecraft: version, players online (server list ping; RCON not needed)
 
 Allowlist: ~/.config/alfred-ops/allow, one container name per line. Restarts and logs are refused
 for anything not listed there.
@@ -140,8 +140,16 @@ def main():
     if op == "mc" and not args:
         for c in containers() or []:
             if any(c["image"].startswith(i) for i in MC_IMAGES) and c["name"] in allowlist():
-                code, so, se = run(["docker", "exec", c["name"], "rcon-cli", "list"], 15)
-                out({"container": c["name"], "ok": code == 0, "players": (so or se).strip()[:500]})
+                # Server list ping (what any client sees); works without RCON, which stays off.
+                code, so, se = run(["docker", "exec", c["name"], "mc-monitor", "status", "-json"], 15)
+                if code:
+                    out({"container": c["name"], "ok": False, "error": (se or so).strip()[:300]})
+                info = json.loads(so).get("server_info", {})
+                players = info.get("players") or {}
+                out({"container": c["name"], "ok": True, "state": c["state"], "health": c["health"],
+                     "version": (info.get("version") or {}).get("name"),
+                     "online": players.get("online"), "max": players.get("max"),
+                     "players": [p.get("name") for p in (players.get("sample") or players.get("Sample") or [])]})
         out({"error": "no allowlisted Minecraft container on this host"}, 3)
     out({"error": f"operation not allowed: {op}"}, 2)
 
