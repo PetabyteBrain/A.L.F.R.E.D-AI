@@ -331,6 +331,7 @@ async def background_loop() -> None:
     while True:
         try:
             await tick()
+            await meetings.send_due()
             await meetings.expire_stale()
         except Exception:
             log.exception("Task loop iteration failed")

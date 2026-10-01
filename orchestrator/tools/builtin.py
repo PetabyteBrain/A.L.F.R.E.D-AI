@@ -254,11 +254,12 @@ async def find_meeting_slots(ctx, people: list, duration_minutes: int = 60, wind
 
 @handler
 async def propose_meeting(ctx, people: list, title: str, slots: list, duration_minutes: int = 60, notes: str = "",
-                          channel: str = "auto") -> dict:
+                          channel: str = "auto", quiet_hours: str = "") -> dict:
     from .. import meetings
     try:
         return await meetings.propose(ctx.person, people, title, slots, duration_minutes=duration_minutes,
-                                      notes=notes, channel=channel)
+                                      notes=notes, channel=channel, quiet_mode=quiet_hours or None,
+                                      session_id=ctx.session_id)
     except meetings.MeetingError as e:
         return {"error": str(e)}
 

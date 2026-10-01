@@ -31,7 +31,8 @@ export default function Meetings({ me, assistant }) {
                 {m.booked ? <> · <span className="mono">{m.booked}</span></> : ` · options: ${m.slots.map((s) => s.replace(/^\d+\. /, "")).join(", ")}`}
               </div>
               <div className="meta">
-                {m.answers.map((a) => `${a.name}: ${a.status === "answered" ? (a.works.length ? `#${a.works.join(", #")}` : "none") : "…"}`).join(" · ")}
+                {m.answers.map((a) => `${a.name}: ${a.status === "answered" ? (a.works.length ? `#${a.works.join(", #")}` : "none")
+                  : a.status === "queued" ? `asked at ${a.asked_at} (quiet hours)` : "…"}`).join(" · ")}
               </div>
             </div>
             {["proposed", "no_match"].includes(m.status) && m.organizer_id === me.id && (

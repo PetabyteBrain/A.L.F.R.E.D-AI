@@ -6,6 +6,10 @@
 2. propose: each participant is asked which of the proposed slots work for them, on Telegram
    (tick buttons, then Send / None work) or by phone (the call brief uses answer_meeting).
    Quiet hours apply as for any contact on someone else's behalf.
+   If an invitee is in their quiet hours, nothing is sent yet: the organizer is told who and until
+   when, and chooses (in a later reply, enforced) to send now anyway, to send to the others now
+   and queue the quiet ones until their quiet hours end, or to delay the whole request. Queued
+   invites are picked up by the background loop (send_due) and the organizer is told when they go.
 3. When everyone has answered, the earliest slot that works for all is booked in the organizer's
    Google Calendar with the participants as invitees (Google sends real invitations) and everyone
    is told. No common slot: the organizer gets each person's answer.
@@ -29,6 +33,9 @@ MAX_SLOTS = 5
 MAX_PER_DAY = 2
 MAX_DAYS = 21
 MAX_PEOPLE = 6
+QUIET_MODES = ("send_now", "split", "delay")
+DECISION_TTL_S = 1800
+_pending_decisions: dict[tuple, dict] = {}     # (organizer, people) -> when the question was asked
 
 
 class MeetingError(ValueError):
@@ -189,12 +196,22 @@ def view(m: dict) -> dict:
             "slots": [f"{n + 1}. {_local(s)}" for n, s in enumerate(m["slots"])],
             "booked": _local(datetime.fromisoformat(m["booked_start"])) if m["booked_start"] else None,
             "answers": [{"name": i["name"], "status": i["status"],
-                         "works": [n + 1 for n in i["accepted"]] if i["status"] == "answered" else None}
+                         "works": [n + 1 for n in i["accepted"]] if i["status"] == "answered" else None,
+                         **({"asked_at": _local(datetime.fromisoformat(i["send_after"]))}
+                            if i["status"] == "queued" and i.get("send_after") else {})}
                         for i in m["invites"]]}
 
 
+def _last_user_turn(session_id: str | None) -> int:
+    if not session_id:
+        return 0
+    row = db.query_one("SELECT MAX(id) AS id FROM transcripts WHERE session_id = ? AND speaker = 'user'", (session_id,))
+    return (row or {}).get("id") or 0
+
+
 async def propose(organizer: Person, people_refs: list, title: str, slot_starts: list, *, duration_minutes: int = 60,
-                  notes: str = "", channel: str = "auto") -> dict:
+                  notes: str = "", channel: str = "auto", quiet_mode: str | None = None,
+                  session_id: str | None = None) -> dict:
     if not _may_organize(organizer):
         raise MeetingError("You can't schedule meetings with other people.")
     people = _people(organizer, people_refs)
@@ -209,6 +226,44 @@ async def propose(organizer: Person, people_refs: list, title: str, slot_starts:
     for p in people:
         if not (registry.telegram_for(p.id) or registry.phone_for(p.id)):
             raise MeetingError(f"{p.display_name} has no verified Telegram or phone to ask.")
+
+    # Quiet hours: ask the organizer first, then act on their choice.
+    from . import quiet
+    quiet_until = {p.id: quiet.quiet_until(p.id) for p in people}
+    quiet_until = {k: v for k, v in quiet_until.items() if v}
+    send_after: dict[int, datetime | None] = {p.id: None for p in people}
+    urgent = False
+    if quiet_until:
+        key = (organizer.id, tuple(sorted(p.id for p in people)))
+        asked = _pending_decisions.get(key)
+        if asked and (datetime.now(timezone.utc) - asked["at"]).total_seconds() > DECISION_TTL_S:
+            asked = None
+        decided = quiet_mode in QUIET_MODES and asked and (
+            session_id is None or _last_user_turn(session_id) > asked["user_turn"])
+        if not decided:
+            _pending_decisions[key] = {"at": datetime.now(timezone.utc), "user_turn": _last_user_turn(session_id)}
+            names = {p.id: p.display_name for p in people}
+            return {"needs_decision": True,
+                    "in_quiet_hours": [{"name": names[uid], "until": _local(t)} for uid, t in quiet_until.items()],
+                    "options": {"send_now": "send all invites now anyway (ignores their quiet hours)",
+                                "split": "send to the others now; the ones in quiet hours get theirs when it ends",
+                                "delay": "send nothing now; send everyone's invites when the last quiet hours end"},
+                    "note": "Nothing was sent. Tell the requester and ask which option; then call again with "
+                            "quiet_hours set to their choice."}
+        _pending_decisions.pop(key, None)
+        if quiet_mode == "send_now":
+            urgent = True
+        elif quiet_mode == "split":
+            send_after.update(quiet_until)
+        else:
+            last = max(quiet_until.values())
+            send_after = {p.id: last for p in people}
+        # Options that start before (or within an hour of) an invite going out make no sense.
+        first_send = min((t for t in send_after.values() if t), default=None)
+        if first_send:
+            slots = [s for s in slots if s >= first_send + timedelta(hours=1)]
+            if not slots:
+                raise MeetingError("All proposed times are before the quiet hours end. Pick later times.")
     now = db.now_iso()
     mid = db.execute("INSERT INTO meetings(organizer_id, title, notes, duration_min, slots_json, status, created_at, "
                      "updated_at) VALUES (?,?,?,?,?, 'proposed', ?, ?)",
@@ -220,14 +275,45 @@ async def propose(organizer: Person, people_refs: list, title: str, slot_starts:
             ch = "call"
         if ch == "call" and not registry.phone_for(p.id):
             ch = "telegram"
-        db.execute("INSERT INTO meeting_invites(meeting_id, user_id, channel, status, accepted_json, created_at) "
-                   "VALUES (?,?,?, 'pending', '[]', ?)", (mid, p.id, ch, now))
+        later = send_after.get(p.id)
+        db.execute("INSERT INTO meeting_invites(meeting_id, user_id, channel, status, accepted_json, send_after, "
+                   "created_at) VALUES (?,?,?,?, '[]', ?, ?)",
+                   (mid, p.id, ch, "queued" if later else "pending",
+                    later.isoformat(timespec="seconds") if later else None, now))
     m = get(mid)
     for inv in m["invites"]:
-        await _ask(m, inv)
+        if inv["status"] == "pending":
+            await _ask(m, inv, urgent=urgent)
+    queued = [i["name"] for i in m["invites"] if i["status"] == "queued"]
     db.log_activity("task", f"{organizer.display_name} proposed '{title}' to "
-                    f"{', '.join(i['name'] for i in m['invites'])} ({len(slots)} options)", user_id=organizer.id)
+                    f"{', '.join(i['name'] for i in m['invites'])} ({len(m['slots'])} options"
+                    + (f"; queued for {', '.join(queued)} until their quiet hours end" if queued else "")
+                    + (", sent despite quiet hours" if urgent else "") + ")", user_id=organizer.id)
     return view(get(mid))
+
+
+async def send_due() -> None:
+    """Queued invites whose quiet hours are over: send them (re-checking quiet hours first)."""
+    from . import quiet
+    for r in db.query("SELECT i.id, i.meeting_id, i.user_id FROM meeting_invites i JOIN meetings m ON m.id = i.meeting_id "
+                      "WHERE i.status = 'queued' AND i.send_after <= ? AND m.status = 'proposed'",
+                      (datetime.now(timezone.utc).isoformat(timespec="seconds"),)):
+        still = quiet.quiet_until(r["user_id"])
+        if still:      # their quiet hours changed meanwhile: wait for the new end
+            db.execute("UPDATE meeting_invites SET send_after = ? WHERE id = ?",
+                       (still.isoformat(timespec="seconds"), r["id"]))
+            continue
+        if not db.execute_count("UPDATE meeting_invites SET status = 'pending', send_after = NULL WHERE id = ? "
+                                "AND status = 'queued'", (r["id"],)):
+            continue
+        m = get(r["meeting_id"])
+        inv = next(i for i in m["invites"] if i["id"] == r["id"])
+        if not any(s > _now() for s in m["slots"]):
+            db.execute("UPDATE meeting_invites SET status = 'closed' WHERE id = ?", (r["id"],))
+            continue
+        await _ask(m, inv)
+        await _tell(m, [m["organizer_id"]], f"Quiet hours are over, so I've now asked {inv['name']} about "
+                                            f"**{m['title']}**.")
 
 
 def _question(m: dict, inv: dict) -> str:
@@ -242,22 +328,24 @@ def _question(m: dict, inv: dict) -> str:
 
 def _buttons(m: dict, inv: dict) -> list[list[tuple[str, str]]]:
     rows = [[(("✓ " if n in inv["accepted"] else "") + _local(s), f"mtg:{inv['id']}:t{n}")]
-            for n, s in enumerate(m["slots"])]
+            for n, s in enumerate(m["slots"]) if s > _now()]
     rows.append([("Send", f"mtg:{inv['id']}:send"), ("None work", f"mtg:{inv['id']}:none")])
     return rows
 
 
-async def _ask(m: dict, inv: dict) -> None:
+async def _ask(m: dict, inv: dict, urgent: bool = False) -> None:
+    """urgent: the organizer chose to send despite the person's quiet hours."""
     person = registry.get_person(inv["user_id"])
     organizer = registry.get_person(m["organizer_id"])
     if inv["channel"] == "telegram" and settings.telegram_enabled and registry.telegram_for(person.id):
         from .telegram_handler import send_to_user
-        await send_to_user(person.id, _question(m, inv), note="meeting invite", buttons=_buttons(m, inv))
+        await send_to_user(person.id, _question(m, inv), note="meeting invite", buttons=_buttons(m, inv),
+                           silent=False if urgent else None)
     else:
         from . import scheduler
-        options = "; ".join(f"option {n + 1}: {_local(s)}" for n, s in enumerate(m["slots"]))
+        options = "; ".join(f"option {n + 1}: {_local(s)}" for n, s in enumerate(m["slots"]) if s > _now())
         await scheduler.request_call(
-            person.id, requested_by=organizer,
+            person.id, requested_by=organizer, urgent=urgent,
             purpose=(f"Ask which of these times work for the meeting '{m['title']}' ({m['duration_min']} minutes) "
                      f"with {organizer.display_name}: {options}. They may pick several. Then call answer_meeting "
                      f"with meeting_id {m['id']} and the option numbers that work (or none_work=true)."))
@@ -307,7 +395,7 @@ async def answer(meeting_id: int, person: Person, works: list[int] | None, none_
 
 async def _settle(meeting_id: int) -> dict:
     m = get(meeting_id)
-    if m["status"] != "proposed" or any(i["status"] == "pending" for i in m["invites"]):
+    if m["status"] != "proposed" or any(i["status"] in ("pending", "queued") for i in m["invites"]):
         return view(m)
     common = {n for n, s in enumerate(m["slots"]) if s > _now()}       # only times still ahead
     for i in m["invites"]:
@@ -385,7 +473,8 @@ async def cancel(meeting_id: int, person: Person) -> dict:
     if m["status"] not in ("proposed", "no_match"):
         raise MeetingError(f"That meeting is already {m['status']}; change it in the calendar.")
     db.execute("UPDATE meetings SET status = 'cancelled', updated_at = ? WHERE id = ?", (db.now_iso(), meeting_id))
-    db.execute("UPDATE meeting_invites SET status = 'closed' WHERE meeting_id = ? AND status = 'pending'", (meeting_id,))
+    db.execute("UPDATE meeting_invites SET status = 'closed' WHERE meeting_id = ? AND status IN ('pending', 'queued')",
+               (meeting_id,))
     await _tell(m, [i["user_id"] for i in m["invites"] if i["status"] == "pending"],
                 f"The meeting request **{m['title']}** from {m['organizer_name'].split()[0]} was withdrawn.")
     return view(get(meeting_id))
@@ -400,7 +489,8 @@ async def expire_stale() -> None:
         if not db.execute_count("UPDATE meetings SET status = 'expired', updated_at = ? WHERE id = ? AND status = 'proposed'",
                                 (db.now_iso(), m["id"])):
             continue
-        missing = [i["name"] for i in m["invites"] if i["status"] == "pending"]
-        db.execute("UPDATE meeting_invites SET status = 'closed' WHERE meeting_id = ? AND status = 'pending'", (m["id"],))
+        missing = [i["name"] for i in m["invites"] if i["status"] in ("pending", "queued")]
+        db.execute("UPDATE meeting_invites SET status = 'closed' WHERE meeting_id = ? AND status IN ('pending', 'queued')",
+                   (m["id"],))
         await _tell(m, [m["organizer_id"]], f"The proposal **{m['title']}** ran out of time; no answer from "
                                             f"{', '.join(missing) or 'everyone'}. Ask me for new times if you like.")

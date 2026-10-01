@@ -407,6 +407,7 @@ ADDED_COLUMNS = [
     ("tasks", "follow_up_at", "TEXT"),
     ("tasks", "follow_ups", "INTEGER NOT NULL DEFAULT 0"),
     ("tasks", "last_follow_up_at", "TEXT"),
+    ("meeting_invites", "send_after", "TEXT"),                               # queued until quiet hours end
     ("google_accounts", "share_availability", "INTEGER NOT NULL DEFAULT 0"),   # opt-in free/busy for meetings
     ("tasks", "completed_at", "TEXT"),
     ("tasks", "completed_by", "INTEGER REFERENCES users(id) ON DELETE SET NULL"),

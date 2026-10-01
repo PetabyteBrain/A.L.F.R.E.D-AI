@@ -2009,3 +2009,76 @@ def test_meeting_scheduling(monkeypatch):
         await meetings.expire_stale()
         assert "ran out of time" not in sent[-1]["text"] or sent[-1]["text"].count("Old idea") == 1
     asyncio.run(run())
+
+
+def test_meeting_invites_respect_quiet_hours(monkeypatch):
+    import asyncio
+    from datetime import datetime, timedelta, timezone
+    from orchestrator import meetings, quiet, scheduler, telegram_handler
+    from orchestrator.config import settings
+    admin = registry.lookup("telegram", "111")
+    friend = registry.lookup("telegram", "22222222")
+    sent, calls = [], []
+
+    async def fake_send(user_id, text, note=None, record=True, buttons=None, silent=None):
+        sent.append({"to": user_id, "text": text, "silent": silent})
+
+    async def fake_call(target, *, requested_by, purpose="", when=None, opening_line="", urgent=False):
+        calls.append({"to": target, "urgent": urgent})
+        return {}
+    monkeypatch.setattr(telegram_handler, "send_to_user", fake_send)
+    monkeypatch.setattr(scheduler, "request_call", fake_call)
+    monkeypatch.setattr(type(settings), "telegram_enabled", property(lambda s: True))
+    meetings._pending_decisions.clear()
+    later = [(datetime.now(timezone.utc) + timedelta(days=d)).isoformat(timespec="minutes") for d in (2, 3)]
+    try:
+        quiet.set_person(friend.id, mode="custom", start="00:00", end="23:59")       # the friend is in quiet hours
+        if not quiet.is_quiet(friend.id):
+            return                                                                   # the one minute it isn't
+        sid = sessions.start_session(admin.id, "web")
+        sessions.add_turn(sid, "user", "Find a time with Friend for the review.")
+
+        async def run():
+            n_meetings = db.query_one("SELECT COUNT(*) AS n FROM meetings")["n"]
+            ask = await meetings.propose(admin, ["Friend"], "Review", later, session_id=sid)
+            assert ask["needs_decision"] and ask["in_quiet_hours"][0]["name"] == "Friend Person"
+            assert set(ask["options"]) == {"send_now", "split", "delay"}
+            assert not sent and db.query_one("SELECT COUNT(*) AS n FROM meetings")["n"] == n_meetings  # nothing yet
+            # the model can't decide on its own in the same turn
+            again = await meetings.propose(admin, ["Friend"], "Review", later, quiet_mode="split", session_id=sid)
+            assert again.get("needs_decision") and not sent
+            sessions.add_turn(sid, "assistant", "Friend is in quiet hours. Send now, split, or delay?")
+            sessions.add_turn(sid, "user", "Split it, please.")
+            v = await meetings.propose(admin, ["Friend"], "Review", later, quiet_mode="split", session_id=sid)
+            assert v["answers"][0]["status"] == "queued" and "asked_at" in v["answers"][0] and not sent
+            # picked up once their quiet hours are over (and only then)
+            await meetings.send_due()
+            assert not sent
+            quiet.set_person(friend.id, mode="off")
+            db.execute("UPDATE meeting_invites SET send_after = ? WHERE meeting_id = ?",
+                       ((datetime.now(timezone.utc) - timedelta(minutes=1)).isoformat(timespec="seconds"), v["meeting_id"]))
+            await meetings.send_due()
+            assert [m["to"] for m in sent] == [friend.id, admin.id] and "Quiet hours are over" in sent[-1]["text"]
+            assert meetings.get(v["meeting_id"])["invites"][0]["status"] == "pending"
+            await meetings.send_due()
+            assert len(sent) == 2                                                    # sent once
+
+            # send_now: invites go out at once and ignore quiet hours (Telegram notifies, calls are urgent)
+            quiet.set_person(friend.id, mode="custom", start="00:00", end="23:59")
+            sent.clear()
+            await meetings.propose(admin, ["Friend"], "Urgent sync", later)
+            v2 = await meetings.propose(admin, ["Friend"], "Urgent sync", later, quiet_mode="send_now")
+            assert sent and sent[0]["to"] == friend.id and sent[0]["silent"] is False
+            assert v2["answers"][0]["status"] == "pending"
+            await meetings.propose(admin, ["Friend"], "By phone", later, channel="call")
+            await meetings.propose(admin, ["Friend"], "By phone", later, channel="call", quiet_mode="send_now")
+            assert calls and calls[-1]["urgent"] is True
+
+            # delay: everything held until the quiet hours end
+            sent.clear()
+            await meetings.propose(admin, ["Friend"], "Later chat", later)
+            v3 = await meetings.propose(admin, ["Friend"], "Later chat", later, quiet_mode="delay")
+            assert v3["answers"][0]["status"] == "queued" and not sent
+        asyncio.run(run())
+    finally:
+        quiet.set_person(friend.id, mode="default")

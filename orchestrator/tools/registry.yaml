@@ -369,6 +369,14 @@ tools:
         duration_minutes: {type: integer}
         notes: {type: string, description: Optional context for the invitees.}
         channel: {type: string, enum: [auto, telegram, call], description: "Default auto (Telegram if they have it)."}
+        quiet_hours:
+          type: string
+          enum: [send_now, split, delay]
+          description: >-
+            Only after the requester chose it: if the first call returned needs_decision (an invitee is
+            in quiet hours), explain who and until when, offer the three options, and call again with
+            their choice. send_now = invite everyone now anyway; split = others now, the quiet ones when
+            their quiet hours end; delay = everyone when the last quiet hours end.
       required: [people, title, slots]
 
   - name: answer_meeting
