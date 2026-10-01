@@ -21,6 +21,9 @@ the original spec is in `docs/archive/original-spec.md`. Keep the plan updated w
 - Tools are declared in `orchestrator/tools/registry.yaml` and role-gated twice (list + execute).
   New n8n-backed features = n8n workflow + one yaml entry, no Python changes.
 - `orchestrator/stt_tts/base.py` is the STT/TTS swap point; audio is 8 kHz mu-law end to end.
+  Production uses the Jetson (`speech_server/`, deployed to `user@100.64.0.6:~/alfred-speech`,
+  `docker compose up -d --build` there) with automatic ElevenLabs fallback. English only.
+  Gate telephony on `settings.speech_enabled`, never on `elevenlabs_enabled`.
 - `STORAGE_ROOT` is the only thing to change for the NAS migration.
 - Model: `claude-haiku-4-5` (user's choice) via the official `anthropic` SDK (1.x, async client).
   Haiku 4.5 does not take adaptive thinking/effort; don't add them.

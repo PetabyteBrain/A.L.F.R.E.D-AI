@@ -51,7 +51,7 @@ The full, current project plan (architecture, data model, phases, roadmap) is in
 | 2 | n8n full REST API tools + role-gated registry + `echo_test` | live |
 | 3 | Twilio Media Streams + ElevenLabs STT/TTS + stereo recording | live |
 | 4 | Dashboard + additions (people, calls for others, calendar, usage, web chat, reminders, briefing, voice notes, memory, verification, quiet hours, task follow-ups) | live |
-| 5 | Jetson Whisper/Piper | swap point: `orchestrator/stt_tts/base.py` |
+| 5 | Self-hosted speech on the Jetson Orin (Whisper large-v3-turbo + Kokoro `bm_george`) | live; `speech_server/`, ElevenLabs as fallback |
 | 6 | NAS storage | change `STORAGE_ROOT` + one bind mount in `docker-compose.yml` |
 
 ## First start on the Pi

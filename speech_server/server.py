@@ -38,6 +38,7 @@ TOKEN = os.environ.get("SPEECH_TOKEN", "")
 WHISPER_MODEL = os.environ.get("WHISPER_MODEL", "openai/whisper-large-v3-turbo")
 KOKORO_VOICE = os.environ.get("KOKORO_VOICE", "bm_george")
 KOKORO_SPEED = float(os.environ.get("KOKORO_SPEED", "1.0"))
+LONG_PIECE = int(os.environ.get("TTS_LONG_PIECE", "60"))       # split sentences longer than this at a comma
 SILENCE_MS = int(os.environ.get("VAD_SILENCE_MS", "500"))       # pause that ends an utterance
 SPEECH_START_MS = int(os.environ.get("VAD_SPEECH_START_MS", "250"))
 SPECULATE_MS = int(os.environ.get("VAD_SPECULATE_MS", "250"))   # start transcribing this far into a pause
@@ -96,13 +97,32 @@ class Kokoro:
         self.pipe = KPipeline(lang_code="b", repo_id="hexgrad/Kokoro-82M", model=self.model)
         self.voice = voice
 
+    @staticmethod
+    def pieces(text: str) -> list[str]:
+        """Sentences, with long ones split at a comma, so the first audio is ready sooner
+        (synthesis time grows with length, and the rest is generated while the first plays)."""
+        import re
+        out = []
+        for s in re.split(r"(?<=[.!?…;:])\s+|\n+", text):
+            s = s.strip()
+            while len(s) > LONG_PIECE:
+                cut = s.find(", ", 25)
+                if cut < 0 or len(s) - cut < 15:
+                    break
+                out.append(s[:cut + 1])
+                s = s[cut + 2:].strip()
+            if s:
+                out.append(s)
+        return out
+
     def sentences(self, text: str):
-        """Yield float32 24 kHz audio per sentence-sized chunk as it is synthesised."""
-        for result in self.pipe(text, voice=self.voice, speed=KOKORO_SPEED, split_pattern=r"(?<=[.!?…])\s+|\n+"):
-            audio = result.audio
-            if audio is None:
-                continue
-            yield audio.detach().float().cpu().numpy() if hasattr(audio, "detach") else np.asarray(audio, np.float32)
+        """Yield float32 24 kHz audio per piece as it is synthesised."""
+        for piece in self.pieces(text):
+            for result in self.pipe(piece, voice=self.voice, speed=KOKORO_SPEED, split_pattern=None):
+                audio = result.audio
+                if audio is None:
+                    continue
+                yield audio.detach().float().cpu().numpy() if hasattr(audio, "detach") else np.asarray(audio, np.float32)
 
     def synth_iter(self, text: str):
         it = self.sentences(text)
