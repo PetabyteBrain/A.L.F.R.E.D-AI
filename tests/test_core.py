@@ -1792,3 +1792,35 @@ def test_conversation_search_scoping_and_matching():
     # index stays in sync with transcript edits
     db.execute("UPDATE transcripts SET text = 'Booking moved to Verbier.' WHERE session_id = ? AND turn_index = 1", (s1,))
     assert s1 in {h["session_id"] for h in search.search(admin, "verbier")}
+
+
+def test_backup_snapshot_and_health(monkeypatch):
+    import json, sqlite3
+    from datetime import datetime, timedelta, timezone
+    from orchestrator import backup
+    alerts = []
+    monkeypatch.setattr(backup, "_alert_admins", lambda text: alerts.append(text))
+
+    assert backup.health_now()[0] is False                      # nothing yet -> red
+    paths = [backup.snapshot() for _ in range(4)]
+    snap = paths[-1]
+    assert snap.exists() and len(list(snap.parent.glob("alfred-*.db"))) <= backup.KEEP_LOCAL
+    c = sqlite3.connect(snap)
+    assert c.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
+    assert c.execute("SELECT COUNT(*) FROM users").fetchone()[0] >= 1
+    c.close()
+
+    backup.report(True, "db 1M + 3 recording files -> Jetson")
+    ok, detail = backup.health_now()
+    assert ok and "last 0 h ago" in detail and not alerts
+    backup.report(False, "copy of recordings to jetson failed")
+    ok, detail = backup.health_now()
+    assert not ok and "failing since" in detail and alerts and "backup failed" in alerts[-1]
+    # a later success clears it; an old success turns red as "overdue"
+    backup.report(True, "ok again")
+    assert backup.health_now()[0]
+    st = backup.state()
+    st["last_ok_at"] = (datetime.now(timezone.utc) - timedelta(hours=30)).isoformat(timespec="seconds")
+    db.execute("UPDATE app_settings SET value = ? WHERE key = 'backup_state'", (json.dumps(st),))
+    ok, detail = backup.health_now()
+    assert not ok and detail.startswith("overdue")

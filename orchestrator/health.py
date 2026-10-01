@@ -42,6 +42,11 @@ async def _jetson_speech() -> tuple[bool, str]:
     return await JetsonTTS().health()
 
 
+async def _backup() -> tuple[bool, str]:
+    from . import backup
+    return backup.health_now()
+
+
 async def _n8n() -> tuple[bool, str]:
     if not settings.n8n_enabled:
         return False, "not configured"
@@ -59,6 +64,7 @@ PROBES = {
     "twilio": call_handler.health,
     "elevenlabs": _elevenlabs,
     "jetson_speech": _jetson_speech,
+    "backup": _backup,
     "n8n": _n8n,
     "google": _google,
 }
