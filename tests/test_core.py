@@ -444,7 +444,8 @@ async def test_call_requests_schedule_retry_and_report(monkeypatch):
         twilio_auth_token="b", twilio_phone_number="+41310000000"))
     placed = []
 
-    async def fake_place(user_id, *, opening_line, reason="", requested_by=None, request_id=None, extra_system=None):
+    async def fake_place(user_id, *, opening_line, reason="", requested_by=None, request_id=None, extra_system=None,
+                         voicemail=None):
         sid = sessions.start_session(user_id, "call", "outbound")
         db.execute("UPDATE scheduled_calls SET session_id = ? WHERE id = ?", (sid, request_id))
         placed.append({"sid": sid, "opening": opening_line, "brief": extra_system})
@@ -1620,3 +1621,93 @@ def test_web_search_server_tool_pause_turn_and_metering(monkeypatch):
     assert ("tool", "web_search") in events
     after = db.query_one("SELECT COALESCE(SUM(units), 0) AS n FROM api_usage WHERE kind = 'web_search'")["n"]
     assert after - before == 2
+
+
+def test_voicemail_detection(monkeypatch):
+    import asyncio
+    from orchestrator import agent_core, call_handler, scheduler
+    from orchestrator.stt_tts.base import Provider, STTStream, TTS
+
+    spoken, turns = [], []
+
+    class FakeTTS(TTS):
+        async def stream(self, text):
+            spoken.append(text)
+            yield b"\x10" * 160
+
+    class NoSTT(STTStream):
+        async def start(self): pass
+        async def send_audio(self, b): pass
+        async def close(self): pass
+
+    class WS:
+        async def send_text(self, t):
+            pass
+
+    async def fake_respond(person, channel, sid, text, **kw):
+        turns.append(text)
+        return "Lovely to hear from you."
+
+    async def fake_vm(person, info):
+        return f"Hello Friend, this is Alfred calling on behalf of {info['requester']}. Goodbye."
+    monkeypatch.setattr(agent_core, "respond", fake_respond)
+    monkeypatch.setattr(call_handler, "voicemail_message", fake_vm)
+    hung_up = []
+
+    async def fake_hangup(self):
+        hung_up.append(self.session_id)
+    monkeypatch.setattr(call_handler.CallSession, "_hangup", fake_hangup)
+    friend = registry.lookup("telegram", "22222222")
+
+    def make_call():
+        sid = sessions.start_session(friend.id, "call", "outbound")
+        pending = call_handler.PendingCall(sid, friend.id, "tok", "Good day.", amd=True,
+                                           voicemail={"target": friend.display_name, "requester": "Test Admin",
+                                                      "purpose": "Ask about the invoice"})
+        return call_handler.CallSession(WS(), "MZ", pending, friend, Provider("fake", NoSTT, FakeTTS()))
+
+    async def run():
+        # a mailbox: its greeting is NOT answered; after the beep we leave a message and hang up
+        call = make_call()
+        await call.start()
+        await call._on_final("Hi, you've reached Friend, please leave a message after the tone.")
+        await asyncio.sleep(0.05)
+        assert turns == []                                    # held while Twilio decides
+        await call.on_amd("machine_end_beep")
+        await asyncio.sleep(0.05)
+        assert spoken[-1].startswith("Hello Friend, this is Alfred calling on behalf of Test Admin")
+        assert call.outcome == "voicemail" and call.hangup_requested
+        call.on_mark(call._pending_mark)                      # message played -> hang up
+        await asyncio.sleep(0.05)
+        assert hung_up == [call.session_id] and turns == []
+        await call.close()
+
+        # a person: what they said while AMD ran is answered once the verdict is "human"
+        spoken.clear()
+        call = make_call()
+        await call.start()
+        await call._on_final("Hello?")
+        await asyncio.sleep(0.05)
+        assert turns == []
+        await call.on_amd("human")
+        await asyncio.sleep(0.05)
+        assert turns == ["Hello?"] and call.outcome is None
+        await call.close()
+    asyncio.run(run())
+
+    # scheduler: a voicemail ends the request (no retries) and tells the requester
+    notes = []
+
+    async def fake_notify(requester, target, text):
+        notes.append(text)
+    monkeypatch.setattr(scheduler, "_notify", fake_notify)
+    admin = registry.lookup("telegram", "111")
+    sid = sessions.start_session(friend.id, "call", "outbound")
+    now = db.now_iso()
+    rid = db.execute("INSERT INTO scheduled_calls(target_user_id, requested_by, run_at, purpose, status, attempts, "
+                     "session_id, created_at, updated_at) VALUES (?,?,?,?, 'dialing', 1, ?, ?, ?)",
+                     (friend.id, admin.id, now, "Ask about the invoice", sid, now, now))
+    asyncio.run(scheduler.on_call_finished(sid, "voicemail"))
+    row = scheduler.get(rid)
+    assert row["status"] == "voicemail" and "left a message" in row["result"]
+    assert notes and "voicemail" in notes[-1]

@@ -4,7 +4,7 @@ import { usePoll } from "../hooks.js";
 import { Empty, ErrorNote, Tag } from "./common.jsx";
 import CallDialog from "./CallDialog.jsx";
 
-const STATUS_KIND = { pending: "", dialing: "busy", done: "ok", no_answer: "bad", failed: "bad", cancelled: "" };
+const STATUS_KIND = { pending: "", dialing: "busy", done: "ok", voicemail: "busy", no_answer: "bad", failed: "bad", cancelled: "" };
 
 /* Upcoming + recent call requests, with outcome reports. */
 export default function CallQueue({ me, assistant }) {

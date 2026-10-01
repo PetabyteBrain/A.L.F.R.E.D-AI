@@ -67,6 +67,15 @@ class PendingCall:
     opening_line: str
     extra_system: str | None = None
     created: float = field(default_factory=time.monotonic)
+    amd: bool = False                     # Twilio answering-machine detection running (outbound)
+    voicemail: dict | None = None         # who/why, to compose a message if a mailbox answers
+    answered_by: str | None = None        # AMD verdict that arrived before the media stream did
+
+
+# Twilio AnsweredBy values (async AMD with DetectMessageEnd): human | machine_end_beep |
+# machine_end_silence | machine_end_other | fax | unknown.
+MAILBOX = ("machine_end_beep", "machine_end_silence", "machine_end_other")
+AMD_WAIT_S = 35   # never hold the conversation longer than this waiting for a verdict
 
 
 _pending: dict[str, PendingCall] = {}
@@ -169,6 +178,20 @@ async def outbound_voice(request: Request, session_id: str) -> Response:
     return _stream_twiml(p)
 
 
+@router.post("/twilio/amd")
+async def amd_result(request: Request, session_id: str) -> Response:
+    """Async answering-machine detection verdict for an outbound call."""
+    form = await _validated_form(request)
+    answered_by = form.get("AnsweredBy", "unknown")
+    log.info("AMD for %s: %s", session_id, answered_by)
+    call = ACTIVE_CALLS.get(session_id)
+    if call is not None:
+        asyncio.create_task(call.on_amd(answered_by))
+    elif session_id in _pending:
+        _pending[session_id].answered_by = answered_by
+    return Response(status_code=204)
+
+
 @router.post("/twilio/status")
 async def call_status(request: Request, session_id: str) -> Response:
     form = await _validated_form(request)
@@ -191,7 +214,7 @@ def _twilio_client():
 
 async def place_outbound_call(user_id: int, *, opening_line: str, reason: str = "",
                               requested_by: int | None = None, request_id: int | None = None,
-                              extra_system: str | None = None) -> str:
+                              extra_system: str | None = None, voicemail: dict | None = None) -> str:
     if not (settings.twilio_enabled and settings.speech_enabled and settings.public_base_url):
         raise RuntimeError("Telephony isn't fully configured (Twilio, ElevenLabs, PUBLIC_BASE_URL).")
     person = registry.get_person(user_id)
@@ -206,9 +229,13 @@ async def place_outbound_call(user_id: int, *, opening_line: str, reason: str = 
         db.execute("UPDATE scheduled_calls SET session_id = ? WHERE id = ?", (sid, request_id))
     extra = extra_system or (f"This is an outbound call you placed. Reason: {reason}" if reason
                              else "This is an outbound call you placed.")
+    amd = settings.voicemail_detection
     _pending[sid] = PendingCall(sid, person.id, secrets.token_urlsafe(24), with_recording_notice(opening_line),
-                                extra)
+                                extra, amd=amd, voicemail={"target": person.display_name, **(voicemail or {})})
     q = urlencode({"session_id": sid})
+    amd_kw = dict(machine_detection="DetectMessageEnd", async_amd="true",
+                  async_amd_status_callback=f"{settings.public_base_url}/twilio/amd?{q}",
+                  async_amd_status_callback_method="POST") if amd else {}
 
     def _create():
         return _twilio_client().calls.create(
@@ -218,6 +245,7 @@ async def place_outbound_call(user_id: int, *, opening_line: str, reason: str = 
             status_callback=f"{settings.public_base_url}/twilio/status?{q}",
             status_callback_event=["completed"],
             timeout=30,
+            **amd_kw,
         )
 
     try:
@@ -309,6 +337,35 @@ def request_hangup(session_id: str) -> bool:
     return True
 
 
+async def voicemail_message(person: Person, info: dict) -> str:
+    """A short, speakable voicemail from the call's purpose (one small Claude call; plain fallback)."""
+    first = "sir" if person.is_admin else person.display_name.split()[0]
+    requester, purpose = info.get("requester"), (info.get("purpose") or "").strip()
+    name = settings.assistant_name
+    on_behalf = f", calling on behalf of {requester.split()[0]}" if requester else ""
+    fallback = (f"Hello {first}, this is {name}{on_behalf}. "
+                + ("I'll try you again a little later." if purpose else "Nothing urgent; I'll try again later.")
+                + " Goodbye.")
+    if not purpose or not settings.anthropic_api_key:
+        return fallback
+    try:
+        from .agent_core import client
+        resp = await asyncio.wait_for(client().messages.create(
+            model=settings.claude_model, max_tokens=150,
+            system=(f"You are {name}, a courteous British butler, leaving a voicemail. Write ONLY the message "
+                    "to be spoken: at most 2 short sentences, under 45 words, no lists or symbols. Greet them, "
+                    "say who you are" + (f" and that you call on behalf of {requester}" if requester else "")
+                    + ", state the matter briefly as a request or note (not as an instruction to yourself), "
+                    "say you'll try again later or they may call back, and say goodbye."),
+            messages=[{"role": "user", "content": f"Recipient: {first}. Matter: {purpose}"}]), timeout=6)
+        usage.record_claude(getattr(resp, "usage", None), kind="voicemail", user_id=person.id)
+        text = "".join(b.text for b in resp.content if getattr(b, "type", "") == "text").strip()
+        return text or fallback
+    except Exception:  # noqa: BLE001
+        log.exception("Voicemail composition failed; using the plain message")
+        return fallback
+
+
 # --- media stream ------------------------------------------------------------------------
 
 class CallSession:
@@ -338,8 +395,16 @@ class CallSession:
         self.live = sessions.LIVE.get(self.session_id)
         self._closed = False
         self.end_status = "ended"
+        self.outcome: str | None = None          # reported to the scheduler instead of end_status
         self.hangup_requested = False
         self._hanging_up = False
+        # Outbound + AMD: hold the conversation until Twilio says human or mailbox.
+        self.voicemail_info = pending.voicemail
+        self._amd_done = asyncio.Event()
+        if not pending.amd:
+            self._amd_done.set()
+        self._early_verdict = pending.answered_by
+        self.left_voicemail = False
 
     # lifecycle
     async def start(self) -> None:
@@ -375,7 +440,7 @@ class CallSession:
             "direction", "inbound")
         usage.record_stt(duration, user_id=self.person.id, session_id=self.session_id, provider=self.provider.name)
         usage.record_call_minutes(duration, direction=direction, user_id=self.person.id, session_id=self.session_id)
-        _call_finished(self.session_id, self.end_status)
+        _call_finished(self.session_id, self.outcome or self.end_status)
 
     # inbound events
     async def on_audio(self, ulaw: bytes) -> None:
@@ -418,11 +483,45 @@ class CallSession:
 
     # agent loop
     async def _work(self) -> None:
+        if self._early_verdict:
+            await self.on_amd(self._early_verdict)
         while True:
             text = await self.utterances.get()
+            if not self._amd_done.is_set():
+                # Might be a mailbox greeting: don't answer it until Twilio has decided.
+                with contextlib.suppress(asyncio.TimeoutError):
+                    await asyncio.wait_for(self._amd_done.wait(), AMD_WAIT_S)
+                self._amd_done.set()
+            if self.left_voicemail:
+                continue                    # the mailbox's own words; we've left our message
             while not self.utterances.empty():  # merge anything said while we were busy
                 text += " " + self.utterances.get_nowait()
             await self._turn(text)
+
+    # voicemail
+    async def on_amd(self, answered_by: str) -> None:
+        if self._amd_done.is_set() and answered_by not in MAILBOX:
+            return
+        if answered_by == "fax":
+            self.outcome = "no_answer"
+            self._amd_done.set()
+            await self._hangup()
+            return
+        if answered_by not in MAILBOX:          # human / unknown: carry on as a normal call
+            self._amd_done.set()
+            return
+        # The mailbox greeting has finished (beep or silence): leave a short message, then hang up.
+        self.left_voicemail = True
+        self._amd_done.set()
+        await self.interrupt()
+        text = await voicemail_message(self.person, self.voicemail_info or {})
+        sessions.add_turn(self.session_id, "assistant", text)
+        db.log_activity("call", f"Reached {self.person.display_name}'s voicemail; left a message", self.person.id,
+                        self.session_id)
+        self.outcome = "voicemail"
+        self.hangup_requested = True
+        self._speak(text)
+        asyncio.create_task(self._hangup_fallback())
 
     async def _turn(self, text: str) -> None:
         """One exchange. Claude's reply is streamed and spoken sentence by sentence, so the caller

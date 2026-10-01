@@ -238,7 +238,10 @@ async def dispatch(request_id: int) -> None:
     try:
         await place_outbound_call(target.id, opening_line=opening, reason=row["purpose"],
                                   requested_by=requester.id if requester else None, request_id=request_id,
-                                  extra_system=_call_brief(target, requester, row["purpose"]))
+                                  extra_system=_call_brief(target, requester, row["purpose"]),
+                                  voicemail={"purpose": row["purpose"],
+                                             "requester": requester.display_name
+                                             if requester and requester.id != target.id else None})
     except Exception as e:  # noqa: BLE001
         log.exception("Dispatch of call request %s failed", request_id)
         _set(request_id, status="failed", result=f"Couldn't place the call: {str(e)[:200]}")
@@ -259,6 +262,12 @@ async def on_call_finished(session_id: str, outcome: str) -> None:
     target = registry.get_person(req["target_user_id"])
     requester = registry.get_person(req["requested_by"]) if req["requested_by"] else None
     name = target.display_name if target else req["target_name"]
+
+    if outcome == "voicemail":   # a message was left: don't keep ringing them
+        _set(req["id"], status="voicemail", result=f"Reached {name}'s voicemail and left a message.")
+        await _notify(requester, target, f"{name} didn't pick up, so I left a voicemail"
+                      + (" about it." if req["purpose"] else "."))
+        return
 
     if outcome in ("no_answer", "failed"):
         if req["attempts"] < MAX_ATTEMPTS and outcome == "no_answer":
