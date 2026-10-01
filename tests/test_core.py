@@ -1724,3 +1724,20 @@ def test_telegram_markdown_to_html():
     assert '<a href="https://x.ch/?a=1&amp;b=2">link</a>' in out
     assert "<script>" not in out and "&lt;script&gt;" in out                 # model text can't inject markup
     assert "<pre>| a | b |\n| 1 | 2 |</pre>" in out                          # tables -> monospaced block
+
+
+
+def test_telegram_markdown_survives_odd_constructs():
+    from orchestrator.tg_format import md_to_html, well_formed
+    text = ("# Testing Markdown Support\n\n## Text Formatting\n\nYou can write *italic text*, **bold text**, "
+            "or ***both***. For strikethrough, use ~~this syntax~~. Obsidian also supports ==highlighting==.\n\n"
+            "- Item one\n- Item **two**\n\n1. First\n2. Second\n\n```python\nprint('hi')\n```\n\n"
+            "> A quote with **bold** inside\n\nOdd: **unclosed bold and *star* mix and 5 * 3 * 2.")
+    out = md_to_html(text)
+    assert well_formed(out)
+    assert "<b><i>both</i></b>" in out and "<i>italic text</i>" in out and "<s>this syntax</s>" in out
+    assert "<b>Testing Markdown Support</b>" in out and "<pre>print('hi')</pre>" in out
+    assert "<blockquote>A quote with <b>bold</b> inside</blockquote>" in out
+    # a malformed paragraph is escaped on its own; the rest keeps its formatting
+    bad = md_to_html("**fine**\n\n<b>*x**y*</b> **a *b** c*")
+    assert well_formed(bad) and bad.startswith("<b>fine</b>")
