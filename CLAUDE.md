@@ -65,6 +65,8 @@ the original spec is in `docs/archive/original-spec.md`. Keep the plan updated w
 - Conversation search: FTS5 `transcripts_fts` (triggers in db.SCHEMA); scoping rules live in
   `orchestrator/search.py` (own + calls requested; admin all). Telegram output goes through
   `tg_format.md_to_html` (validated tags), never raw parse_mode Markdown.
+- Meetings: `orchestrator/meetings.py`; another person's calendar is only read if they turned on
+  free/busy sharing, and only busy times ever leave google_calendar.busy_intervals.
 - Calls speak streamed text sentence by sentence (`call_handler.split_speakable`, `_turn`).
 
 ## Ops

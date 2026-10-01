@@ -23,6 +23,7 @@ only the assistant's persona and branding are "Alfred" (`ASSISTANT_NAME`). The d
 | Tasks & follow-ups | Tasks with owner, due time and follow-up: Alfred checks in with the owner (Telegram buttons or a call), up to 3 times, and tells the requester | any channel, Tasks tab |
 | Memory | Short per-person notes ("prefers calls after 9") used in that person's conversations only; editable. Plus full-text search over all past conversations ("what did Max say about the invoice?") | any channel, Profile |
 | Calendar | Per-user Google Calendar: list, create, move, delete events (Limited Use) | any channel, Profile |
+| Meetings | "Find an hour with Max next week": common free times (opt-in free/busy sharing, times only), each person asked by Telegram buttons or call, booked with Google invitations | any channel (admin/cofounder), Tasks |
 | Automations | Full n8n API for the admin, webhook tools, async results via callback | any channel |
 | Quiet hours | Household default (22:00-07:00) + per person; calls others asked for wait, messages go silent, "urgent" overrides | Profile |
 | Homelab | Status of the Pis/Jetson and their containers, logs, confirmed restarts (admin), Minecraft players; alerts when something breaks | any channel (admin), Systems |
