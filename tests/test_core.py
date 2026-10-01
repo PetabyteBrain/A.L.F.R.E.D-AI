@@ -1914,3 +1914,98 @@ def test_systems_rows_grouped_and_homelab_admin_only():
         rows = c.get("/api/health").json()
         assert rows and all(r["group"] == "alfred" for r in rows)                  # no homelab for non-admins
         assert c.post("/api/health/refresh", headers=CSRF).status_code == 403
+
+
+def test_meeting_scheduling(monkeypatch):
+    import asyncio, json
+    from datetime import datetime, timedelta, timezone
+    from zoneinfo import ZoneInfo
+    from orchestrator import google_calendar, meetings, telegram_handler
+    from orchestrator.config import settings
+    tz = ZoneInfo("Europe/Zurich")
+    admin = registry.lookup("telegram", "111")
+    friend = registry.lookup("telegram", "22222222")
+    sent, booked = [], []
+
+    # next Monday 00:00 local as a fixed window
+    today = datetime.now(tz).date()
+    monday = today + timedelta(days=(7 - today.weekday()) % 7 or 7)
+    day = lambda d, h, m=0: datetime(monday.year, monday.month, monday.day, h, m, tzinfo=tz) + timedelta(days=d)  # noqa: E731
+    busy = {admin.id: [(day(0, 9), day(0, 12))],                  # admin busy Monday morning
+            friend.id: [(day(0, 13), day(0, 15)), (day(1, 9), day(1, 18))]}   # friend busy Mon 13-15, all Tuesday
+
+    async def fake_busy(uid, start, end):
+        return [(a.astimezone(timezone.utc), b.astimezone(timezone.utc)) for a, b in busy[uid]]
+
+    async def fake_create(uid, summary, start, end, description="", location="", attendees=None):
+        booked.append({"uid": uid, "summary": summary, "start": start, "attendees": attendees})
+        return {"id": "evt123"}
+
+    async def fake_send(user_id, text, note=None, record=True, buttons=None, silent=None):
+        sent.append({"to": user_id, "text": text, "buttons": buttons})
+    monkeypatch.setattr(google_calendar, "is_linked", lambda uid: True)
+    monkeypatch.setattr(google_calendar, "busy_intervals", fake_busy)
+    monkeypatch.setattr(google_calendar, "create_event", fake_create)
+    monkeypatch.setattr(telegram_handler, "send_to_user", fake_send)
+    monkeypatch.setattr(type(settings), "telegram_enabled", property(lambda s: True))
+    for uid, email in ((admin.id, "admin@example.com"), (friend.id, "friend@example.com")):
+        db.execute("INSERT OR REPLACE INTO google_accounts(user_id, email, refresh_token_enc, linked_at) VALUES (?,?,?,?)",
+                   (uid, email, "x", db.now_iso()))
+    window = dict(window_start=day(0, 0).isoformat(), window_end=day(2, 23).isoformat())
+
+    async def run():
+        # friends can't organise; the friend's calendar is only used once they opt in
+        try:
+            await meetings.find_slots(friend, ["Test"], **window)
+            raise AssertionError("friend organised a meeting")
+        except meetings.MeetingError:
+            pass
+        r = await meetings.find_slots(admin, ["Friend"], duration_minutes=60, **window)
+        assert r["availability_unknown"] == ["Friend Person"] and r["calendars_checked"] == ["Test Admin"]
+        meetings.set_sharing(friend.id, True)
+        r = await meetings.find_slots(admin, ["Friend"], duration_minutes=60, **window)
+        assert r["calendars_checked"] == ["Test Admin", "Friend Person"] and not r["availability_unknown"]
+        starts = [datetime.fromisoformat(s["start"]) for s in r["slots"]]
+        assert starts and all(s.date() != day(1, 0).date() for s in starts)           # Tuesday fully busy
+        for s in starts:                                                              # never overlaps anyone's busy time
+            for b0, b1 in busy[admin.id] + busy[friend.id]:
+                assert s + timedelta(hours=1) <= b0 or s >= b1
+            assert 9 <= s.hour and s + timedelta(hours=1) <= s.replace(hour=18, minute=0)
+        assert "summary" not in json.dumps(r)                                         # only times, no event details
+
+        # propose -> the friend gets tick buttons
+        v = await meetings.propose(admin, ["Friend"], "Budget review", [s["start"] for s in r["slots"][:3]],
+                                   duration_minutes=60)
+        mid = v["meeting_id"]
+        ask = sent[-1]
+        assert ask["to"] == friend.id and "Budget review" in ask["text"] and len(ask["buttons"]) == 4
+        inv = db.query_one("SELECT id FROM meeting_invites WHERE meeting_id = ?", (mid,))["id"]
+        try:
+            await meetings.answer(mid, registry.get_person(admin.id), [1])            # organiser isn't an invitee
+            raise AssertionError("non-invitee answered")
+        except meetings.MeetingError:
+            pass
+        meetings.toggle(inv, friend, 2)
+        meetings.toggle(inv, friend, 1)
+        meetings.toggle(inv, friend, 2)                                               # untick -> only option 2 left
+        done = await meetings.answer(mid, friend, None)                              # "Send" button
+        assert done["status"] == "booked" and booked[-1]["uid"] == admin.id
+        assert booked[-1]["attendees"] == ["friend@example.com"]
+        assert datetime.fromisoformat(booked[-1]["start"]) == datetime.fromisoformat(r["slots"][1]["start"])
+        assert {m["to"] for m in sent[-2:]} == {admin.id, friend.id} and "is set for" in sent[-1]["text"]
+
+        # nobody can make it -> organiser gets the answers, nothing booked
+        n = len(booked)
+        v2 = await meetings.propose(admin, ["Friend"], "Offsite", [s["start"] for s in r["slots"][:2]])
+        out = await meetings.answer(v2["meeting_id"], friend, [], none_work=True)
+        assert out["status"] == "no_match" and len(booked) == n and "No time works" in sent[-1]["text"]
+
+        # a proposal whose options all passed expires and the organiser is told once
+        v3 = await meetings.propose(admin, ["Friend"], "Old idea", [r["slots"][0]["start"]])
+        db.execute("UPDATE meetings SET slots_json = ? WHERE id = ?",
+                   (json.dumps([(datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()]), v3["meeting_id"]))
+        await meetings.expire_stale()
+        assert meetings.get(v3["meeting_id"])["status"] == "expired" and "ran out of time" in sent[-1]["text"]
+        await meetings.expire_stale()
+        assert "ran out of time" not in sent[-1]["text"] or sent[-1]["text"].count("Old idea") == 1
+    asyncio.run(run())

@@ -329,6 +329,84 @@ tools:
       type: object
       properties: {}
 
+  # ---------------------------------------------------------------- meetings
+  - name: find_meeting_slots
+    kind: builtin
+    handler: find_meeting_slots
+    roles: [admin, cofounder]
+    description: >-
+      Find times when the requester and other registered people are all free, from the
+      requester's calendar and the calendars of those who share their free/busy (others are just
+      asked later). Working hours 09:00-18:00 on weekdays unless told otherwise. Resolve relative
+      dates first and pass ISO local times. Show the options and confirm before propose_meeting.
+    input_schema:
+      type: object
+      properties:
+        people: {type: array, items: {type: string}, description: "Names or ids of the other participants."}
+        duration_minutes: {type: integer}
+        window_start: {type: string, description: "ISO local start of the search window (default: now)."}
+        window_end: {type: string, description: "ISO local end (default: a week after the start, max 21 days)."}
+        earliest: {type: string, description: "HH:MM, default 09:00"}
+        latest: {type: string, description: "HH:MM, default 18:00"}
+        weekends: {type: boolean}
+      required: [people]
+
+  - name: propose_meeting
+    kind: builtin
+    handler: propose_meeting
+    roles: [admin, cofounder]
+    description: >-
+      Ask each participant which of the given times work (Telegram buttons, or a call). When all
+      have answered, the earliest time that works for everyone is booked in the requester's
+      calendar with invitations, and everyone is told. Use times from find_meeting_slots or ones
+      the requester chose.
+    input_schema:
+      type: object
+      properties:
+        people: {type: array, items: {type: string}}
+        title: {type: string}
+        slots: {type: array, items: {type: string}, description: "ISO local start times, max 5."}
+        duration_minutes: {type: integer}
+        notes: {type: string, description: Optional context for the invitees.}
+        channel: {type: string, enum: [auto, telegram, call], description: "Default auto (Telegram if they have it)."}
+      required: [people, title, slots]
+
+  - name: answer_meeting
+    kind: builtin
+    handler: answer_meeting
+    roles: ["*"]
+    description: >-
+      Record the current person's answer to a meeting invitation: the option numbers that work for
+      them, or none_work=true. Use when they reply in words or on a call instead of the buttons.
+    input_schema:
+      type: object
+      properties:
+        meeting_id: {type: integer}
+        works: {type: array, items: {type: integer}, description: "Option numbers as shown (1-based)."}
+        none_work: {type: boolean}
+      required: [meeting_id]
+
+  - name: list_meetings
+    kind: builtin
+    handler: list_meetings
+    roles: ["*"]
+    description: Meeting proposals the person organised or was invited to, with who has answered.
+    input_schema:
+      type: object
+      properties:
+        include_finished: {type: boolean}
+
+  - name: cancel_meeting
+    kind: builtin
+    handler: cancel_meeting
+    roles: [admin, cofounder]
+    description: Withdraw a meeting proposal that hasn't been booked yet (invitees are told).
+    input_schema:
+      type: object
+      properties:
+        meeting_id: {type: integer}
+      required: [meeting_id]
+
   - name: remember
     kind: builtin
     handler: remember

@@ -5,6 +5,7 @@ from html import escape
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import HTMLResponse
+from pydantic import BaseModel, ConfigDict
 
 from orchestrator import db, google_calendar
 from orchestrator.identity.registry import Person
@@ -12,6 +13,23 @@ from orchestrator.identity.registry import Person
 from .routes import current_person
 
 router = APIRouter(prefix="/api/google")
+
+
+class Sharing(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    share_availability: bool
+
+
+@router.put("/sharing")
+async def set_sharing(body: Sharing, person: Person = Depends(current_person)) -> dict:
+    from orchestrator import meetings
+    try:
+        meetings.set_sharing(person.id, body.share_availability)
+    except meetings.MeetingError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    db.log_activity("system", f"{person.display_name} turned free/busy sharing "
+                    f"{'on' if body.share_availability else 'off'}", user_id=person.id)
+    return {"share_availability": body.share_availability}
 
 
 @router.get("/status")

@@ -82,7 +82,10 @@ def is_linked(user_id: int) -> bool:
 
 
 def status(user_id: int) -> dict:
-    row = db.query_one("SELECT email, linked_at, calendar_id FROM google_accounts WHERE user_id = ?", (user_id,))
+    row = db.query_one("SELECT email, linked_at, calendar_id, share_availability FROM google_accounts WHERE user_id = ?",
+                       (user_id,))
+    if row:
+        row["share_availability"] = bool(row["share_availability"])
     return {"available": settings.google_enabled, "linked": bool(row), **(row or {})}
 
 
@@ -298,13 +301,40 @@ async def list_events(user_id: int, start: str, end: str, query: str = "", max_r
 
 
 async def create_event(user_id: int, summary: str, start: str, end: str, description: str = "",
-                       location: str = "") -> dict:
+                       location: str = "", attendees: list[str] | None = None) -> dict:
     body = {"summary": summary[:300], "start": _when(start), "end": _when(end)}
     if description:
         body["description"] = description[:4000]
     if location:
         body["location"] = location[:300]
-    return _compact(await _api(user_id, "POST", "/events", json=body))
+    params = {}
+    if attendees:   # Google emails the invitations itself
+        body["attendees"] = [{"email": e} for e in attendees[:20]]
+        params["sendUpdates"] = "all"
+    return _compact(await _api(user_id, "POST", "/events", json=body, params=params))
+
+
+async def busy_intervals(user_id: int, start: datetime, end: datetime) -> list[tuple[datetime, datetime]]:
+    """Busy times only (no titles) for meeting scheduling: events marked free and invitations
+    the person declined don't count."""
+    params = {"timeMin": start.isoformat(), "timeMax": end.isoformat(), "singleEvents": "true",
+              "orderBy": "startTime", "maxResults": 250,
+              "fields": "items(start,end,transparency,attendees(self,responseStatus))"}
+    data = await _api(user_id, "GET", "/events", params=params)
+    out = []
+    for e in data.get("items", []):
+        if e.get("transparency") == "transparent":
+            continue
+        if any(a.get("self") and a.get("responseStatus") == "declined" for a in e.get("attendees", [])):
+            continue
+        s, en = e.get("start", {}), e.get("end", {})
+        if "dateTime" in s:
+            b0, b1 = datetime.fromisoformat(s["dateTime"]), datetime.fromisoformat(en["dateTime"])
+        else:   # all-day and marked busy: the whole local day(s)
+            b0 = datetime.fromisoformat(s["date"]).replace(tzinfo=_tz())
+            b1 = datetime.fromisoformat(en["date"]).replace(tzinfo=_tz())
+        out.append((b0.astimezone(timezone.utc), b1.astimezone(timezone.utc)))
+    return out
 
 
 def _event_id(event_id: str) -> str:

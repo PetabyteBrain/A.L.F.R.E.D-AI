@@ -88,6 +88,32 @@ CREATE TABLE IF NOT EXISTS quiet_hours (
     updated_at TEXT
 );
 
+-- Meeting scheduling (orchestrator/meetings.py)
+CREATE TABLE IF NOT EXISTS meetings (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    organizer_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    title        TEXT NOT NULL,
+    notes        TEXT NOT NULL DEFAULT '',
+    duration_min INTEGER NOT NULL,
+    slots_json   TEXT NOT NULL,                     -- proposed starts, UTC ISO
+    status       TEXT NOT NULL DEFAULT 'proposed',  -- proposed|booking|booked|no_match|cancelled|expired
+    booked_start TEXT,
+    event_id     TEXT,
+    created_at   TEXT NOT NULL,
+    updated_at   TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS meeting_invites (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    meeting_id    INTEGER NOT NULL REFERENCES meetings(id) ON DELETE CASCADE,
+    user_id       INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    channel       TEXT NOT NULL,                    -- telegram | call
+    status        TEXT NOT NULL DEFAULT 'pending',  -- pending | answered | closed
+    accepted_json TEXT NOT NULL DEFAULT '[]',       -- 0-based slot indexes that work
+    answered_at   TEXT,
+    created_at    TEXT NOT NULL,
+    UNIQUE (meeting_id, user_id)
+);
+
 -- Daily briefing settings per person (orchestrator/briefing.py).
 CREATE TABLE IF NOT EXISTS briefings (
     user_id      INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
@@ -381,6 +407,7 @@ ADDED_COLUMNS = [
     ("tasks", "follow_up_at", "TEXT"),
     ("tasks", "follow_ups", "INTEGER NOT NULL DEFAULT 0"),
     ("tasks", "last_follow_up_at", "TEXT"),
+    ("google_accounts", "share_availability", "INTEGER NOT NULL DEFAULT 0"),   # opt-in free/busy for meetings
     ("tasks", "completed_at", "TEXT"),
     ("tasks", "completed_by", "INTEGER REFERENCES users(id) ON DELETE SET NULL"),
     ("tasks", "result", "TEXT"),

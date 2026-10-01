@@ -6,6 +6,7 @@ import { Panel } from "../components/hud.jsx";
 import CallQueue from "../components/CallQueue.jsx";
 import Reminders from "../components/Reminders.jsx";
 import TaskList from "../components/TaskList.jsx";
+import Meetings from "../components/Meetings.jsx";
 
 export default function Tasks({ isAdmin, me, assistant }) {
   const { data: t } = usePoll(() => (isAdmin ? api("/tasks") : Promise.resolve(null)), 60000);
@@ -13,6 +14,7 @@ export default function Tasks({ isAdmin, me, assistant }) {
   return (
     <Panel code="04" title="Tasks & calls">
       <TaskList me={me} assistant={assistant} />
+      <Meetings me={me} assistant={assistant} />
       <Reminders me={me} assistant={assistant} />
       <CallQueue me={me} assistant={assistant} />
 

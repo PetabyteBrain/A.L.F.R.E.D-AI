@@ -72,6 +72,23 @@ export default function GoogleCalendarCard({ assistant }) {
         <div className="gcal-linked">
           <div className="kv"><span>Linked</span><Tag kind="ok">{st.email || "Google account"}</Tag></div>
           <p className="muted tiny">Since {fmtTime(st.linked_at)} · calendar: {st.calendar_id}</p>
+          <label className="toggle">
+            <input type="checkbox" checked={!!st.share_availability} disabled={busy} onChange={async (e) => {
+              const on = e.target.checked;
+              setBusy(true);
+              setMsg({ ok: "", err: "" });
+              try {
+                await api("/google/sharing", { method: "PUT", body: { share_availability: on } });
+                setMsg({ ok: on ? "Free/busy sharing on." : "Free/busy sharing off.", err: "" });
+                await reload();
+              } catch (x) { setMsg({ ok: "", err: x.message }); } finally { setBusy(false); }
+            }} />
+            <span>Share my free/busy for meeting scheduling</span>
+          </label>
+          <p className="muted tiny">
+            When someone asks {assistant} to find a time with you, only when you're busy is used, never what the
+            events are. Off: you're simply asked which times work.
+          </p>
           <button className="btn danger small" onClick={disconnect} disabled={busy}>Unlink</button>
         </div>
       )}

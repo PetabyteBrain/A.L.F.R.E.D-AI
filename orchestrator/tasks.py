@@ -327,9 +327,11 @@ async def tick() -> None:
 
 
 async def background_loop() -> None:
+    from . import meetings
     while True:
         try:
             await tick()
+            await meetings.expire_stale()
         except Exception:
             log.exception("Task loop iteration failed")
         await asyncio.sleep(POLL_SECONDS)

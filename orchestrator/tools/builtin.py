@@ -241,6 +241,53 @@ async def minecraft_status(ctx) -> dict:
 
 
 @handler
+async def find_meeting_slots(ctx, people: list, duration_minutes: int = 60, window_start: str = "", window_end: str = "",
+                             earliest: str = "09:00", latest: str = "18:00", weekends: bool = False) -> dict:
+    from .. import meetings
+    try:
+        return await meetings.find_slots(ctx.person, people, duration_minutes=duration_minutes,
+                                         window_start=window_start, window_end=window_end, earliest=earliest,
+                                         latest=latest, weekends=weekends)
+    except meetings.MeetingError as e:
+        return {"error": str(e)}
+
+
+@handler
+async def propose_meeting(ctx, people: list, title: str, slots: list, duration_minutes: int = 60, notes: str = "",
+                          channel: str = "auto") -> dict:
+    from .. import meetings
+    try:
+        return await meetings.propose(ctx.person, people, title, slots, duration_minutes=duration_minutes,
+                                      notes=notes, channel=channel)
+    except meetings.MeetingError as e:
+        return {"error": str(e)}
+
+
+@handler
+async def answer_meeting(ctx, meeting_id: int, works: list | None = None, none_work: bool = False) -> dict:
+    from .. import meetings
+    try:
+        return await meetings.answer(int(meeting_id), ctx.person, [int(w) for w in (works or [])], none_work)
+    except (meetings.MeetingError, ValueError) as e:
+        return {"error": str(e)}
+
+
+@handler
+async def list_meetings(ctx, include_finished: bool = False) -> list[dict]:
+    from .. import meetings
+    return meetings.list_for(ctx.person, include_finished)
+
+
+@handler
+async def cancel_meeting(ctx, meeting_id: int) -> dict:
+    from .. import meetings
+    try:
+        return await meetings.cancel(int(meeting_id), ctx.person)
+    except meetings.MeetingError as e:
+        return {"error": str(e)}
+
+
+@handler
 async def remember(ctx, text: str) -> dict:
     from .. import memory
     try:

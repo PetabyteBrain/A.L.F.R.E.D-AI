@@ -241,6 +241,9 @@ async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return  # silent, like messages
     kind, _, rest = (q.data or "").partition(":")
     action, _, rid = rest.partition(":")
+    if kind == "mtg":
+        await _meeting_button(q, person, action, rid)
+        return
     if kind == "task" and rid.isdigit() and action in ("done", "notyet"):
         try:
             if action == "done":
@@ -267,6 +270,37 @@ async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await q.answer(note)
     await _append_note(q, note)
     db.log_activity("task", f"{person.display_name}: reminder #{rid} {action}", user_id=person.id)
+
+
+async def _meeting_button(q, person, invite_id: str, op: str) -> None:
+    """Meeting invite buttons: mtg:<invite>:t<n> (tick/untick), mtg:<invite>:send, mtg:<invite>:none."""
+    from . import meetings
+    if not invite_id.isdigit():
+        await q.answer()
+        return
+    try:
+        if op.startswith("t") and op[1:].isdigit():
+            res = meetings.toggle(int(invite_id), person, int(op[1:]))
+            await q.answer("Ticked" if int(op[1:]) in res["invite"]["accepted"] else "Unticked")
+            markup = InlineKeyboardMarkup([[InlineKeyboardButton(label, callback_data=data) for label, data in row]
+                                           for row in meetings._buttons(res["meeting"], res["invite"])])
+            with contextlib.suppress(Exception):
+                await q.edit_message_reply_markup(reply_markup=markup)
+            return
+        inv = db.query_one("SELECT meeting_id, accepted_json FROM meeting_invites WHERE id = ? AND user_id = ?",
+                           (int(invite_id), person.id))
+        if not inv:
+            raise meetings.MeetingError("This invitation isn't yours.")
+        if op == "send" and inv["accepted_json"] in ("[]", ""):
+            await q.answer("Tick the times that work first, or tap None work.")
+            return
+        await meetings.answer(inv["meeting_id"], person, None, none_work=(op == "none"))
+    except meetings.MeetingError as e:
+        await q.answer(str(e))
+        return
+    note = "Thanks, I'll let you know once it's settled." if op == "send" else "Noted: none of these work."
+    await q.answer(note)
+    await _append_note(q, note)
 
 
 async def start() -> None:
