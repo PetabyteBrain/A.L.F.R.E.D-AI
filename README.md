@@ -21,7 +21,7 @@ only the assistant's persona and branding are "Alfred" (`ASSISTANT_NAME`). The d
 | Reminders | One-off or recurring (daily/weekdays/weekly/monthly), Telegram with Done/Snooze or a call, optional escalation to a call if ignored | any channel, Tasks tab |
 | Daily briefing | Weather (Open-Meteo), today's calendar, reminders, planned calls, overnight call outcomes, tasks; by Telegram or call at a set time | Profile |
 | Tasks & follow-ups | Tasks with owner, due time and follow-up: Alfred checks in with the owner (Telegram buttons or a call), up to 3 times, and tells the requester | any channel, Tasks tab |
-| Memory | Short per-person notes ("prefers calls after 9") used in that person's conversations only; editable | any channel, Profile |
+| Memory | Short per-person notes ("prefers calls after 9") used in that person's conversations only; editable. Plus full-text search over all past conversations ("what did Max say about the invoice?") | any channel, Profile |
 | Calendar | Per-user Google Calendar: list, create, move, delete events (Limited Use) | any channel, Profile |
 | Automations | Full n8n API for the admin, webhook tools, async results via callback | any channel |
 | Quiet hours | Household default (22:00-07:00) + per person; calls others asked for wait, messages go silent, "urgent" overrides | Profile |
