@@ -31,8 +31,15 @@ async def _claude() -> tuple[bool, str]:
 async def _elevenlabs() -> tuple[bool, str]:
     if not settings.elevenlabs_enabled:
         return False, "not configured"
-    from .stt_tts.base import get_provider
-    return await get_provider().tts.health()
+    from .stt_tts.elevenlabs import ElevenLabsTTS
+    return await ElevenLabsTTS().health()
+
+
+async def _jetson_speech() -> tuple[bool, str]:
+    if settings.stt_tts_provider != "jetson" or not settings.speech_url:
+        return False, "not configured"
+    from .stt_tts.jetson import JetsonTTS
+    return await JetsonTTS().health()
 
 
 async def _n8n() -> tuple[bool, str]:
@@ -51,6 +58,7 @@ PROBES = {
     "telegram": telegram_handler.health,
     "twilio": call_handler.health,
     "elevenlabs": _elevenlabs,
+    "jetson_speech": _jetson_speech,
     "n8n": _n8n,
     "google": _google,
 }

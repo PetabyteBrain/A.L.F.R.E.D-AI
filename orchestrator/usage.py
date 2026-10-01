@@ -47,12 +47,20 @@ def record_claude(usage, *, kind: str, user_id: int | None = None, session_id: s
             cache_read=cr, cache_write=cw, cost=cost, user_id=user_id, session_id=session_id)
 
 
-def record_tts(chars: int, *, user_id: int | None, session_id: str | None) -> None:
+def record_tts(chars: int, *, user_id: int | None, session_id: str | None, provider: str = "elevenlabs") -> None:
+    if provider == "jetson":   # self-hosted: count it, no per-use cost
+        _insert("jetson", "tts", model="kokoro", units=chars, unit="chars", cost=0.0, user_id=user_id,
+                session_id=session_id)
+        return
     _insert("elevenlabs", "tts", model=settings.elevenlabs_tts_model, units=chars, unit="chars",
             cost=chars / 1000 * settings.price_tts_per_1k_chars, user_id=user_id, session_id=session_id)
 
 
-def record_stt(seconds: float, *, user_id: int | None, session_id: str | None) -> None:
+def record_stt(seconds: float, *, user_id: int | None, session_id: str | None, provider: str = "elevenlabs") -> None:
+    if provider == "jetson":
+        _insert("jetson", "stt", model="whisper", units=round(seconds, 1), unit="seconds", cost=0.0,
+                user_id=user_id, session_id=session_id)
+        return
     _insert("elevenlabs", "stt", model=settings.elevenlabs_stt_model, units=round(seconds, 1), unit="seconds",
             cost=seconds / 3600 * settings.price_stt_per_hour, user_id=user_id, session_id=session_id)
 

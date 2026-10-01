@@ -1507,3 +1507,57 @@ def test_tasks_api():
         assert c.post("/api/tasks", json={"title": "x", "follow_up": "call"}, headers=CSRF).status_code == 400
         assert c.post(f"/api/tasks/{tid}/done", json={"result": "Ordered"}, headers=CSRF).json()["status"] == "done"
         assert c.delete(f"/api/tasks/{tid}", headers=CSRF).status_code == 400          # already done
+
+
+def test_jetson_speech_provider_and_fallback(monkeypatch):
+    import asyncio, json
+    import websockets
+    from orchestrator.config import settings
+    from orchestrator.stt_tts import base, jetson
+
+    monkeypatch.setattr(type(settings), "stt_tts_provider", property(lambda s: "jetson"), raising=False)
+    monkeypatch.setattr(type(settings), "speech_token", property(lambda s: "tok"), raising=False)
+
+    async def run():
+        got_audio, seen_auth = [], []
+
+        async def handler(ws):
+            seen_auth.append(ws.request.headers.get("Authorization"))
+            async for msg in ws:
+                got_audio.append(msg)
+                if sum(len(m) for m in got_audio) >= 1600:
+                    await ws.send(json.dumps({"type": "speech_start"}))
+                    await ws.send(json.dumps({"type": "final", "text": "What's on today?"}))
+                    break
+
+        async with websockets.serve(handler, "127.0.0.1", 0) as server:
+            port = server.sockets[0].getsockname()[1]
+            monkeypatch.setattr(type(settings), "speech_url", property(lambda s: f"http://127.0.0.1:{port}"),
+                                raising=False)
+            jetson.mark(True)
+            assert base.active_name() == "jetson" and base.get_provider().name == "jetson"
+            partials, finals = [], []
+
+            async def on_partial(t):
+                partials.append(t)
+
+            async def on_final(t):
+                finals.append(t)
+            stt = jetson.JetsonSTT(on_partial, on_final)
+            await stt.start()
+            for _ in range(20):
+                await stt.send_audio(b"\xff" * 160)          # 20 ms frames, batched to 100 ms
+            await asyncio.sleep(0.2)
+            await stt.close()
+            assert seen_auth == ["Bearer tok"] and all(len(m) == 800 for m in got_audio)
+            assert partials == [jetson.SPEAKING_PARTIAL] and finals == ["What's on today?"]
+            assert len(jetson.SPEAKING_PARTIAL) >= 6                   # long enough to trigger barge-in
+
+        # Jetson down: ElevenLabs takes over if it's configured, otherwise we keep trying the Jetson
+        jetson.mark(False)
+        monkeypatch.setattr(type(settings), "elevenlabs_enabled", property(lambda s: True))
+        assert base.active_name() == "elevenlabs" and base.get_provider().name == "elevenlabs"
+        monkeypatch.setattr(type(settings), "elevenlabs_enabled", property(lambda s: False))
+        assert base.active_name() == "jetson" and settings.speech_enabled
+        jetson.mark(True)
+    asyncio.run(run())

@@ -50,6 +50,9 @@ class Settings:
     # Pause (s) that counts as "the caller finished"; lower = snappier, too low cuts people off.
     stt_vad_silence_secs: float = field(default_factory=lambda: float(_env("STT_VAD_SILENCE_SECS", "0.5") or 0.5))
     stt_tts_provider: str = field(default_factory=lambda: _env("STT_TTS_PROVIDER", "elevenlabs"))
+    # Jetson speech server (speech_server/): e.g. http://100.64.0.6:8770 + its bearer token.
+    speech_url: str = field(default_factory=lambda: _env("SPEECH_URL"))
+    speech_token: str = field(default_factory=lambda: _env("SPEECH_TOKEN"))
 
     # --- n8n ---
     n8n_base_url: str = field(default_factory=lambda: _env("N8N_BASE_URL").rstrip("/"))
@@ -122,6 +125,11 @@ class Settings:
     @property
     def elevenlabs_enabled(self) -> bool:
         return bool(self.elevenlabs_api_key and self.elevenlabs_voice_id)
+
+    @property
+    def speech_enabled(self) -> bool:
+        """Some speech provider (Jetson or ElevenLabs) is configured, so calls can work."""
+        return self.elevenlabs_enabled or (self.stt_tts_provider == "jetson" and bool(self.speech_url))
 
     @property
     def google_enabled(self) -> bool:

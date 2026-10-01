@@ -83,7 +83,7 @@ def _available(spec: ToolSpec, person_id: int | None = None) -> bool:
     if spec.kind == "n8n_webhook":
         return bool(settings.n8n_base_url)
     if spec.name in ("place_call", "schedule_call", "list_scheduled_calls", "cancel_scheduled_call"):
-        return settings.twilio_enabled and settings.elevenlabs_enabled and bool(settings.public_base_url)
+        return settings.twilio_enabled and settings.speech_enabled and bool(settings.public_base_url)
     if spec.name == "send_telegram_message":
         return settings.telegram_enabled
     return True

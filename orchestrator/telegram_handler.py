@@ -107,7 +107,7 @@ async def on_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         stop.set()
         await typing
 
-    if voice and settings.elevenlabs_enabled and len(reply) <= VOICE_REPLY_MAX_CHARS:
+    if voice and settings.speech_enabled and len(reply) <= VOICE_REPLY_MAX_CHARS:
         if await _reply_with_voice(msg, reply, person, session_id):
             return
     for part in _chunks(reply):
@@ -126,8 +126,9 @@ VOICE_NOTE_SYSTEM = ("The person sent a Telegram voice message (transcribed abov
 
 
 async def _transcribe(msg, voice, person, session_id: str) -> str | None:
-    from .stt_tts import elevenlabs
-    if not settings.elevenlabs_enabled:
+    from .stt_tts.base import active_name, speech_module
+    speech = speech_module()
+    if not settings.speech_enabled:
         await msg.reply_text("Voice messages need speech recognition, which isn't set up. Please type instead.")
         return None
     seconds = getattr(voice, "duration", 0) or 0
@@ -140,7 +141,7 @@ async def _transcribe(msg, voice, person, session_id: str) -> str | None:
         f = await voice.get_file()
         data = bytes(await f.download_as_bytearray())
         mime = getattr(voice, "mime_type", None) or "audio/ogg"
-        text, _lang = await elevenlabs.transcribe_file(data, "voice" + (".ogg" if "ogg" in mime else ".bin"), mime)
+        text, _lang = await speech.transcribe_file(data, "voice" + (".ogg" if "ogg" in mime else ".bin"), mime)
     except Exception:
         log.exception("Voice transcription failed")
         await msg.reply_text("I couldn't listen to that one just now. Could you try again, or type it?")
@@ -149,7 +150,7 @@ async def _transcribe(msg, voice, person, session_id: str) -> str | None:
         stop.set()
         await typing
     from . import usage
-    usage.record_stt(seconds, user_id=person.id, session_id=session_id)
+    usage.record_stt(seconds, user_id=person.id, session_id=session_id, provider=active_name())
     if not text:
         await msg.reply_text("I couldn't make out any words in that. Could you try again?")
         return None
@@ -158,18 +159,18 @@ async def _transcribe(msg, voice, person, session_id: str) -> str | None:
 
 async def _reply_with_voice(msg, reply: str, person, session_id: str) -> bool:
     from . import usage
-    from .stt_tts import elevenlabs
+    from .stt_tts.base import active_name, speech_module
     stop = asyncio.Event()
     rec = asyncio.create_task(_keep_typing(msg.chat_id, stop, ChatAction.RECORD_VOICE))
     try:
-        audio = await elevenlabs.synthesize_voice_note(reply)
+        audio = await speech_module().synthesize_voice_note(reply)
     except Exception:
         log.exception("Voice reply synthesis failed")
         return False
     finally:
         stop.set()
         await rec
-    usage.record_tts(len(reply), user_id=person.id, session_id=session_id)
+    usage.record_tts(len(reply), user_id=person.id, session_id=session_id, provider=active_name())
     caption = reply if len(reply) <= 1024 else None
     await msg.reply_voice(voice=audio, caption=caption)
     if caption is None:

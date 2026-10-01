@@ -2,13 +2,17 @@
 
 Audio on both sides is 8 kHz mu-law, the native Twilio Media Streams format, so a provider
 never needs to know about Twilio and the call handler never needs to know about a provider.
-To add the Jetson backend: implement these two classes in stt_tts/local.py and register it
-in `get_provider()`; set STT_TTS_PROVIDER=local.
+
+STT_TTS_PROVIDER=jetson uses the Jetson speech server (speech_server/); if it's unreachable and
+ElevenLabs keys are configured, calls and voice notes fall back to ElevenLabs automatically.
 """
 from __future__ import annotations
 
+import logging
 from abc import ABC, abstractmethod
 from typing import AsyncIterator, Awaitable, Callable
+
+log = logging.getLogger(__name__)
 
 TextCallback = Callable[[str], Awaitable[None]]
 
@@ -48,10 +52,33 @@ class Provider:
         self.name, self.stt_factory, self.tts = name, stt_factory, tts
 
 
-def get_provider() -> Provider:
+def active_name() -> str:
+    """Which provider handles speech right now ("jetson" or "elevenlabs")."""
     from ..config import settings
+    if settings.stt_tts_provider == "jetson" and settings.speech_url:
+        from . import jetson
+        if jetson.is_up() or not settings.elevenlabs_enabled:
+            return "jetson"
+        return "elevenlabs"
+    return "elevenlabs"
 
-    if settings.stt_tts_provider == "elevenlabs":
-        from .elevenlabs import ElevenLabsSTT, ElevenLabsTTS
-        return Provider("elevenlabs", ElevenLabsSTT, ElevenLabsTTS())
-    raise ValueError(f"Unknown STT_TTS_PROVIDER '{settings.stt_tts_provider}'")
+
+def get_provider() -> Provider:
+    name = active_name()
+    if name == "jetson":
+        from .jetson import JetsonSTT, JetsonTTS
+        return Provider("jetson", JetsonSTT, JetsonTTS())
+    from ..config import settings
+    if settings.stt_tts_provider == "jetson":
+        log.warning("Jetson speech unreachable; falling back to ElevenLabs")
+    from .elevenlabs import ElevenLabsSTT, ElevenLabsTTS
+    return Provider("elevenlabs", ElevenLabsSTT, ElevenLabsTTS())
+
+
+def speech_module():
+    """Module with transcribe_file / synthesize_voice_note for the active provider."""
+    if active_name() == "jetson":
+        from . import jetson
+        return jetson
+    from . import elevenlabs
+    return elevenlabs

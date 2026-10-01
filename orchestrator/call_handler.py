@@ -149,7 +149,7 @@ async def inbound_voice(request: Request) -> Response:
     if person is None:
         log.info("Rejected call from unregistered number %s", caller)
         return _twiml('<Reject reason="busy"/>')
-    if not (settings.elevenlabs_enabled and settings.public_base_url):
+    if not (settings.speech_enabled and settings.public_base_url):
         log.error("Call from %s but ElevenLabs/PUBLIC_BASE_URL not configured", person.display_name)
         return _twiml('<Reject reason="busy"/>')
 
@@ -192,7 +192,7 @@ def _twilio_client():
 async def place_outbound_call(user_id: int, *, opening_line: str, reason: str = "",
                               requested_by: int | None = None, request_id: int | None = None,
                               extra_system: str | None = None) -> str:
-    if not (settings.twilio_enabled and settings.elevenlabs_enabled and settings.public_base_url):
+    if not (settings.twilio_enabled and settings.speech_enabled and settings.public_base_url):
         raise RuntimeError("Telephony isn't fully configured (Twilio, ElevenLabs, PUBLIC_BASE_URL).")
     person = registry.get_person(user_id)
     number = registry.phone_for(user_id)
@@ -343,7 +343,17 @@ class CallSession:
 
     # lifecycle
     async def start(self) -> None:
-        await self.stt.start()
+        try:
+            await self.stt.start()
+        except Exception:
+            # Jetson speech down at call start: carry on with ElevenLabs if it's configured.
+            if self.provider.name != "jetson" or not settings.elevenlabs_enabled:
+                raise
+            log.exception("Jetson STT unavailable; this call uses ElevenLabs")
+            from .stt_tts.elevenlabs import ElevenLabsSTT, ElevenLabsTTS
+            self.provider = Provider("elevenlabs", ElevenLabsSTT, ElevenLabsTTS())
+            self.stt = self.provider.stt_factory(self._on_partial, self._on_final)
+            await self.stt.start()
         self._worker = asyncio.create_task(self._work())
         sessions.add_turn(self.session_id, "assistant", self.opening_line)
         self._speak(self.opening_line)
@@ -363,7 +373,7 @@ class CallSession:
         sessions.end_session(self.session_id, status=self.end_status)
         direction = (db.query_one("SELECT direction FROM sessions WHERE id = ?", (self.session_id,)) or {}).get(
             "direction", "inbound")
-        usage.record_stt(duration, user_id=self.person.id, session_id=self.session_id)
+        usage.record_stt(duration, user_id=self.person.id, session_id=self.session_id, provider=self.provider.name)
         usage.record_call_minutes(duration, direction=direction, user_id=self.person.id, session_id=self.session_id)
         _call_finished(self.session_id, self.end_status)
 
@@ -485,7 +495,7 @@ class CallSession:
                 self._tts_active = False
 
     async def _speak_run(self, text: str) -> None:
-        usage.record_tts(len(text), user_id=self.person.id, session_id=self.session_id)
+        usage.record_tts(len(text), user_id=self.person.id, session_id=self.session_id, provider=self.provider.name)
         try:
             async for chunk in self.provider.tts.stream(text):
                 self.recorder.agent_audio(chunk)

@@ -59,7 +59,7 @@ async def lifespan(app: FastAPI):
     brief = asyncio.create_task(briefing.background_loop())
     follow = asyncio.create_task(tasks.background_loop())
     log.info("%s up — telegram=%s phone=%s n8n=%s model=%s",
-             settings.assistant_name, settings.telegram_enabled, settings.twilio_enabled and settings.elevenlabs_enabled,
+             settings.assistant_name, settings.telegram_enabled, settings.twilio_enabled and settings.speech_enabled,
              settings.n8n_enabled, settings.claude_model)
     try:
         yield

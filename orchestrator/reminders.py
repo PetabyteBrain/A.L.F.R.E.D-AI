@@ -211,7 +211,7 @@ async def _via_telegram(row: dict) -> bool:
 
 
 async def _via_call(row: dict, *, escalated: bool = False) -> bool:
-    if not (settings.twilio_enabled and settings.elevenlabs_enabled and settings.public_base_url):
+    if not (settings.twilio_enabled and settings.speech_enabled and settings.public_base_url):
         return False
     person = registry.get_person(row["user_id"])
     if not person or not registry.phone_for(person.id) or not registry.role_allows_channel(person.role, "call"):

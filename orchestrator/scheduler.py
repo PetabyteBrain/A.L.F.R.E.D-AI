@@ -136,7 +136,7 @@ async def request_call(target_ref, *, requested_by: Person | None, purpose: str 
 
     A call for someone in their quiet hours is moved to when they end, unless the requester is
     the target themselves or marked it urgent."""
-    if not (settings.twilio_enabled and settings.elevenlabs_enabled and settings.public_base_url):
+    if not (settings.twilio_enabled and settings.speech_enabled and settings.public_base_url):
         raise ScheduleError("Telephony isn't fully configured.")
     target = resolve_person(target_ref)
     _check_callable(target)

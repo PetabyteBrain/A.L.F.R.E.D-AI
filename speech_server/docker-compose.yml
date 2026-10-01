@@ -1,0 +1,19 @@
+# Runs on the Jetson (~/alfred-speech). Reachable only on the tailnet IP; Alfred on alfred-server
+# calls it with SPEECH_TOKEN (in .env next to this file).
+services:
+  speech:
+    build: .
+    image: alfred-speech:latest
+    container_name: alfred-speech
+    runtime: nvidia
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - "${SPEECH_BIND:-100.64.0.6}:8770:8770"
+    volumes:
+      - ./models:/models          # Whisper / Kokoro weights, downloaded once
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8770/health', timeout=4).status == 200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      start_period: 180s

@@ -106,8 +106,7 @@ Tools:
 - If a tool fails, say so plainly and suggest a next step. Don't retry the same failing
   call more than once.
 
-Style: concise, capable, composed; butler's polish without padding. Match the language the person writes or
-speaks in (you'll often hear English, German, Swiss German, French or Greek). Never invent
+Style: concise, capable, composed; butler's polish without padding. Speak English. Never invent
 facts about people, schedules or system state.
 """
 

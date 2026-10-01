@@ -411,7 +411,7 @@ async def overview(person: Person = Depends(current_person)) -> dict:
         "blocked_today": (blocked or {}).get("n", 0) if person.is_admin else None,
         "channels": {
             "telegram": settings.telegram_enabled,
-            "phone": settings.twilio_enabled and settings.elevenlabs_enabled,
+            "phone": settings.twilio_enabled and settings.speech_enabled,
             "n8n": settings.n8n_enabled,
             "google": settings.google_enabled,
         },
