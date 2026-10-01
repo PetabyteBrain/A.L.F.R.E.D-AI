@@ -19,7 +19,7 @@ from .identity import registry, verification
 
 log = logging.getLogger(__name__)
 
-TG_LIMIT = 4000
+TG_LIMIT = 3500   # Markdown chars per message; leaves room for the HTML tags it turns into
 _app: Application | None = None
 _bot_username: str | None = None
 
@@ -42,6 +42,32 @@ def _chunks(text: str) -> list[str]:
     if buf:
         out.append(buf)
     return out or ["…"]
+
+
+async def _send_md(send, text: str, **kw):
+    """Send Markdown as Telegram HTML; if Telegram rejects the markup, send it as plain text."""
+    from telegram.constants import ParseMode
+    from telegram.error import BadRequest
+    from .tg_format import md_to_html
+    try:
+        return await send(md_to_html(text), parse_mode=ParseMode.HTML, **kw)
+    except BadRequest as e:
+        log.warning("Telegram rejected formatted text (%s); sending plain", e)
+        return await send(text, **kw)
+
+
+async def _reply_md(msg, text: str) -> None:
+    for part in _chunks(text):
+        await _send_md(msg.reply_text, part, disable_web_page_preview=True)
+
+
+async def _append_note(q, note: str) -> None:
+    """Add a line under a message with buttons, keeping its formatting, and remove the buttons."""
+    import html
+    from telegram.constants import ParseMode
+    with contextlib.suppress(Exception):
+        await q.edit_message_text(f"{q.message.text_html}\n{html.escape(note)}", parse_mode=ParseMode.HTML,
+                                  reply_markup=None)
 
 
 async def _keep_typing(chat_id: int, stop: asyncio.Event, action: str = ChatAction.TYPING) -> None:
@@ -110,8 +136,7 @@ async def on_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     if voice and settings.speech_enabled and len(reply) <= VOICE_REPLY_MAX_CHARS:
         if await _reply_with_voice(msg, reply, person, session_id):
             return
-    for part in _chunks(reply):
-        await msg.reply_text(part, disable_web_page_preview=True)
+    await _reply_md(msg, reply)
 
 
 # --- voice notes ---------------------------------------------------------------------------------
@@ -171,11 +196,11 @@ async def _reply_with_voice(msg, reply: str, person, session_id: str) -> bool:
         stop.set()
         await rec
     usage.record_tts(len(reply), user_id=person.id, session_id=session_id, provider=active_name())
-    caption = reply if len(reply) <= 1024 else None
-    await msg.reply_voice(voice=audio, caption=caption)
-    if caption is None:
-        for part in _chunks(reply):
-            await msg.reply_text(part, disable_web_page_preview=True)
+    if len(reply) <= 900:   # caption limit is 1024 incl. markup
+        await _send_md(lambda text, **kw: msg.reply_voice(voice=audio, caption=text, **kw), reply)
+    else:
+        await msg.reply_voice(voice=audio)
+        await _reply_md(msg, reply)
     return True
 
 
@@ -197,9 +222,9 @@ async def send_to_user(user_id: int, text: str, note: str | None = None, record:
     markup = InlineKeyboardMarkup([[InlineKeyboardButton(label, callback_data=data) for label, data in row]
                                    for row in buttons]) if buttons else None
     for i, part in enumerate(parts):
-        await _app.bot.send_message(chat_id=int(tg), text=part, disable_web_page_preview=True,
-                                    disable_notification=silent,
-                                    reply_markup=markup if i == len(parts) - 1 else None)
+        await _send_md(lambda text, **kw: _app.bot.send_message(chat_id=int(tg), text=text, **kw), part,
+                       disable_web_page_preview=True, disable_notification=silent,
+                       reply_markup=markup if i == len(parts) - 1 else None)
     if record:
         sessions.add_turn(session_id, "assistant", text)
     db.log_activity("message", f"Proactive Telegram message{f' ({note})' if note else ''}", user_id, session_id)
@@ -228,8 +253,7 @@ async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             await q.answer(str(e))
             return
         await q.answer(note)
-        with contextlib.suppress(Exception):
-            await q.edit_message_text(f"{q.message.text}\n{note}", reply_markup=None)
+        await _append_note(q, note)
         return
     if kind != "rem" or not rid.isdigit() or action not in ("done", "snooze"):
         await q.answer()
@@ -241,8 +265,7 @@ async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
     note = "✓ Done" if action == "done" else f"⏳ Snoozed until {row['due_local'][-5:]}"
     await q.answer(note)
-    with contextlib.suppress(Exception):
-        await q.edit_message_text(f"{q.message.text}\n{note}", reply_markup=None)
+    await _append_note(q, note)
     db.log_activity("task", f"{person.display_name}: reminder #{rid} {action}", user_id=person.id)
 
 

@@ -701,6 +701,17 @@ main > .legal-links { margin-top: 8px; }
 .md pre { margin: 6px 0; padding: 10px 12px; background: rgb(0 0 0 / .45); border-left: 2px solid var(--accent); overflow-x: auto; }
 .md pre code { background: none; border: 0; padding: 0; color: var(--text-strong); }
 .md a { color: var(--accent); }
+.md :is(h3, h4, h5) { margin: 10px 0 4px; font: 700 14px var(--font-display); letter-spacing: .08em; text-transform: uppercase; color: var(--text-strong); }
+.md h3 { font-size: 15px; } .md h5 { font-size: 12.5px; }
+.md :is(h3, h4, h5):first-child { margin-top: 0; }
+.md blockquote { margin: 6px 0; padding: 4px 10px; border-left: 2px solid var(--accent); color: var(--muted); background: rgb(var(--accent-rgb) / .05); }
+.md hr { border: 0; border-top: 1px dashed var(--line-strong); margin: 10px 0; }
+.md s { opacity: .65; }
+.md-table { overflow-x: auto; margin: 6px 0; }
+.md table { border-collapse: collapse; font-size: 13px; min-width: 60%; }
+.md :is(th, td) { padding: 5px 10px; border: 1px solid var(--line); text-align: left; vertical-align: top; }
+.md th { color: var(--accent); font: 600 11px var(--font-display); letter-spacing: .12em; text-transform: uppercase; background: rgb(var(--accent-rgb) / .06); }
+:root[data-theme="batcave"] .md :is(h3, h4, h5, th) { font-weight: 400; letter-spacing: .06em; }
 
 .dots { display: flex; gap: 5px; padding: 6px 0 4px; }
 .dots i { width: 7px; height: 7px; background: var(--accent); box-shadow: 0 0 8px var(--accent); animation: dot 1.1s ease-in-out infinite; }

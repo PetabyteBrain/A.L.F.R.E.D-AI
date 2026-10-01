@@ -1222,15 +1222,16 @@ def test_telegram_voice_note_round_trip(monkeypatch):
     class Msg:
         chat_id, text, caption, audio, video_note = 111, None, None, None, None
         voice = Voice()
-        async def reply_voice(self, voice, caption=None):
+        async def reply_voice(self, voice, caption=None, **kw):
             replies.append(("voice", voice, caption))
+            seen["parse_mode"] = kw.get("parse_mode")
         async def reply_text(self, text, **kw):
             replies.append(("text", text))
 
     upd = NS(effective_message=Msg(), effective_user=NS(id=111, username="t"), effective_chat=NS(id=111, type="private"))
     asyncio.run(th.on_message(upd, None))
     assert seen["text"] == "(voice message) remind me to call the bank" and "spoken" in seen["extra"]
-    assert replies == [("voice", b"OggS-reply", "Very good, sir. I'll remind you.")]
+    assert replies == [("voice", b"OggS-reply", "Very good, sir. I'll remind you.")] and seen["parse_mode"] == "HTML"
 
     # a long recording is refused before anything is downloaded or transcribed
     replies.clear()
@@ -1711,3 +1712,15 @@ def test_voicemail_detection(monkeypatch):
     row = scheduler.get(rid)
     assert row["status"] == "voicemail" and "left a message" in row["result"]
     assert notes and "voicemail" in notes[-1]
+
+
+
+def test_telegram_markdown_to_html():
+    from orchestrator.tg_format import md_to_html
+    out = md_to_html("## Plan\n**Bold** and *it* with `a<b>` and ANTHROPIC_API_KEY\n- one\n"
+                     "[link](https://x.ch/?a=1&b=2)\n<script>x</script>\n| a | b |\n|---|---|\n| 1 | 2 |")
+    assert "<b>Plan</b>" in out and "<b>Bold</b>" in out and "<i>it</i>" in out
+    assert "<code>a&lt;b&gt;</code>" in out and "ANTHROPIC_API_KEY" in out and "\u2022 one" in out
+    assert '<a href="https://x.ch/?a=1&amp;b=2">link</a>' in out
+    assert "<script>" not in out and "&lt;script&gt;" in out                 # model text can't inject markup
+    assert "<pre>| a | b |\n| 1 | 2 |</pre>" in out                          # tables -> monospaced block

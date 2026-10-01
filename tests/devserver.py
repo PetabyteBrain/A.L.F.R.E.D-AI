@@ -106,6 +106,10 @@ def fake_claude() -> None:
              "- **Calls**: ring anyone in the registry, now or at a set time, and report back\n"
              "- **Calendar**: read and arrange your Google Calendar\n"
              "- **Tasks**: keep the list in order\n\n"
+             "### This week\n\n"
+             "| Day | What |\n|---|---|\n| Mon | Call Max about the ~~old~~ new invoice |\n"
+             "| Fri | Briefing at 07:30 |\n\n"
+             "> A butler's work is never quite done.\n\n"
              "Just say the word. `ANTHROPIC_API_KEY` is a fake one in this preview, naturally.")
 
     class Stream:
