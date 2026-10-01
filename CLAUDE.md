@@ -67,6 +67,12 @@ the original spec is in `docs/archive/original-spec.md`. Keep the plan updated w
   `tg_format.md_to_html` (validated tags), never raw parse_mode Markdown.
 - Calls speak streamed text sentence by sentence (`call_handler.split_speakable`, `_turn`).
 
+## Ops
+- Backups: `infra/backup.sh` (Pi crontab 03:30) + `orchestrator/backup.py`; restore in
+  `infra/README-backup.md`. Shell scripts must stay LF (`.gitattributes`; this PC has autocrlf).
+- Homelab: hosts in `orchestrator/homelab.yaml`; per-host access via `infra/ops/alfred-ops`
+  (forced command) + `~/.config/alfred-ops/allow`. Never widen the key to a shell.
+
 ## Testing
 - `.venv/Scripts/python -m pytest -q` — offline; includes a simulated Twilio call through the
   media-stream WebSocket with fake STT/TTS/agent.

@@ -25,6 +25,8 @@ only the assistant's persona and branding are "Alfred" (`ASSISTANT_NAME`). The d
 | Calendar | Per-user Google Calendar: list, create, move, delete events (Limited Use) | any channel, Profile |
 | Automations | Full n8n API for the admin, webhook tools, async results via callback | any channel |
 | Quiet hours | Household default (22:00-07:00) + per person; calls others asked for wait, messages go silent, "urgent" overrides | Profile |
+| Homelab | Status of the Pis/Jetson and their containers, logs, confirmed restarts (admin), Minecraft players; alerts when something breaks | any channel (admin), Systems |
+| Backups | Nightly verified database snapshot + recordings to the Jetson (`infra/README-backup.md`) | automatic |
 | Safety | Registry-only access, roles, code verification of new phone/Telegram connections, hardened dashboard | everywhere |
 | Dashboard | Live sessions (terminate), archive with audio, tasks/reminders/calls, event log, health, people, API usage and cost | `/app` |
 
