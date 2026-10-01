@@ -1,1 +1,2 @@
 *.sh text eol=lf
+infra/ops/* text eol=lf

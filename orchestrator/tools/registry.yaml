@@ -278,6 +278,57 @@ tools:
         days: {type: integer, description: "Only the last N days."}
       required: [query]
 
+  # ---------------------------------------------------------------- homelab operator (admin)
+  - name: homelab_status
+    kind: builtin
+    handler: homelab_status
+    roles: [admin]
+    description: >-
+      Status of the homelab machines (Pis, Jetson): load, memory, disk, temperature, power, and
+      their containers. Omit host for all of them. Use for "is everything OK", "how's the server".
+    input_schema:
+      type: object
+      properties:
+        host: {type: string, description: "host-b, host-f, host-c, host-g, host-h or jetson"}
+
+  - name: homelab_logs
+    kind: builtin
+    handler: homelab_logs
+    roles: [admin]
+    description: Last log lines of an allowlisted container on a homelab host (to diagnose a problem).
+    input_schema:
+      type: object
+      properties:
+        host: {type: string}
+        container: {type: string}
+        lines: {type: integer, description: "Default 50, max 200."}
+      required: [host, container]
+
+  - name: homelab_restart
+    kind: builtin
+    handler: homelab_restart
+    roles: [admin]
+    description: >-
+      Restart an allowlisted container on a homelab host. Two steps: call without confirmed to get
+      the question, ask the person, and only after they say yes in their reply call again with
+      confirmed=true. Never restart without that explicit yes.
+    input_schema:
+      type: object
+      properties:
+        host: {type: string}
+        container: {type: string}
+        confirmed: {type: boolean}
+      required: [host, container]
+
+  - name: minecraft_status
+    kind: builtin
+    handler: minecraft_status
+    roles: ["*"]
+    description: Is the Minecraft server up, and who is online right now.
+    input_schema:
+      type: object
+      properties: {}
+
   - name: remember
     kind: builtin
     handler: remember

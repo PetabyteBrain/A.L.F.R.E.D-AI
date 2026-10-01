@@ -25,7 +25,8 @@ from dashboard.api.people import router as people_router
 from dashboard.api.routes import router as dashboard_router
 from dashboard.api.security import SecurityMiddleware
 
-from . import briefing, call_handler, db, health, n8n_callback, reminders, scheduler, sessions, tasks, telegram_handler
+from . import (briefing, call_handler, db, health, homelab, n8n_callback, reminders, scheduler, sessions, tasks,
+               telegram_handler)
 from .config import settings
 from .identity import registry
 from .tools import registry as tool_registry
@@ -58,13 +59,14 @@ async def lifespan(app: FastAPI):
     remind = asyncio.create_task(reminders.background_loop())
     brief = asyncio.create_task(briefing.background_loop())
     follow = asyncio.create_task(tasks.background_loop())
+    lab = asyncio.create_task(homelab.background_loop())
     log.info("%s up — telegram=%s phone=%s n8n=%s model=%s",
              settings.assistant_name, settings.telegram_enabled, settings.twilio_enabled and settings.speech_enabled,
              settings.n8n_enabled, settings.claude_model)
     try:
         yield
     finally:
-        for task in (bg, sched, remind, brief, follow):
+        for task in (bg, sched, remind, brief, follow, lab):
             task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await task

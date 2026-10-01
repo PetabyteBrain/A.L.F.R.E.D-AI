@@ -202,6 +202,45 @@ async def search_conversations(ctx, query: str, person: str = "", channel: str =
 
 
 @handler
+async def homelab_status(ctx, host: str = "") -> dict:
+    from .. import homelab
+    try:
+        rows = await homelab.status(host or None)
+    except homelab.HomelabError as e:
+        return {"error": str(e)}
+    return {"summary": [homelab.summarize(r["host"], r) for r in rows],
+            "details": [{k: r.get(k) for k in ("host", "role", "containers", "disks", "temp_c", "power", "manageable",
+                                               "error")} for r in rows]}
+
+
+@handler
+async def homelab_logs(ctx, host: str, container: str, lines: int = 50) -> dict:
+    from .. import homelab
+    try:
+        return await homelab.logs(ctx.person, host, container, lines)
+    except homelab.HomelabError as e:
+        return {"error": str(e)}
+
+
+@handler
+async def homelab_restart(ctx, host: str, container: str, confirmed: bool = False) -> dict:
+    from .. import homelab
+    try:
+        return await homelab.restart(ctx.person, ctx.session_id, host, container, confirmed)
+    except homelab.HomelabError as e:
+        return {"error": str(e)}
+
+
+@handler
+async def minecraft_status(ctx) -> dict:
+    from .. import homelab
+    try:
+        return await homelab.minecraft()
+    except homelab.HomelabError as e:
+        return {"error": str(e)}
+
+
+@handler
 async def remember(ctx, text: str) -> dict:
     from .. import memory
     try:

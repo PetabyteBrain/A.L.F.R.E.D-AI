@@ -78,6 +78,9 @@ class Settings:
     price_claude_cache_write: float = field(default_factory=lambda: float(_env("PRICE_CLAUDE_CACHE_WRITE_PER_MTOK", "1.25")))
     # ElevenLabs bills by plan; set these to your plan's effective rates to get cost estimates.
     price_web_search_per_1k: float = field(default_factory=lambda: float(_env("PRICE_WEB_SEARCH_PER_1K", "10.00")))
+    # Homelab operator: key pinned to ~/bin/alfred-ops on each host (mounted read-only into the container)
+    ops_key_path: str = field(default_factory=lambda: _env("OPS_KEY_PATH", "/run/secrets/alfred_ops"))
+    ops_known_hosts: str = field(default_factory=lambda: _env("OPS_KNOWN_HOSTS", "/run/secrets/ops_known_hosts"))
     voicemail_detection: bool = field(default_factory=lambda: _bool("VOICEMAIL_DETECTION", True))
     web_search_enabled: bool = field(default_factory=lambda: _bool("WEB_SEARCH_ENABLED", True))
     price_tts_per_1k_chars: float = field(default_factory=lambda: float(_env("PRICE_ELEVENLABS_TTS_PER_1K_CHARS", "0")))

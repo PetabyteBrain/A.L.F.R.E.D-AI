@@ -1,0 +1,150 @@
+#!/usr/bin/env python3
+"""alfred-ops: the only command Alfred's ops key may run on a homelab host.
+
+Installed as ~/bin/alfred-ops and pinned in ~/.ssh/authorized_keys:
+    command="/home/user/bin/alfred-ops",restrict ssh-ed25519 AAAA... alfred-ops@alfred-server
+The requested operation arrives in SSH_ORIGINAL_COMMAND and is validated here; nothing is passed
+to a shell.
+
+    status                     host vitals + containers (JSON)
+    logs <container> [lines]   last log lines of an allowlisted container (max 200)
+    restart <container>        restart an allowlisted container
+    mc                         Minecraft: players online (needs an allowlisted Minecraft container)
+
+Allowlist: ~/.config/alfred-ops/allow, one container name per line. Restarts and logs are refused
+for anything not listed there.
+"""
+import json
+import os
+import re
+import shlex
+import shutil
+import socket
+import subprocess
+import sys
+import time
+
+ALLOW_FILE = os.path.expanduser("~/.config/alfred-ops/allow")
+NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,62}$")
+MC_IMAGES = ("itzg/minecraft-server",)
+
+
+def out(obj, code=0):
+    print(json.dumps(obj))
+    sys.exit(code)
+
+
+def allowlist():
+    try:
+        with open(ALLOW_FILE) as f:
+            return {ln.strip() for ln in f if ln.strip() and not ln.startswith("#")}
+    except FileNotFoundError:
+        return set()
+
+
+def run(args, timeout=20):
+    p = subprocess.run(args, capture_output=True, text=True, timeout=timeout)
+    return p.returncode, p.stdout, p.stderr
+
+
+def disk(path):
+    if not os.path.isdir(path):
+        return None
+    u = shutil.disk_usage(path)
+    return {"path": path, "used_pct": round(u.used / u.total * 100, 1), "free_gb": round(u.free / 1e9, 1)}
+
+
+def temperature():
+    temps = []
+    for zone in sorted(os.listdir("/sys/class/thermal")) if os.path.isdir("/sys/class/thermal") else []:
+        try:
+            with open(f"/sys/class/thermal/{zone}/temp") as f:
+                temps.append(int(f.read().strip()) / 1000)
+        except Exception:  # some sensors (e.g. on the Jetson) error when read; skip them
+            pass
+    temps = [t for t in temps if -20 < t < 150]
+    return round(max(temps), 1) if temps else None
+
+
+def throttled():
+    if not shutil.which("vcgencmd"):
+        return None
+    code, so, _ = run(["vcgencmd", "get_throttled"], 5)
+    m = re.search(r"0x([0-9a-fA-F]+)", so) if code == 0 else None
+    if not m:
+        return None
+    v = int(m.group(1), 16)
+    return {"under_voltage_now": bool(v & 0x1), "throttled_now": bool(v & 0x4),
+            "under_voltage_since_boot": bool(v & 0x10000), "throttled_since_boot": bool(v & 0x40000)}
+
+
+def containers():
+    if not shutil.which("docker"):
+        return None
+    code, so, se = run(["docker", "ps", "-a", "--format", "{{json .}}"])
+    if code:
+        return {"error": se.strip()[:200]}
+    items = []
+    for line in so.splitlines():
+        c = json.loads(line)
+        status = c.get("Status", "")
+        items.append({"name": c.get("Names"), "image": c.get("Image"), "state": c.get("State"),
+                      "status": status, "health": "unhealthy" if "unhealthy" in status else
+                      "healthy" if "(healthy)" in status else None})
+    return items
+
+
+def status():
+    with open("/proc/loadavg") as f:
+        load = [float(x) for x in f.read().split()[:3]]
+    with open("/proc/uptime") as f:
+        uptime = float(f.read().split()[0])
+    mem = {}
+    with open("/proc/meminfo") as f:
+        for ln in f:
+            k, v = ln.split(":", 1)
+            mem[k] = int(v.split()[0]) * 1024
+    allowed = allowlist()
+    out({"host": socket.gethostname(), "time": int(time.time()), "uptime_h": round(uptime / 3600, 1),
+         "cpus": os.cpu_count(), "load": load,
+         "mem_used_pct": round((1 - mem.get("MemAvailable", 0) / mem["MemTotal"]) * 100, 1),
+         "mem_total_gb": round(mem["MemTotal"] / 1e9, 1),
+         "disks": [d for d in (disk("/"), disk("/ssd"), disk("/mnt/nas")) if d],
+         "temp_c": temperature(), "power": throttled(), "containers": containers(),
+         "manageable": sorted(allowed)})
+
+
+def need_allowed(name):
+    if not NAME.match(name or ""):
+        out({"error": "bad container name"}, 2)
+    if name not in allowlist():
+        out({"error": f"'{name}' is not on this host's allowlist"}, 3)
+
+
+def main():
+    argv = shlex.split(os.environ.get("SSH_ORIGINAL_COMMAND", "") or " ".join(sys.argv[1:]))
+    if not argv:
+        out({"error": "no operation"}, 2)
+    op, args = argv[0], argv[1:]
+    if op == "status" and not args:
+        status()
+    if op == "logs" and 1 <= len(args) <= 2:
+        need_allowed(args[0])
+        lines = min(int(args[1]), 200) if len(args) == 2 and args[1].isdigit() else 50
+        code, so, se = run(["docker", "logs", "--tail", str(lines), args[0]])
+        out({"container": args[0], "ok": code == 0, "logs": (so + se)[-12000:]})
+    if op == "restart" and len(args) == 1:
+        need_allowed(args[0])
+        code, so, se = run(["docker", "restart", args[0]], 120)
+        out({"container": args[0], "ok": code == 0, "detail": (se or so).strip()[:300]}, 0 if code == 0 else 1)
+    if op == "mc" and not args:
+        for c in containers() or []:
+            if any(c["image"].startswith(i) for i in MC_IMAGES) and c["name"] in allowlist():
+                code, so, se = run(["docker", "exec", c["name"], "rcon-cli", "list"], 15)
+                out({"container": c["name"], "ok": code == 0, "players": (so or se).strip()[:500]})
+        out({"error": "no allowlisted Minecraft container on this host"}, 3)
+    out({"error": f"operation not allowed: {op}"}, 2)
+
+
+if __name__ == "__main__":
+    main()

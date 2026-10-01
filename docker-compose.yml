@@ -12,6 +12,10 @@ services:
     volumes:
       - ./data:/data
       - ./orchestrator/tools/registry.yaml:/app/orchestrator/tools/registry.yaml:ro
+      - ./orchestrator/homelab.yaml:/app/orchestrator/homelab.yaml:ro
+      # Homelab operator key (only runs ~/bin/alfred-ops on each host) + its known_hosts
+      - ${HOME}/.ssh/alfred_ops:/run/secrets/alfred_ops:ro
+      - ${HOME}/.ssh/alfred_ops_known_hosts:/run/secrets/ops_known_hosts:ro
     ports:
       # Bound to all interfaces so the reverse proxy can reach it over Tailscale.
       # Restrict with ALFRED_BIND=100.x.y.z (the Pi 5's tailnet IP) in .env.

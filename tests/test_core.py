@@ -1824,3 +1824,59 @@ def test_backup_snapshot_and_health(monkeypatch):
     db.execute("UPDATE app_settings SET value = ? WHERE key = 'backup_state'", (json.dumps(st),))
     ok, detail = backup.health_now()
     assert not ok and detail.startswith("overdue")
+
+
+def test_homelab_operator(monkeypatch):
+    import asyncio
+    from orchestrator import homelab
+    admin = registry.lookup("telegram", "111")
+    friend = registry.lookup("telegram", "22222222")
+    calls = []
+    world = {"host-b": {"disk": 50, "n8n": "running", "up": True}}
+
+    async def fake_ops(host, *args, timeout=25):
+        calls.append((host["name"], args))
+        w = world.get(host["name"], {"disk": 40, "n8n": "running", "up": True})
+        if not w["up"]:
+            return {"error": "ssh: connect timed out", "unreachable": True}
+        if args[0] == "restart":
+            return {"container": args[1], "ok": True}
+        return {"host": host["name"], "uptime_h": 48, "cpus": 4, "load": [0.2, 0.3, 0.3], "mem_used_pct": 41.0,
+                "disks": [{"path": "/", "used_pct": w["disk"], "free_gb": 9}], "temp_c": 51.0, "power": None,
+                "containers": [{"name": "n8n", "image": "n8nio/n8n", "state": w["n8n"], "status": "Up", "health": None}],
+                "manageable": ["n8n"]}
+    monkeypatch.setattr(homelab, "_ops", fake_ops)
+    monkeypatch.setattr(homelab, "enabled", lambda: True)
+    homelab._state.update(fails={}, alerts=set())
+
+    # restart: friend refused; admin must confirm in a later reply
+    try:
+        asyncio.run(homelab.restart(friend, None, "host-b", "n8n", True))
+        raise AssertionError("friend restarted a service")
+    except homelab.HomelabError:
+        pass
+    sid = sessions.start_session(admin.id, "web")
+    sessions.add_turn(sid, "user", "n8n seems stuck, can you restart it?")
+    first = asyncio.run(homelab.restart(admin, sid, "host-b", "n8n", True))      # model jumps ahead
+    assert first["needs_confirmation"] and not any(a[0] == "restart" for _, a in calls)
+    again = asyncio.run(homelab.restart(admin, sid, "host-b", "n8n", True))      # same turn, no reply yet
+    assert again["needs_confirmation"]
+    sessions.add_turn(sid, "assistant", "Restart n8n on host-b?")
+    sessions.add_turn(sid, "user", "Yes, go ahead.")
+    done = asyncio.run(homelab.restart(admin, sid, "host-b", "n8n", True))
+    assert done == {"container": "n8n", "ok": True} and ("host-b", ("restart", "n8n")) in calls
+
+    # monitor: one alert per problem, then a recovery message; a host is "down" after 2 misses
+    assert asyncio.run(homelab.check_all()) == []
+    world["host-b"].update(disk=95, n8n="exited")
+    msgs = asyncio.run(homelab.check_all())
+    assert any("disk / is 95% full" in m for m in msgs) and any("n8n is exited" in m for m in msgs)
+    assert asyncio.run(homelab.check_all()) == []                                # no repeats
+    world["host-b"].update(disk=60, n8n="running")
+    msgs = asyncio.run(homelab.check_all())
+    assert len(msgs) == 2 and all(m.startswith("🟢") for m in msgs)
+    world["jetson"] = {"disk": 10, "n8n": "running", "up": False}
+    assert asyncio.run(homelab.check_all()) == []                                # first miss: quiet
+    assert any("jetson" in m and "not reachable" in m for m in asyncio.run(homelab.check_all()))
+    row = db.query_one("SELECT ok, detail FROM health WHERE service = 'host jetson'")
+    assert row["ok"] == 0 and "unreachable" in row["detail"]
