@@ -1880,3 +1880,14 @@ def test_homelab_operator(monkeypatch):
     assert any("jetson" in m and "not reachable" in m for m in asyncio.run(homelab.check_all()))
     row = db.query_one("SELECT ok, detail FROM health WHERE service = 'host jetson'")
     assert row["ok"] == 0 and "unreachable" in row["detail"]
+    # no key installed yet: shown on Systems, never alerted
+    world["host-h"] = {"up": True}
+    async def denied(host, *args, timeout=25):
+        if host["name"] == "host-h":
+            return {"error": "user@x: Permission denied (publickey,password).", "unreachable": True}
+        return await fake_ops(host, *args)
+    monkeypatch.setattr(homelab, "_ops", denied)
+    for _ in range(3):
+        assert not any("host-h" in m for m in asyncio.run(homelab.check_all()))
+    assert "access not set up" in db.query_one("SELECT detail FROM health WHERE service = 'host host-h'")["detail"]
+    assert asyncio.run(homelab.status("host-b"))[0]["host"] == "host-b"      # configured name, not hostname

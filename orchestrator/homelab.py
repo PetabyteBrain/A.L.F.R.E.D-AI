@@ -91,7 +91,9 @@ def summarize(name: str, st: dict) -> str:
 async def status(name: str | None = None) -> list[dict]:
     targets = [_host(name)] if name else hosts()
     results = await asyncio.gather(*(_ops(h, "status") for h in targets))
-    return [{"host": h["name"], "role": h.get("role", ""), **r} for h, r in zip(targets, results)]
+    # The configured short name wins over the machine's own hostname (kept as "hostname").
+    return [{**r, "hostname": r.get("host"), "host": h["name"], "role": h.get("role", "")}
+            for h, r in zip(targets, results)]
 
 
 async def logs(person: Person, host: str, container: str, lines: int = 50) -> dict:
@@ -164,6 +166,10 @@ async def check_all() -> list[str]:
     messages, active = [], set()
     for r in await status():
         name = r["host"]
+        if r.get("error") and "Permission denied" in r["error"]:
+            # Not down, just not set up yet (alfred-ops key not installed there): show, don't alert.
+            db.set_health(f"host {name}", False, "access not set up (install alfred-ops, infra/ops/README.md)")
+            continue
         if r.get("error"):
             fails = _state["fails"][name] = _state["fails"].get(name, 0) + 1
             db.set_health(f"host {name}", False, summarize(name, r))
