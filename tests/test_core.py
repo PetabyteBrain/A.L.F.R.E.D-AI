@@ -853,10 +853,11 @@ def test_web_chat_stream(monkeypatch):
             return self
         async def __aexit__(self, *exc):
             return False
-        @property
-        async def text_stream(self):
+        def __aiter__(self):            # the SDK stream yields events; text arrives as type "text"
+            return self._events()
+        async def _events(self):
             for p in self.parts:
-                yield p
+                yield NS(type="text", text=p)
         async def get_final_message(self):
             return self.final
 
@@ -1561,3 +1562,61 @@ def test_jetson_speech_provider_and_fallback(monkeypatch):
         assert base.active_name() == "jetson" and settings.speech_enabled
         jetson.mark(True)
     asyncio.run(run())
+
+
+def test_web_search_server_tool_pause_turn_and_metering(monkeypatch):
+    import asyncio
+    from types import SimpleNamespace as NS
+    from orchestrator import agent_core
+    from orchestrator.config import settings
+    from orchestrator.tools import registry as tools
+    tools.load()
+    ws = [t for t in tools.tools_for("friend", "telegram") if t["name"] == "web_search"]
+    assert ws == [{"name": "web_search", "type": "web_search_20250305", "max_uses": 3,
+                   "user_location": {"type": "approximate", "country": "CH", "timezone": "Europe/Zurich"}}]
+
+    calls = []
+    usage1 = NS(input_tokens=10, output_tokens=5, cache_read_input_tokens=0, cache_creation_input_tokens=0,
+                server_tool_use=NS(web_search_requests=2))
+    usage2 = NS(input_tokens=10, output_tokens=5, cache_read_input_tokens=0, cache_creation_input_tokens=0,
+                server_tool_use=None)
+
+    class Stream:
+        def __init__(self, events, final):
+            self.events, self.final = events, final
+        async def __aenter__(self):
+            return self
+        async def __aexit__(self, *exc):
+            return False
+        def __aiter__(self):
+            return self._gen()
+        async def _gen(self):
+            for e in self.events:
+                yield e
+        async def get_final_message(self):
+            return self.final
+
+    class FakeMessages:
+        def stream(self, **kw):
+            calls.append([m["role"] for m in kw["messages"]])
+            if len(calls) == 1:   # searches, then the API pauses the turn
+                return Stream([NS(type="text", text="Let me look. "),
+                               NS(type="content_block_start", content_block=NS(type="server_tool_use", name="web_search"))],
+                              NS(stop_reason="pause_turn", usage=usage1,
+                                 content=[NS(type="text", text="Let me look."), NS(type="server_tool_use", name="web_search")]))
+            return Stream([NS(type="text", text="The museum opens at 10.")],
+                          NS(stop_reason="end_turn", usage=usage2, content=[NS(type="text", text="The museum opens at 10.")]))
+    monkeypatch.setattr(agent_core, "_client", NS(messages=FakeMessages()))
+    monkeypatch.setattr(type(settings), "anthropic_api_key", property(lambda s: "sk-test"), raising=False)
+    events = []
+
+    async def on_event(kind, data):
+        events.append((kind, data))
+    friend = registry.lookup("telegram", "22222222")
+    before = db.query_one("SELECT COALESCE(SUM(units), 0) AS n FROM api_usage WHERE kind = 'web_search'")["n"]
+    reply = asyncio.run(agent_core._run(friend, "web", "s-ws", "When does the museum open?", None, on_event))
+    assert reply == "Let me look. The museum opens at 10."
+    assert calls == [["user"], ["user", "assistant"]]              # resumed with no extra user message
+    assert ("tool", "web_search") in events
+    after = db.query_one("SELECT COALESCE(SUM(units), 0) AS n FROM api_usage WHERE kind = 'web_search'")["n"]
+    assert after - before == 2

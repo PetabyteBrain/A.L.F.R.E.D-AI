@@ -8,6 +8,7 @@ const time = (iso) => (iso ? new Date(iso).toLocaleTimeString([], { hour: "2-dig
 
 // What to show while a tool runs mid-reply.
 function toolLabel(name) {
+  if (name === "web_search") return "Searching the web";
   if (name.startsWith("calendar_")) return "Consulting the calendar";
   if (/call/.test(name)) return "Arranging the call";
   if (name.includes("task")) return "Checking the task list";

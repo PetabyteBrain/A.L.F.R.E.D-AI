@@ -32,6 +32,8 @@ class ToolSpec:
         return "*" in self.roles or role in self.roles
 
     def api_definition(self) -> dict:
+        if self.kind == "anthropic_server":   # runs on Anthropic's side (e.g. web search): no schema
+            return {"name": self.name, **self.config.get("server_tool", {})}
         return {"name": self.name, "description": self.description, "input_schema": self.input_schema}
 
 
@@ -86,6 +88,8 @@ def _available(spec: ToolSpec, person_id: int | None = None) -> bool:
         return settings.twilio_enabled and settings.speech_enabled and bool(settings.public_base_url)
     if spec.name == "send_telegram_message":
         return settings.telegram_enabled
+    if spec.kind == "anthropic_server" and spec.name == "web_search":
+        return settings.web_search_enabled
     return True
 
 

@@ -101,6 +101,10 @@ Tools:
   to send the invoice by Friday and follow up"); you'll check in with the owner then and report to
   the requester. On a follow-up call, use complete_task / update_task (not_yet or a new due time)
   with the task id from your brief.
+- Web search: use it for current or factual information you can't know reliably (news, opening
+  hours, prices, weather beyond the briefing, recent events); not for things about the registered
+  people or the system. Say where it came from: on calls name the source briefly ("according to
+  the SBB site"); in Telegram and web chat add the link(s) at the end.
 - Calendar tools act only on the current person's own Google Calendar. Check existing events
   before proposing times; confirm before deleting.
 - If a tool fails, say so plainly and suggest a next step. Don't retry the same failing
@@ -171,8 +175,12 @@ async def _call_model(kwargs: dict, on_event: OnEvent | None):
     if on_event is None:
         return await client().messages.create(**kwargs)
     async with client().messages.stream(**kwargs) as stream:
-        async for text in stream.text_stream:
-            await on_event("delta", text)
+        async for event in stream:
+            if event.type == "text":
+                await on_event("delta", event.text)
+            elif event.type == "content_block_start" and getattr(event.content_block, "type", "") == "server_tool_use":
+                # A server-side tool (web search) starts mid-response: same signal as a local tool.
+                await on_event("tool", event.content_block.name)
         return await stream.get_final_message()
 
 
@@ -190,6 +198,7 @@ async def _run(person: Person, channel: str, session_id: str, user_text: str, ex
     ctx = ToolContext(person=person, session_id=session_id, channel=channel)
     max_tokens = 400 if channel == "call" else settings.claude_max_tokens
 
+    paused_text = ""   # text from a turn the API paused (pause_turn) before resuming it
     for _ in range(MAX_TOOL_ROUNDS):
         try:
             kwargs = dict(model=settings.claude_model, max_tokens=max_tokens, system=system, messages=messages)
@@ -213,6 +222,12 @@ async def _run(person: Person, channel: str, session_id: str, user_text: str, ex
         db.set_health("claude", True, f"ok ({settings.claude_model})")
         usage.record_claude(getattr(response, "usage", None), kind=channel, user_id=person.id, session_id=session_id)
 
+        if response.stop_reason == "pause_turn":
+            # Server-side tool loop (web search) paused: send the turn back as-is and it resumes.
+            paused_text += _text_of(response.content)
+            messages.append({"role": "assistant", "content": response.content})
+            continue
+
         if response.stop_reason == "tool_use":
             messages.append({"role": "assistant", "content": response.content})
             results = []
@@ -226,7 +241,7 @@ async def _run(person: Person, channel: str, session_id: str, user_text: str, ex
             messages.append({"role": "user", "content": results})
             continue
 
-        text = _text_of(response.content)
+        text = (paused_text + " " + _text_of(response.content)).strip() if paused_text else _text_of(response.content)
         if response.stop_reason == "refusal":
             return text or "I can't help with that one."
         if response.stop_reason == "max_tokens" and text:

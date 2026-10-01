@@ -118,12 +118,14 @@ def fake_claude() -> None:
         async def __aexit__(self, *exc):
             return False
 
-        @property
-        async def text_stream(self):
+        def __aiter__(self):
+            return self._events()
+
+        async def _events(self):
             await asyncio.sleep(self.delay)  # time to first token
             for i, word in enumerate(self.text.split(" ")):
                 await asyncio.sleep(0.05)
-                yield (" " if i else "") + word
+                yield NS(type="text", text=(" " if i else "") + word)
 
         async def get_final_message(self):
             content = [NS(type="text", text=self.text)]

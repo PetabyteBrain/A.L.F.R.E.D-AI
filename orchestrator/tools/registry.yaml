@@ -311,6 +311,16 @@ tools:
         start: {type: string, description: "HH:MM local, for custom"}
         end: {type: string, description: "HH:MM local, for custom"}
 
+  # Anthropic-hosted web search (runs server-side; billed per search, metered in usage.py).
+  # web_search_20250305 is the variant Claude Haiku 4.5 supports.
+  - name: web_search
+    kind: anthropic_server
+    roles: ["*"]
+    server_tool:
+      type: web_search_20250305
+      max_uses: 3
+      user_location: {type: approximate, country: CH, timezone: Europe/Zurich}
+
   - name: end_call
     kind: builtin
     handler: end_call

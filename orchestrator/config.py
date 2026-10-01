@@ -77,6 +77,8 @@ class Settings:
     price_claude_cache_read: float = field(default_factory=lambda: float(_env("PRICE_CLAUDE_CACHE_READ_PER_MTOK", "0.10")))
     price_claude_cache_write: float = field(default_factory=lambda: float(_env("PRICE_CLAUDE_CACHE_WRITE_PER_MTOK", "1.25")))
     # ElevenLabs bills by plan; set these to your plan's effective rates to get cost estimates.
+    price_web_search_per_1k: float = field(default_factory=lambda: float(_env("PRICE_WEB_SEARCH_PER_1K", "10.00")))
+    web_search_enabled: bool = field(default_factory=lambda: _bool("WEB_SEARCH_ENABLED", True))
     price_tts_per_1k_chars: float = field(default_factory=lambda: float(_env("PRICE_ELEVENLABS_TTS_PER_1K_CHARS", "0")))
     price_stt_per_hour: float = field(default_factory=lambda: float(_env("PRICE_ELEVENLABS_STT_PER_HOUR", "0")))
 

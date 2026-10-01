@@ -45,6 +45,10 @@ def record_claude(usage, *, kind: str, user_id: int | None = None, session_id: s
             + cr * settings.price_claude_cache_read + cw * settings.price_claude_cache_write) / 1_000_000
     _insert("anthropic", kind, model=model or settings.claude_model, input_tokens=i, output_tokens=o,
             cache_read=cr, cache_write=cw, cost=cost, user_id=user_id, session_id=session_id)
+    searches = getattr(getattr(usage, "server_tool_use", None), "web_search_requests", 0) or 0
+    if searches:
+        _insert("anthropic", "web_search", model="web_search", units=searches, unit="searches",
+                cost=searches * settings.price_web_search_per_1k / 1000, user_id=user_id, session_id=session_id)
 
 
 def record_tts(chars: int, *, user_id: int | None, session_id: str | None, provider: str = "elevenlabs") -> None:
