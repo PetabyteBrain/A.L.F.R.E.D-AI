@@ -24,6 +24,8 @@ the original spec is in `docs/archive/original-spec.md`. Keep the plan updated w
   Production uses the Jetson (`speech_server/`, deployed to `user@100.64.0.6:~/alfred-speech`,
   `docker compose up -d --build` there) with automatic ElevenLabs fallback. English only.
   Gate telephony on `settings.speech_enabled`, never on `elevenlabs_enabled`.
+  Voice: Kokoro `bm_george` for now; another voice may come later (roadmap #24): change
+  `KOKORO_VOICE` in the Jetson's `~/alfred-speech/.env` and `docker compose up -d`.
 - `STORAGE_ROOT` is the only thing to change for the NAS migration.
 - Model: `claude-haiku-4-5` (user's choice) via the official `anthropic` SDK (1.x, async client).
   Haiku 4.5 does not take adaptive thinking/effort; don't add them.
