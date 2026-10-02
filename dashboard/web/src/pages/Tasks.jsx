@@ -4,6 +4,7 @@ import { usePoll } from "../hooks.js";
 import { Empty, Tag } from "../components/common.jsx";
 import { Panel } from "../components/hud.jsx";
 import CallQueue from "../components/CallQueue.jsx";
+import OutsideCalls from "../components/OutsideCalls.jsx";
 import Reminders from "../components/Reminders.jsx";
 import TaskList from "../components/TaskList.jsx";
 import Meetings from "../components/Meetings.jsx";
@@ -17,6 +18,7 @@ export default function Tasks({ isAdmin, me, assistant }) {
       <Meetings me={me} assistant={assistant} />
       <Reminders me={me} assistant={assistant} />
       <CallQueue me={me} assistant={assistant} />
+      {(me.role === "admin" || me.role === "cofounder") && <OutsideCalls assistant={assistant} />}
 
       {isAdmin && t && (
         <>

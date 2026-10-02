@@ -260,7 +260,7 @@ async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         from . import screening
         note = screening.block_from_button(int(rid), person)
         await q.answer(note)
-        if person.is_admin:
+        if person.role in screening.RELAY_ROLES:
             await _append_note(q, note)
         return
     if kind == "task" and rid.isdigit() and action in ("done", "notyet"):

@@ -339,6 +339,8 @@ async def background_loop() -> None:
                            (_now().isoformat(timespec="seconds"),))
             for r in due:
                 await dispatch(r["id"])
+            from . import external_calls
+            await external_calls.tick()
             # A request stuck in 'dialing' with no live session (crash, restart) is closed out.
             for r in db.query("SELECT c.id, c.session_id FROM scheduled_calls c LEFT JOIN sessions s ON s.id = c.session_id "
                               "WHERE c.status IN ('dialing', 'finishing') AND c.updated_at < ? AND (s.id IS NULL OR s.status != 'active')",

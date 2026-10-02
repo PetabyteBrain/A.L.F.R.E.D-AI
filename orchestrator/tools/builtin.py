@@ -363,6 +363,38 @@ async def place_call(ctx, person: str, purpose: str = "", opening_line: str = ""
 
 
 @handler
+async def call_external(ctx, number: str, contact: str, task: str, share: str = "", when: str = "",
+                        confirmed: bool = False) -> dict:
+    from .. import external_calls
+    try:
+        row = await external_calls.request(ctx.person, ctx.session_id, number=number, contact=contact, task=task,
+                                           share=share, when=when or None, confirmed=confirmed)
+    except external_calls.ExternalCallError as e:
+        return {"error": str(e)}
+    if row.get("needs_confirmation"):
+        return row
+    return {"call_id": row["id"], "status": row["status"], "calling": row["contact"], "at_local_time": row["run_at_local"],
+            "task_id": row["task_id"], "note": "The outcome will be reported back when the call ends."}
+
+
+@handler
+async def list_external_calls(ctx, include_finished: bool = False) -> list[dict]:
+    from .. import external_calls
+    return [{k: r[k] for k in ("id", "contact", "number", "task", "status", "run_at_local", "attempts", "result",
+                               "requester_name")} for r in external_calls.list_for(ctx.person, include_finished)]
+
+
+@handler
+async def cancel_external_call(ctx, call_id: int) -> dict:
+    from .. import external_calls
+    try:
+        row = external_calls.cancel(int(call_id), ctx.person)
+    except external_calls.ExternalCallError as e:
+        return {"error": str(e)}
+    return {"cancelled": True, "contact": row["contact"]}
+
+
+@handler
 async def schedule_call(ctx, person: str, when: str, purpose: str = "", opening_line: str = "") -> dict:
     from .. import scheduler
     try:

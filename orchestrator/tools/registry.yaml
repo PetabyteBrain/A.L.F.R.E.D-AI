@@ -146,6 +146,51 @@ tools:
         urgent: {type: boolean, description: "Only when the requester says it's urgent: rings even during the person's quiet hours."}
       required: [person]
 
+  - name: call_external
+    kind: builtin
+    handler: call_external
+    roles: [admin, cofounder]
+    description: >-
+      Have Alfred phone a number OUTSIDE the registry (a business, an office, a supplier) to get one
+      concrete task done, e.g. "call the restaurant at +41 31 000 01 00 and book a table for 4 on
+      Friday at 19:00". Not for chats or anything without a clear task; not for registered people
+      (use place_call). Two steps: call it once (no confirmed) and read the returned `ask` back
+      word for word; only after the person says yes in their next message, call it again with the
+      same values and confirmed=true. Alfred introduces itself as an AI assistant calling on the
+      requester's behalf, shares only `share`, agrees to no costs, and reports the outcome. Rings
+      Mon-Sat 08:00-19:00 only (otherwise the next window). Creates a task the outcome completes.
+    input_schema:
+      type: object
+      properties:
+        number: {type: string, description: "Phone number with country code, e.g. +41 31 000 01 00."}
+        contact: {type: string, description: "Who: business or person name, e.g. 'Restaurant Sonne'."}
+        task: {type: string, description: "The concrete goal of the call, with all details needed (dates, times, quantities)."}
+        share: {type: string, description: "What Alfred may tell them to get it done (e.g. the requester's name and email for the booking). Empty = only the requester's name."}
+        when: {type: string, description: "Optional ISO local time; default now (or the next calling window)."}
+        confirmed: {type: boolean, description: "true only on the second call, after the person said yes."}
+      required: [number, contact, task]
+
+  - name: list_external_calls
+    kind: builtin
+    handler: list_external_calls
+    roles: [admin, cofounder]
+    description: Outside calls this person asked for (admins see all), with status and outcome.
+    input_schema:
+      type: object
+      properties:
+        include_finished: {type: boolean}
+
+  - name: cancel_external_call
+    kind: builtin
+    handler: cancel_external_call
+    roles: [admin, cofounder]
+    description: Cancel a pending outside call (by id from list_external_calls).
+    input_schema:
+      type: object
+      properties:
+        call_id: {type: integer}
+      required: [call_id]
+
   - name: schedule_call
     kind: builtin
     handler: schedule_call

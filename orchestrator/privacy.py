@@ -71,6 +71,8 @@ def collect(user_id: int) -> dict:
                                      "JOIN meetings m ON m.id = i.meeting_id WHERE i.user_id = ?", (user_id,)),
         "scheduled_calls": _rows("SELECT run_at, purpose, status, created_at FROM scheduled_calls "
                                  "WHERE target_user_id = ? OR requested_by = ?", (user_id, user_id)),
+        "outside_calls": _rows("SELECT contact, number, task, share, status, result, run_at, created_at "
+                               "FROM external_calls WHERE requested_by = ?", (user_id,)),
         "settings": {
             "briefing": db.query_one("SELECT * FROM briefings WHERE user_id = ?", (user_id,)),
             "quiet_hours": db.query_one("SELECT * FROM quiet_hours WHERE user_id = ?", (user_id,)),
@@ -192,6 +194,7 @@ async def erase(user_id: int, scope: str, *, by: Person) -> dict:
         n["meetings"] = conn.execute("DELETE FROM meetings WHERE organizer_id = ?", (user_id,)).rowcount
         conn.execute("DELETE FROM meeting_invites WHERE user_id = ?", (user_id,))
         conn.execute("DELETE FROM scheduled_calls WHERE target_user_id = ? OR requested_by = ?", (user_id, user_id))
+        conn.execute("DELETE FROM external_calls WHERE requested_by = ?", (user_id,))
         for table in ("briefings", "quiet_hours", "voice_mode", "context_resets", "google_accounts"):
             conn.execute(f"DELETE FROM {table} WHERE user_id = ?", (user_id,))
         conn.execute("DELETE FROM activity WHERE user_id = ?", (user_id,))

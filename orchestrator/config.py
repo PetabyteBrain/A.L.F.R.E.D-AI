@@ -84,6 +84,11 @@ class Settings:
     voicemail_detection: bool = field(default_factory=lambda: _bool("VOICEMAIL_DETECTION", True))
     # Unknown numbers: Alfred answers and takes a message for the admins (screening.py). Off = busy.
     call_screening: bool = field(default_factory=lambda: _bool("CALL_SCREENING", True))
+    # Admins/cofounders can have Alfred call numbers outside the registry for a concrete task
+    # (external_calls.py). Only numbers starting with these prefixes.
+    external_calls: bool = field(default_factory=lambda: _bool("EXTERNAL_CALLS", True))
+    external_call_prefixes: tuple = field(default_factory=lambda: tuple(
+        p.strip() for p in _env("EXTERNAL_CALL_PREFIXES", "+41,+423").split(",") if p.strip()))
     web_search_enabled: bool = field(default_factory=lambda: _bool("WEB_SEARCH_ENABLED", True))
     price_tts_per_1k_chars: float = field(default_factory=lambda: float(_env("PRICE_ELEVENLABS_TTS_PER_1K_CHARS", "0")))
     price_stt_per_hour: float = field(default_factory=lambda: float(_env("PRICE_ELEVENLABS_STT_PER_HOUR", "0")))

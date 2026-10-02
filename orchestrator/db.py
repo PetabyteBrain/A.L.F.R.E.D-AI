@@ -269,6 +269,22 @@ CREATE TABLE IF NOT EXISTS voice_mode (       -- Telegram replies also as voice 
     until      TEXT,                          -- UTC ISO; NULL = until switched off
     updated_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS external_calls (    -- task calls to numbers outside the registry (external_calls.py)
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    task_id      INTEGER REFERENCES tasks(id) ON DELETE SET NULL,
+    requested_by INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    number       TEXT NOT NULL,
+    contact      TEXT NOT NULL,
+    task         TEXT NOT NULL,
+    share        TEXT NOT NULL DEFAULT '',
+    run_at       TEXT NOT NULL,
+    status       TEXT NOT NULL DEFAULT 'pending', -- pending|dialing|finishing|done|no_answer|failed|cancelled
+    attempts     INTEGER NOT NULL DEFAULT 0,
+    session_id   TEXT,
+    result       TEXT,
+    created_at   TEXT NOT NULL,
+    updated_at   TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS screened_calls (    -- unknown callers Alfred took a message from (screening.py)
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
     ts         TEXT NOT NULL,

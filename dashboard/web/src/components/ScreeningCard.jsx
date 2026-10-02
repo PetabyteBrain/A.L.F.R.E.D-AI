@@ -25,7 +25,7 @@ export default function ScreeningCard({ assistant }) {
       <h3 className="sub">Call screening {s.enabled ? <Tag kind="ok">on</Tag> : <Tag>off</Tag>}</h3>
       <p className="muted small">
         {s.enabled
-          ? `Unknown numbers reach ${assistant}, who takes a message and sends it to admins on Telegram. Withheld and blocked numbers get "busy"; at most 3 calls per number and 20 in total a day.`
+          ? `Unknown numbers reach ${assistant}, who takes a message without naming anyone and relays it on Telegram: to the admin or cofounder it's for (plus admins), to whoever ${assistant} called if it's a call-back, otherwise to all admins and cofounders. Withheld and blocked numbers get "busy"; at most 3 calls per number and 20 in total a day.`
           : "Unknown numbers get \"busy\" (CALL_SCREENING=off)."}
       </p>
       <ErrorNote error={err || error} />

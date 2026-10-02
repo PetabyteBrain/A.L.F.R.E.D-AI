@@ -73,6 +73,7 @@ class PendingCall:
     voicemail: dict | None = None         # who/why, to compose a message if a mailbox answers
     answered_by: str | None = None        # AMD verdict that arrived before the media stream did
     screening: str | None = None          # caller's number: an unknown caller, Alfred takes a message
+    external: int | None = None           # external_calls.id: a task call to a number outside the registry
 
 
 # Twilio AnsweredBy values (async AMD with DetectMessageEnd): human | machine_end_beep |
@@ -127,9 +128,13 @@ def _gc_pending() -> None:
 
 
 def _call_finished(session_id: str, outcome: str) -> None:
-    """Tell the scheduler a call ended (it reports outcomes / schedules retries)."""
-    from . import scheduler
-    asyncio.create_task(scheduler.on_call_finished(session_id, outcome))
+    """Tell the scheduler (or the outside-call module) a call ended: outcomes, reports, retries."""
+    from . import external_calls, scheduler
+
+    async def go():
+        if not await external_calls.on_finished(session_id, outcome):
+            await scheduler.on_call_finished(session_id, outcome)
+    asyncio.create_task(go())
 
 
 # Every call is recorded (audio + transcript), so every call opens by saying so.
@@ -269,6 +274,38 @@ async def place_outbound_call(user_id: int, *, opening_line: str, reason: str = 
     db.execute("UPDATE sessions SET external_id = ? WHERE id = ?", (call.sid, sid))
     db.log_activity("call", f"Outbound call to {person.display_name}", user_id=requested_by, session_id=sid)
     return call.sid
+
+
+async def place_external_call(row: dict, requester: Person, opening_line: str, brief: str) -> str:
+    """Dial a number outside the registry for an external_calls row; returns the session id.
+    The session belongs to the requester (direction "external")."""
+    if not (settings.twilio_enabled and settings.speech_enabled and settings.public_base_url):
+        raise RuntimeError("Telephony isn't fully configured.")
+    sid = sessions.start_session(requester.id, "call", "external")
+    amd = settings.voicemail_detection
+    _pending[sid] = PendingCall(sid, requester.id, secrets.token_urlsafe(24), opening_line, brief, amd=amd,
+                                external=row["id"])
+    q = urlencode({"session_id": sid})
+    amd_kw = dict(machine_detection="DetectMessageEnd", async_amd="true",
+                  async_amd_status_callback=f"{settings.public_base_url}/twilio/amd?{q}",
+                  async_amd_status_callback_method="POST") if amd else {}
+
+    def _create():
+        return _twilio_client().calls.create(
+            to=row["number"], from_=registry.normalize_phone(settings.twilio_phone_number),
+            url=f"{settings.public_base_url}/twilio/voice/outbound?{q}",
+            status_callback=f"{settings.public_base_url}/twilio/status?{q}",
+            status_callback_event=["completed"], timeout=30, **amd_kw)
+    try:
+        call = await asyncio.to_thread(_create)
+    except Exception:
+        _pending.pop(sid, None)
+        sessions.end_session(sid, status="failed")
+        raise
+    db.execute("UPDATE sessions SET external_id = ? WHERE id = ?", (getattr(call, "sid", None), sid))
+    db.log_activity("call", f"Calling {row['contact']} ({row['number']}) for {requester.display_name}",
+                    requester.id, sid)
+    return sid
 
 
 async def health() -> tuple[bool, str]:
@@ -675,7 +712,7 @@ class ScreeningCall(CallSession):
             return
         self.turns += 1
         sessions.add_turn(self.session_id, "user", text)
-        reply, done = await screening.next_line(self.session_id, self.person, self.turns)
+        reply, done = await screening.next_line(self.session_id, self.person, self.turns, self.caller)
         if done or self.turns >= screening.MAX_TURNS:
             self._say_last(reply)
         else:
@@ -690,6 +727,65 @@ class ScreeningCall(CallSession):
         await super().close()
         from . import screening
         asyncio.create_task(screening.report(self.session_id, self.caller, self.person))
+
+
+class ExternalCall(CallSession):
+    """A task call to a number outside the registry: no Agent Core, no tools; a fixed brief
+    (external_calls.brief) and a hard limit on turns and time. A mailbox gets no message."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        from . import external_calls
+        self.row = external_calls.get(args[2].external) or {}
+        self.who = f"{self.row.get('contact', 'outside number')} (for {self.person.display_name})"
+        self.turns = 0
+        self._limit: asyncio.Task | None = None
+
+    async def start(self) -> None:
+        await super().start()
+        self._limit = asyncio.create_task(self._time_limit())
+
+    async def _time_limit(self) -> None:
+        from . import external_calls
+        await asyncio.sleep(external_calls.MAX_SECONDS)
+        if not self._closed and not self.hangup_requested:
+            self._say_last("I'll have to leave it there; thank you for your time. Goodbye.")
+
+    def _say_last(self, text: str) -> None:
+        sessions.add_turn(self.session_id, "assistant", text)
+        self.hangup_requested = True
+        self._speak(text)
+        asyncio.create_task(self._hangup_fallback())
+
+    async def on_amd(self, answered_by: str) -> None:
+        if answered_by in MAILBOX or answered_by == "fax":
+            self.left_voicemail = True            # ignore the mailbox; leave nothing, try again later
+            self.outcome = "no_answer"
+            self._amd_done.set()
+            await self.interrupt()
+            await self._hangup()
+            return
+        self._amd_done.set()
+
+    async def _turn(self, text: str) -> None:
+        from . import external_calls
+        if self.hangup_requested:
+            return
+        self.turns += 1
+        sessions.add_turn(self.session_id, "user", text)
+        reply, end, dnc = await external_calls.next_line(self.session_id, self.extra_system or "", self.turns)
+        if dnc:
+            external_calls.do_not_call(self.session_id)
+        if end:
+            self._say_last(reply)
+        else:
+            sessions.add_turn(self.session_id, "assistant", reply)
+            self._speak(reply)
+
+    async def close(self) -> None:
+        if not self._closed and self._limit:
+            self._limit.cancel()
+        await super().close()
 
 
 @router.websocket("/twilio/stream")
@@ -716,7 +812,7 @@ async def media_stream(ws: WebSocket) -> None:
                     await ws.close(code=1008)
                     return
                 _stream_connected.add(pending.session_id)
-                cls = ScreeningCall if pending.screening else CallSession
+                cls = ScreeningCall if pending.screening else ExternalCall if pending.external else CallSession
                 call = cls(ws, start["streamSid"], pending, person, get_provider())
                 ACTIVE_CALLS[pending.session_id] = call
                 await call.start()
