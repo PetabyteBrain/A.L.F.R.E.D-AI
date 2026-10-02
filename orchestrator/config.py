@@ -91,6 +91,9 @@ class Settings:
     cookie_secure: bool = field(default_factory=lambda: _bool("DASHBOARD_COOKIE_SECURE", True))
     session_idle_minutes: int = field(default_factory=lambda: int(_env("DASHBOARD_SESSION_IDLE_MINUTES", "60")))
     session_max_hours: int = field(default_factory=lambda: int(_env("DASHBOARD_SESSION_MAX_HOURS", "12")))
+    # Roles that must set up two-factor sign-in before they can use the dashboard ("" = nobody).
+    mfa_required_roles: frozenset = field(default_factory=lambda: frozenset(
+        r.strip() for r in _env("DASHBOARD_2FA_REQUIRED_ROLES", "admin").split(",") if r.strip()))
     # Only requests arriving *from* these IPs may set the client IP via CF-Connecting-IP /
     # X-Forwarded-For (the reverse proxy over Tailscale). Everyone else is taken at face value.
     trusted_proxy_ips: frozenset = field(default_factory=lambda: frozenset(

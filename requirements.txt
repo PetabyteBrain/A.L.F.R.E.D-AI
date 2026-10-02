@@ -10,3 +10,4 @@ pyyaml>=6.0
 python-multipart>=0.0.20
 tzdata>=2025.2
 cryptography>=46
+segno>=1.6

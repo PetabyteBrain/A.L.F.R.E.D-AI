@@ -249,6 +249,31 @@ CREATE TABLE IF NOT EXISTS dashboard_sessions (
 );
 CREATE INDEX IF NOT EXISTS idx_dash_sessions_user ON dashboard_sessions(user_id);
 
+-- Two-factor sign-in for the dashboard (orchestrator/identity/mfa.py).
+CREATE TABLE IF NOT EXISTS user_mfa (
+    user_id           INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    totp_secret_enc   TEXT,                   -- Fernet-encrypted authenticator secret
+    totp_confirmed_at TEXT,                   -- NULL = set-up started but not confirmed yet
+    totp_last_step    INTEGER NOT NULL DEFAULT 0,  -- last accepted 30 s step (no code reuse)
+    telegram_enabled  INTEGER NOT NULL DEFAULT 0,
+    updated_at        TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS mfa_backup_codes (
+    id        INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id   INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    code_hash TEXT NOT NULL,
+    used_at   TEXT
+);
+CREATE TABLE IF NOT EXISTS mfa_challenges (   -- password was right, second factor pending
+    token_hash   TEXT PRIMARY KEY,
+    user_id      INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    expires_at   TEXT NOT NULL,
+    attempts     INTEGER NOT NULL DEFAULT 0,
+    tg_code_hash TEXT,
+    tg_sent_at   TEXT,
+    tg_sends     INTEGER NOT NULL DEFAULT 0
+);
+
 CREATE TABLE IF NOT EXISTS scheduled_calls (
     id             INTEGER PRIMARY KEY AUTOINCREMENT,
     target_user_id INTEGER NOT NULL REFERENCES users(id),

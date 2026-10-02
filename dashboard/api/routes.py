@@ -15,7 +15,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from orchestrator import db, health, sessions
 from orchestrator.config import settings
-from orchestrator.identity import registry
+from orchestrator.identity import mfa, registry
 from orchestrator.identity.registry import Person
 from orchestrator.storage import recordings
 
@@ -26,11 +26,17 @@ router = APIRouter(prefix="/api")
 # --- auth --------------------------------------------------------------------------------
 
 
+# Reachable before a role that requires two-factor sign-in has set it up.
+_SETUP_PATHS = ("/api/me", "/api/profile")
+
+
 def current_person(request: Request) -> Person:
     uid = security.session_user_id(request)
     person = registry.get_person(uid) if uid else None
     if person is None or not registry.role_allows_channel(person.role, "dashboard"):
         raise HTTPException(status_code=401)
+    if mfa.required_for(person.role) and not request.url.path.startswith(_SETUP_PATHS)             and not mfa.enabled(person.id):
+        raise HTTPException(status_code=403, detail="Set up two-factor sign-in on your Profile first.")
     return person
 
 
@@ -60,6 +66,11 @@ async def login(body: LoginBody, request: Request, response: Response) -> dict:
         security.ip_throttle.fail(ip)
         security.user_throttle.fail(uname)
         raise HTTPException(status_code=401, detail="Invalid credentials")
+    if mfa.enabled(person.id):
+        # Password right: no session yet, only a short-lived challenge for the second factor.
+        st = mfa.status(person.id)
+        return {"mfa_required": True, "challenge": mfa.create_challenge(person.id),
+                "methods": {"totp": st["totp"], "telegram": st["telegram"]}}
     security.ip_throttle.reset(ip)
     security.user_throttle.reset(uname)
     security.destroy_session(request)  # no session fixation: always a fresh token
@@ -70,7 +81,8 @@ async def login(body: LoginBody, request: Request, response: Response) -> dict:
 
 def _me_view(person: Person) -> dict:
     return {"id": person.id, "display_name": person.display_name, "role": person.role,
-            "assistant_name": settings.assistant_name, "can_request_calls": _may_request_calls(person)}
+            "assistant_name": settings.assistant_name, "can_request_calls": _may_request_calls(person),
+            "mfa_setup_required": mfa.required_for(person.role) and not mfa.enabled(person.id)}
 
 
 @router.post("/logout")

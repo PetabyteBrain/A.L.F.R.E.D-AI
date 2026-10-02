@@ -23,7 +23,7 @@ async function request(path, { method = "GET", body, accept = "application/json"
     cache: "no-store",
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
-  if (res.status === 401 && path !== "/login") {
+  if (res.status === 401 && !path.startsWith("/login")) {
     onUnauthorized();
     throw new ApiError(401, "Signed out");
   }

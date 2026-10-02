@@ -39,6 +39,13 @@ the original spec is in `docs/archive/original-spec.md`. Keep the plan updated w
   `dashboard/api/security.py`; anything that changes a person's credentials, role or status must
   revoke their `dashboard_sessions`.
 
+## Two-factor sign-in
+- `orchestrator/identity/mfa.py` (TOTP, Telegram codes, backup codes, challenges) +
+  `dashboard/api/twofa.py`. `routes.current_person` blocks roles in `DASHBOARD_2FA_REQUIRED_ROLES`
+  (default admin) until a method is on, except `/api/me` and `/api/profile*`. Tests run with it
+  empty; the dev server requires it for admin (reset: `DB_PATH=data-dev/alfred.db python -m
+  orchestrator.identity.mfa reset admin`).
+
 ## People & permissions
 - Admin-only user management + everyone's self-service profile: `dashboard/api/people.py`
   (UI: `pages/People.jsx`, `pages/Profile.jsx`, `components/Connections.jsx`). All validation and

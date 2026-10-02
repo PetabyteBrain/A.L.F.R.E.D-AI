@@ -19,7 +19,7 @@ from fastapi import APIRouter, Depends, HTTPException, Path, Request
 from pydantic import BaseModel, ConfigDict, Field
 
 from orchestrator import db
-from orchestrator.identity import registry, verification
+from orchestrator.identity import mfa, registry, verification
 from orchestrator.identity.registry import Person, RegistryError
 
 from . import security
@@ -68,6 +68,7 @@ def _person_view(user_id: int) -> dict:
     row["dashboard_username"] = login["value"] if login else None
     last = db.query_one("SELECT MAX(last_seen_at) AS t FROM dashboard_sessions WHERE user_id = ?", (user_id,))
     row["last_dashboard_seen"] = last["t"] if last else None
+    row["mfa"] = mfa.status(user_id)["enabled"]
     return row
 
 

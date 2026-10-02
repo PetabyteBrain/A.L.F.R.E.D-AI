@@ -132,6 +132,11 @@ function PersonEditor({ personId, roles, me, onClose, onChanged }) {
                 <button className="btn danger small" type="button" disabled={busy}
                         onClick={() => run(() => api(`/people/${p.id}/login`, { method: "DELETE" }), "Login removed.")}>Remove login</button>
               )}
+              {p.mfa && !isSelf && (
+                <button className="btn danger small" type="button" disabled={busy}
+                        title="For a lost phone: they sign in with the password only and set it up again"
+                        onClick={() => run(() => api(`/people/${p.id}/2fa/reset`, { method: "POST" }), "Two-factor sign-in reset; they were signed out.")}>Reset 2FA</button>
+              )}
             </div>
           </form>
         )}
@@ -228,7 +233,8 @@ export default function People({ assistant, me }) {
               <div>
                 #{p.id} {p.display_name} <Tag>{p.role}</Tag>{" "}
                 {!p.active && <Tag kind="bad">disabled</Tag>}{" "}
-                {p.dashboard_username && <Tag kind="ok">login: {p.dashboard_username}</Tag>}
+                {p.dashboard_username && <Tag kind="ok">login: {p.dashboard_username}</Tag>}{" "}
+                {p.dashboard_username && (p.mfa ? <Tag kind="ok">2FA</Tag> : <Tag>no 2FA</Tag>)}
               </div>
               <div className="meta">{p.connections.map((i) => `${i.type}: ${i.value}`).join(" · ") || "no connections"}</div>
             </div>

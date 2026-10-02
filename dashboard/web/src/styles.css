@@ -742,3 +742,17 @@ main > .legal-links { margin-top: 8px; }
   .msg .avatar { display: none; }
   .hud.chat { height: calc(100vh - 210px); min-height: 380px; }
 }
+
+/* Two-factor sign-in */
+.twofa .kv { justify-content: space-between; flex-wrap: wrap; }
+.totp-setup { display: grid; gap: 10px; margin-top: 12px; padding: 12px; border: 1px dashed var(--line); }
+.totp-setup .qr { background: #fff; padding: 6px; width: 200px; height: 200px; image-rendering: pixelated; }
+.totp-setup .secret, .backup-codes code { font: 500 13px var(--font-mono); letter-spacing: .08em; user-select: all; }
+.backup-codes { margin-top: 12px; padding: 12px; border: 1px solid rgb(var(--ok-rgb) / .5); background: rgb(var(--ok-rgb) / .05); }
+.backup-codes ul { list-style: none; padding: 0; margin: 10px 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 6px; }
+.login-card .notice-inline { margin: 0; color: var(--ok); font: 400 12px var(--font-mono); min-height: 1em; }
+.login-card .muted.small { margin: 0; }
+.mfa-gate { max-width: 640px; margin: 0 auto; padding: 24px 16px; position: relative; }
+.mfa-gate .login-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 18px; }
+.mfa-gate-card { padding: 22px; }
+.mfa-gate-card h1 { margin: 0 0 8px; font-size: 22px; }

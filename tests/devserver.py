@@ -10,6 +10,7 @@ os.environ.setdefault("DB_PATH", str(root / "alfred.db"))
 os.environ.setdefault("STORAGE_ROOT", str(root / "storage"))
 os.environ.setdefault("DASHBOARD_COOKIE_SECURE", "false")
 os.environ.setdefault("DASHBOARD_SESSION_SECRET", "dev-only-secret")
+os.environ.setdefault("TOKEN_ENCRYPTION_KEY", "c9AdNPyDtMmOD7TdD6eFq1tXZNs4myIKk1ZlyADgXdE=")  # dev-only key (2FA secrets, Google tokens)
 os.environ.setdefault("ADMIN_DISPLAY_NAME", "Erika Mustermann")
 os.environ.setdefault("ADMIN_TELEGRAM_ID", "100000001")
 

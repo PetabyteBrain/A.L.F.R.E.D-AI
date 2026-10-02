@@ -38,7 +38,7 @@ Phone ──► Twilio ──► /twilio/voice ─► identity ─► <Stream> �
                                                          ├─► Agent Core (Claude, streamed) ─► tools ─► n8n
                                                          └─◄ ElevenLabs Flash TTS (per sentence) ◄─┘
 Telegram ◄─► long polling ─► identity ─► Agent Core   (voice notes: Scribe batch + Ogg/Opus TTS)
-Dashboard (React) ─► /api/* (Argon2 login, server-side sessions) ─► SQLite + /data/storage
+Dashboard (React) ─► /api/* (Argon2 login + 2FA, server-side sessions) ─► SQLite + /data/storage
                      /api/chat/stream (SSE)
 n8n ─► /n8n/callback (X-Alfred-Secret) ─► Agent Core ─► Telegram
 Background loops: calls · reminders · task follow-ups · briefings · health (quiet-hours aware)

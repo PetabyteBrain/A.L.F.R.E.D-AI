@@ -23,6 +23,7 @@ os.environ.update({
     "ANTHROPIC_API_KEY": "",
     "TELEGRAM_BOT_TOKEN": "",
     "QUIET_HOURS": "off",          # tests must not depend on the time of day; quiet hours have their own test
+    "DASHBOARD_2FA_REQUIRED_ROLES": "",   # two-factor sign-in has its own test
 })
 
 from orchestrator import db, sessions  # noqa: E402
@@ -2100,3 +2101,103 @@ def test_anti_scraping_signals():
         assert "noindex" not in home.headers["X-Robots-Tag"]
         assert "noindex" in c.get("/app").headers["X-Robots-Tag"]
         assert "noindex" in c.get("/api/session").headers["X-Robots-Tag"]
+
+
+def test_dashboard_two_factor(monkeypatch):
+    import dataclasses, re, time
+    from cryptography.fernet import Fernet
+    from fastapi.testclient import TestClient
+    from orchestrator import telegram_handler
+    from orchestrator.config import settings
+    from orchestrator.identity import mfa
+    from orchestrator.main import app
+
+    monkeypatch.setattr(mfa, "settings", dataclasses.replace(
+        settings, mfa_required_roles=frozenset({"admin"}), token_encryption_key=Fernet.generate_key().decode()))
+    sent = []
+
+    async def fake_send(user_id, text, note=None, record=True, buttons=None, silent=None):
+        sent.append((user_id, text, record))
+    monkeypatch.setattr(telegram_handler, "send_to_user", fake_send)
+
+    # RFC 6238 test vector (SHA-1): 94287082 at T=59 -> last 6 digits
+    assert mfa.totp_at("GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ", 59 // 30) == "287082"
+
+    admin_id = db.query_one("SELECT id FROM users WHERE role='admin'")["id"]
+    login = {"username": "admin", "password": "correct horse battery"}
+    with TestClient(app, base_url="http://testserver") as c:
+        # Required for admins: a session without 2FA only reaches the set-up endpoints.
+        assert c.post("/api/login", json=login, headers=CSRF).status_code == 200
+        assert c.get("/api/me").json()["mfa_setup_required"] is True
+        assert c.get("/api/overview").status_code == 403
+        assert c.get("/api/profile/2fa").json()["required"] is True
+
+        setup = c.post("/api/profile/2fa/totp/start", headers=CSRF).json()
+        assert setup["uri"].startswith("otpauth://totp/") and setup["qr"].startswith("data:image/svg+xml")
+        assert c.post("/api/profile/2fa/totp/confirm", json={"code": "000000"}, headers=CSRF).status_code == 400
+        step = int(time.time() // 30)
+        r = c.post("/api/profile/2fa/totp/confirm", json={"code": mfa.totp_at(setup["secret"], step)}, headers=CSRF)
+        assert r.status_code == 200, r.text
+        codes = r.json()["backup_codes"]
+        assert len(codes) == 10 and r.json()["totp"]
+        assert c.get("/api/overview").status_code == 200
+        assert "totp_secret" not in str(c.get("/api/profile/2fa").json())
+        row = db.query_one("SELECT totp_secret_enc FROM user_mfa WHERE user_id = ?", (admin_id,))
+        assert setup["secret"] not in row["totp_secret_enc"]          # encrypted at rest
+
+        # Password alone no longer signs in.
+        c.post("/api/logout", headers=CSRF)
+        r = c.post("/api/login", json=login, headers=CSRF).json()
+        assert r["mfa_required"] and r["methods"] == {"totp": True, "telegram": False}
+        assert c.get("/api/me").status_code == 401
+        ch = r["challenge"]
+        assert c.post("/api/login/2fa", json={"challenge": ch, "code": "123456"}, headers=CSRF).status_code == 401
+        # the code used to confirm the set-up can't be replayed
+        replay = c.post("/api/login/2fa", json={"challenge": ch, "code": mfa.totp_at(setup["secret"], step)}, headers=CSRF)
+        assert replay.status_code == 401
+        ok = c.post("/api/login/2fa", json={"challenge": ch, "code": mfa.totp_at(setup["secret"], step + 1)}, headers=CSRF)
+        assert ok.status_code == 200, ok.text
+        assert c.get("/api/me").json()["role"] == "admin"
+        # a used challenge is gone
+        assert c.post("/api/login/2fa", json={"challenge": ch, "code": "123456"}, headers=CSRF).status_code == 401
+
+        # Backup code: works once, with or without the dash.
+        c.post("/api/logout", headers=CSRF)
+        ch = c.post("/api/login", json=login, headers=CSRF).json()["challenge"]
+        assert c.post("/api/login/2fa", json={"challenge": ch, "code": codes[0].upper()}, headers=CSRF).status_code == 200
+        c.post("/api/logout", headers=CSRF)
+        ch = c.post("/api/login", json=login, headers=CSRF).json()["challenge"]
+        assert c.post("/api/login/2fa", json={"challenge": ch, "code": codes[0]}, headers=CSRF).status_code == 401
+        # five wrong codes end the challenge
+        for _ in range(4):
+            c.post("/api/login/2fa", json={"challenge": ch, "code": "999999"}, headers=CSRF)
+        r = c.post("/api/login/2fa", json={"challenge": ch, "code": codes[1].replace("-", "")}, headers=CSRF)
+        assert r.status_code == 401 and "password again" in r.json()["detail"]
+        from dashboard.api import security
+        security.user_throttle.reset(f"2fa:{admin_id}")
+        security.ip_throttle.reset("testclient")
+
+        # Telegram codes as the second method; the code never enters the conversation history.
+        ch = c.post("/api/login", json=login, headers=CSRF).json()["challenge"]
+        assert c.post("/api/login/2fa", json={"challenge": ch, "code": codes[1]}, headers=CSRF).status_code == 200
+        r = c.post("/api/profile/2fa/telegram", json={"enabled": True}, headers=CSRF)
+        assert r.status_code == 200 and r.json()["telegram"] and r.json()["backup_codes"] is None
+        c.post("/api/logout", headers=CSRF)
+        r = c.post("/api/login", json=login, headers=CSRF).json()
+        assert r["methods"] == {"totp": True, "telegram": True}
+        assert c.post("/api/login/2fa/telegram", json={"challenge": r["challenge"]}, headers=CSRF).status_code == 200
+        assert c.post("/api/login/2fa/telegram", json={"challenge": r["challenge"]}, headers=CSRF).status_code == 400  # too soon
+        uid, text, record = sent[-1]
+        assert uid == admin_id and record is False
+        tg_code = re.search(r"(\d{6})", text).group(1)
+        assert c.post("/api/login/2fa", json={"challenge": r["challenge"], "code": tg_code}, headers=CSRF).status_code == 200
+
+        # Switching off needs the password, and a required role keeps at least one method.
+        assert c.post("/api/profile/2fa/totp/disable", json={"password": "wrong"}, headers=CSRF).status_code == 400
+        assert c.post("/api/profile/2fa/totp/disable", json={"password": "correct horse battery"}, headers=CSRF).status_code == 200
+        r = c.post("/api/profile/2fa/telegram", json={"enabled": False, "password": "correct horse battery"}, headers=CSRF)
+        assert r.status_code == 400 and "requires" in r.json()["detail"]
+        assert c.get("/api/people").json()[0]["mfa"] is True
+
+    mfa.reset(admin_id)
+    assert not mfa.enabled(admin_id)

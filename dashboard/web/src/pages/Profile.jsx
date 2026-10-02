@@ -7,6 +7,7 @@ import BriefingCard from "../components/BriefingCard.jsx";
 import MemoryCard from "../components/MemoryCard.jsx";
 import QuietHoursCard from "../components/QuietHoursCard.jsx";
 import GoogleCalendarCard from "../components/GoogleCalendarCard.jsx";
+import TwoFactorCard from "../components/TwoFactorCard.jsx";
 import { Panel } from "../components/hud.jsx";
 
 /* Self-service for everyone with dashboard access: name, connections, password. */
@@ -91,6 +92,7 @@ export default function Profile({ assistant, isAdmin, refreshMe }) {
             </label>
             <button className="btn primary" type="submit" disabled={busy}>Update password</button>
           </form>
+          <TwoFactorCard assistant={assistant} />
           <GoogleCalendarCard assistant={assistant} />
           <QuietHoursCard assistant={assistant} isAdmin={isAdmin} />
           <BriefingCard assistant={assistant} />

@@ -3,6 +3,7 @@ import { api, setUnauthorizedHandler } from "./api.js";
 import { usePoll, useStoredState } from "./hooks.js";
 import { THEMES, ThemeContext, useTheme } from "./theme.js";
 import Login from "./components/Login.jsx";
+import TwoFactorCard from "./components/TwoFactorCard.jsx";
 import Stats from "./components/Stats.jsx";
 import Backdrop from "./components/Backdrop.jsx";
 import { Icon } from "./components/icons.jsx";
@@ -89,6 +90,26 @@ export default function App() {
       <ThemeContext.Provider value={theme}>
         <Backdrop />
         <Login onLogin={setMe} themeSwitch={<ThemeSwitch theme={theme} setTheme={setTheme} />} />
+      </ThemeContext.Provider>
+    );
+  }
+
+  if (me.mfa_setup_required) {
+    return (
+      <ThemeContext.Provider value={theme}>
+        <Backdrop />
+        <section className="mfa-gate">
+          <header className="login-top">
+            <span className="kicker"><span className="blip" />Security check</span>
+            <button className="btn small" onClick={logout}>Sign out</button>
+          </header>
+          <div className="hud mfa-gate-card">
+            <h1>One more step, {me.display_name.split(" ")[0]}</h1>
+            <p className="muted">Your account needs two-factor sign-in before the dashboard opens.
+              Set up an authenticator app, or switch on codes by Telegram.</p>
+            <TwoFactorCard assistant={me.assistant_name || "Alfred"} onEnabled={() => api("/me").then(setMe).catch(() => {})} />
+          </div>
+        </section>
       </ThemeContext.Provider>
     );
   }
