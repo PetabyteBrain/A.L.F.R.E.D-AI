@@ -164,8 +164,9 @@ async def list_sessions(
     where, params = _scope(person)
     sql = ("SELECT s.id, s.user_id, s.channel, s.direction, s.started_at, s.ended_at, s.status, u.display_name, "
            "(SELECT COUNT(*) FROM transcripts t WHERE t.session_id = s.id) AS turns, "
-           "(SELECT r.id FROM recordings r WHERE r.session_id = s.id LIMIT 1) AS recording_id, "
-           "(SELECT r.duration FROM recordings r WHERE r.session_id = s.id LIMIT 1) AS duration "
+           "(SELECT r.id FROM recordings r WHERE r.session_id = s.id AND r.deleted_at IS NULL LIMIT 1) AS recording_id, "
+           "(SELECT r.duration FROM recordings r WHERE r.session_id = s.id LIMIT 1) AS duration, "
+           "(SELECT MAX(r.deleted_at) FROM recordings r WHERE r.session_id = s.id) AS audio_deleted_at "
            "FROM sessions s JOIN users u ON u.id = s.user_id WHERE 1=1" + where)
     if user_id is not None:
         sql += " AND s.user_id = ?"
@@ -190,8 +191,9 @@ async def session_detail(session_id: str = Path(max_length=64), person: Person =
         (session_id,),
     )
     row["recordings"] = db.query(
-        "SELECT id, duration, created_at FROM recordings WHERE session_id = ?", (session_id,)
+        "SELECT id, duration, created_at, deleted_at FROM recordings WHERE session_id = ?", (session_id,)
     )
+    row["retention_days"] = settings.recording_retention_days
     return row
 
 
@@ -296,10 +298,12 @@ async def recordings_tree(person: Person = Depends(current_person)) -> list[dict
 
 @router.get("/recordings/{recording_id}/audio")
 async def recording_audio(recording_id: int, person: Person = Depends(current_person)) -> FileResponse:
-    rec = db.query_one("SELECT session_id, file_path FROM recordings WHERE id = ?", (recording_id,))
+    rec = db.query_one("SELECT session_id, file_path, deleted_at FROM recordings WHERE id = ?", (recording_id,))
     if not rec:
         raise HTTPException(status_code=404)
     _own_session(person, rec["session_id"])
+    if rec["deleted_at"]:
+        raise HTTPException(status_code=410, detail="The audio was deleted after the retention period.")
     try:
         path = recordings.resolve_safe(rec["file_path"])
     except PermissionError:

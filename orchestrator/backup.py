@@ -3,6 +3,9 @@
     python -m orchestrator.backup snapshot          -> verified copy in /data/backups/nightly, prints its path
     python -m orchestrator.backup report ok "..."   -> records success (Systems shows its age)
     python -m orchestrator.backup report fail "..." -> records failure + Telegram alert to admins
+    python -m orchestrator.backup drill ok|fail "..." -> result of the monthly restore test
+                                                        (infra/restore-drill.sh)
+    python -m orchestrator.backup live-counts       -> row counts of the live DB (to compare)
 
 These run in a one-off process (docker compose exec), where the Telegram bot is not running, so
 the alert goes straight to the Bot API instead of through telegram_handler.
@@ -22,7 +25,10 @@ from .config import settings
 
 KEEP_LOCAL = 3
 MAX_AGE = timedelta(hours=26)         # one nightly run missed -> Systems turns red
+DRILL_MAX_AGE = timedelta(days=40)    # monthly restore test missed -> Systems turns red
 _STATE_KEY = "backup_state"
+_DRILL_KEY = "restore_drill_state"
+COUNTED = ("users", "sessions", "transcripts", "recordings", "memories", "reminders", "tasks")
 
 
 def _nightly_dir() -> Path:
@@ -94,6 +100,31 @@ def health_now() -> tuple[bool, str]:
     return age <= MAX_AGE, detail if age <= MAX_AGE else f"overdue: {detail}"
 
 
+def counts(conn: sqlite3.Connection) -> dict:
+    return {t: conn.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0] for t in COUNTED}
+
+
+def drill_report(ok: bool, detail: str) -> None:
+    db.set_setting(_DRILL_KEY, {"at": db.now_iso(), "ok": ok, "detail": detail[:300]})
+    db.log_activity("system" if ok else "error", f"Restore test {'passed' if ok else 'FAILED'}: {detail[:200]}")
+    db.set_health("restore_drill", *drill_health())
+    if not ok:
+        _alert_admins(f"⚠️ Alfred's monthly restore test failed: {detail[:300]}")
+
+
+def drill_health() -> tuple[bool, str]:
+    st = db.get_setting(_DRILL_KEY) or {}
+    if not st.get("at"):
+        return False, "not run yet (infra/restore-drill.sh, 1st of the month)"
+    age = datetime.now(timezone.utc) - datetime.fromisoformat(st["at"])
+    when = f"{age.days} d ago" if age.days else "today"
+    if not st.get("ok"):
+        return False, f"failed {when}: {st.get('detail', '')}"
+    if age > DRILL_MAX_AGE:
+        return False, f"overdue: last passed {when}"
+    return True, f"passed {when} · {st.get('detail', '')}"
+
+
 def _alert_admins(text: str) -> None:
     """Direct Bot API message (this runs outside the server process)."""
     if not settings.telegram_enabled:
@@ -113,6 +144,16 @@ def _alert_admins(text: str) -> None:
 def main(argv: list[str]) -> int:
     if argv[:1] == ["snapshot"]:
         print(snapshot())
+        return 0
+    if argv[:1] == ["drill"] and len(argv) >= 2:
+        drill_report(argv[1] == "ok", " ".join(argv[2:]) or ("ok" if argv[1] == "ok" else "unknown error"))
+        return 0
+    if argv[:1] == ["live-counts"]:
+        conn = sqlite3.connect(settings.db_path, timeout=30)
+        try:
+            print(json.dumps(counts(conn)))
+        finally:
+            conn.close()
         return 0
     if argv[:1] == ["report"] and len(argv) >= 2:
         report(argv[1] == "ok", " ".join(argv[2:]) or ("ok" if argv[1] == "ok" else "unknown error"))

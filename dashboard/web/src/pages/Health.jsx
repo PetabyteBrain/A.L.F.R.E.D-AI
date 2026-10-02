@@ -17,6 +17,7 @@ const ALFRED = {
   google: "Google Calendar",
   n8n: "Automations (n8n)",
   backup: "Backups",
+  restore_drill: "Restore test (monthly)",
 };
 const order = (s) => {
   const i = Object.keys(ALFRED).indexOf(s);

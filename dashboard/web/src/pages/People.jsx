@@ -6,6 +6,7 @@ import { Empty, ErrorNote, Tag } from "../components/common.jsx";
 import Connections from "../components/Connections.jsx";
 import CallDialog from "../components/CallDialog.jsx";
 import { ConfirmDialog, Panel } from "../components/hud.jsx";
+import { DataRequests, PersonData } from "../components/DataRequests.jsx";
 
 /* ---------------------------------------------------------------- editor (admin) */
 function PersonEditor({ personId, roles, me, onClose, onChanged }) {
@@ -142,6 +143,8 @@ function PersonEditor({ personId, roles, me, onClose, onChanged }) {
         )}
         {p.last_dashboard_seen && <p className="muted tiny">Last seen on the dashboard {fmtTime(p.last_dashboard_seen)}</p>}
 
+        <PersonData person={p} isSelf={isSelf} onDone={(scope) => { if (scope === "account") { onChanged(); onClose(); } else changed(); }} />
+
         {!isSelf && (
           <>
             <h3 className="sub">Danger zone</h3>
@@ -222,6 +225,7 @@ export default function People({ assistant, me }) {
     }>
       <ErrorNote error={error || err2} />
       {notice && <div className="notice" role="status" onClick={() => setNotice("")}>{notice}</div>}
+      <DataRequests onChanged={reload} />
       {adding && roles && (
         <NewPerson roles={roles} onCancel={() => setAdding(false)}
                    onCreated={(p) => { setAdding(false); reload(); setEditing(p.id); }} />

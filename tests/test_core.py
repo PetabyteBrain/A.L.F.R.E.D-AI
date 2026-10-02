@@ -2318,3 +2318,197 @@ def test_voice_notes_on_request_and_voice_mode(monkeypatch):
     assert voice_replies.describe(admin.id)["on"] and voice_replies.describe(admin.id)["until"] is None
     out, _ = asyncio.run(tools.execute("voice_mode", {"action": "off"}, tools.ToolContext(admin, None, "web")))
     assert not voice_replies.is_on(admin.id)
+
+
+def _fake_call(user_id: int, days_ago: int, text: str) -> tuple[str, int]:
+    """A finished call with a transcript line and a recording file, `days_ago` days old."""
+    import wave
+    from datetime import datetime, timedelta, timezone
+    from orchestrator.storage import recordings
+    sid = sessions.start_session(user_id, "call")
+    sessions.add_turn(sid, "user", text)
+    when = (datetime.now(timezone.utc) - timedelta(days=days_ago)).isoformat()
+    db.execute("UPDATE sessions SET started_at = ?, ended_at = ?, status = 'ended' WHERE id = ?", (when, when, sid))
+    folder = recordings.session_dir(sid)
+    path = folder / "audio.wav"
+    with wave.open(str(path), "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(8000)
+        w.writeframes(b"\x00\x01" * 800)
+    rel = str(path.relative_to(recordings.root())).replace("\\", "/")
+    rid = db.execute("INSERT INTO recordings(session_id, file_path, duration, created_at) VALUES (?,?,?,?)",
+                     (sid, rel, 0.1, when))
+    return sid, rid
+
+
+def test_recording_retention(monkeypatch):
+    import dataclasses
+    from fastapi.testclient import TestClient
+    from orchestrator import retention
+    from orchestrator.config import settings
+    from orchestrator.main import app
+    from orchestrator.storage import recordings
+    admin = registry.lookup("telegram", "111")
+    old_sid, old_rid = _fake_call(admin.id, 120, "old call about the invoice")
+    new_sid, new_rid = _fake_call(admin.id, 5, "recent call")
+    old_file = recordings.resolve_safe(db.query_one("SELECT file_path FROM recordings WHERE id = ?", (old_rid,))["file_path"])
+    assert old_file.exists()
+
+    assert retention.purge() >= 1
+    assert not old_file.exists()
+    assert db.query_one("SELECT deleted_at FROM recordings WHERE id = ?", (old_rid,))["deleted_at"]
+    assert db.query_one("SELECT deleted_at FROM recordings WHERE id = ?", (new_rid,))["deleted_at"] is None
+    assert db.query_one("SELECT COUNT(*) n FROM transcripts WHERE session_id = ?", (old_sid,))["n"] == 1  # transcript kept
+    assert retention.purge() == 0                                      # nothing twice
+
+    with TestClient(app, base_url="http://testserver") as c:
+        c.post("/api/login", json={"username": "admin", "password": "correct horse battery"}, headers=CSRF)
+        assert c.get(f"/api/recordings/{old_rid}/audio").status_code == 410
+        assert c.get(f"/api/recordings/{new_rid}/audio").status_code == 200
+        rows = {r["id"]: r for r in c.get("/api/sessions?limit=200").json()}
+        assert rows[old_sid]["recording_id"] is None and rows[old_sid]["audio_deleted_at"]
+        assert c.get(f"/api/sessions/{old_sid}").json()["recordings"][0]["deleted_at"]
+
+    # 0 = keep forever
+    from orchestrator import retention as r2
+    monkeypatch.setattr(r2, "settings", dataclasses.replace(settings, recording_retention_days=0))
+    _fake_call(admin.id, 400, "ancient")
+    assert r2.purge() == 0
+
+
+def test_budget_warnings_to_admins_only(monkeypatch):
+    import asyncio
+    from fastapi.testclient import TestClient
+    from orchestrator import budgets, telegram_handler
+    from orchestrator.main import app
+    admin = registry.lookup("telegram", "111")
+    friend = registry.lookup("telegram", "22222222")
+    sent = []
+
+    async def fake_send(user_id, text, **kw):
+        sent.append((user_id, text))
+    monkeypatch.setattr(telegram_handler, "send_to_user", fake_send)
+    db.execute("DELETE FROM api_usage")
+
+    with TestClient(app, base_url="http://testserver") as c:
+        c.post("/api/login", json={"username": "admin", "password": "correct horse battery"}, headers=CSRF)
+        assert c.put("/api/budgets", json={"anthropic": -1}, headers=CSRF).status_code == 422
+        st = c.put("/api/budgets", json={"anthropic": 10, "total": 50}, headers=CSRF).json()
+        assert {r["provider"]: r["budget"] for r in st["rows"]}["anthropic"] == 10
+    assert sent == []                                                  # nothing spent yet
+
+    db.execute("INSERT INTO api_usage(ts, provider, kind, cost_usd, user_id) VALUES (?,?,?,?,?)",
+               (db.now_iso(), "anthropic", "telegram", 8.5, friend.id))
+    assert len(asyncio.run(budgets.check(force=True))) == 1
+    assert [u for u, _ in sent] == [admin.id] and "80 %" in sent[0][1]   # only admins hear about it
+    assert asyncio.run(budgets.check(force=True)) == []                  # once per level per month
+    db.execute("INSERT INTO api_usage(ts, provider, kind, cost_usd) VALUES (?,?,?,?)",
+               (db.now_iso(), "anthropic", "call", 2.0))
+    texts = asyncio.run(budgets.check(force=True))
+    assert len(texts) == 1 and "is over" in texts[0]
+    assert asyncio.run(budgets.check()) == []                            # hourly unless forced
+    budgets.set_budgets({})
+    db.execute("DELETE FROM api_usage")
+
+
+def test_data_export_and_deletion(monkeypatch):
+    import io, json, zipfile
+    from fastapi.testclient import TestClient
+    from orchestrator import memory, telegram_handler
+    from orchestrator.main import app
+    from orchestrator.storage import recordings
+    admin = registry.lookup("telegram", "111")
+    told = []
+
+    async def fake_send(user_id, text, **kw):
+        told.append((user_id, text))
+    monkeypatch.setattr(telegram_handler, "send_to_user", fake_send)
+
+    # A cofounder with a dashboard login, some history and a note.
+    cid = registry.add_user("Co Founder", "cofounder")
+    registry.add_identifier(cid, "telegram", "33333333", verified=True)
+    registry.upsert_identifier(cid, "dashboard", "cofounder", registry.hash_password("cofounder pass 123"))
+    co = registry.get_person(cid)
+    sid, rid = _fake_call(cid, 1, "my secret plans for the launch")
+    memory.add(co, "Prefers mornings.")
+    db.execute("INSERT INTO access_attempts(ts, channel, raw_identifier, resolved, detail) VALUES (?,?,?,?,?)",
+               (db.now_iso(), "telegram", "33333333", 0, "test"))
+
+    with TestClient(app, base_url="http://testserver") as c:
+        c.post("/api/login", json={"username": "cofounder", "password": "cofounder pass 123"}, headers=CSRF)
+        z = zipfile.ZipFile(io.BytesIO(c.get("/api/profile/data/export").content))
+        data = json.loads(z.read("data.json"))
+        assert data["person"]["display_name"] == "Co Founder"
+        assert data["conversations"][0]["transcript"][0]["text"] == "my secret plans for the launch"
+        assert data["memories"][0]["text"] == "Prefers mornings."
+        assert any(n.startswith("recordings/") for n in z.namelist())
+        assert "password" not in json.dumps(data) and "refresh_token" not in json.dumps(data)
+
+        r = c.post("/api/profile/data/request", json={"scope": "history", "password": "wrong"}, headers=CSRF)
+        assert r.status_code == 400
+        r = c.post("/api/profile/data/request", json={"scope": "history", "note": "please", "password": "cofounder pass 123"},
+                   headers=CSRF)
+        assert r.status_code == 200 and r.json()["pending"]["scope"] == "history"
+        assert told and told[-1][0] == admin.id and "Co Founder" in told[-1][1]
+        assert c.post("/api/profile/data/request", json={"scope": "account", "password": "cofounder pass 123"},
+                      headers=CSRF).status_code == 400                    # one at a time
+        assert c.get("/api/data-requests").status_code == 403            # admin only
+        c.post("/api/logout", headers=CSRF)
+
+        c.post("/api/login", json={"username": "admin", "password": "correct horse battery"}, headers=CSRF)
+        reqs = c.get("/api/data-requests").json()
+        assert [q["display_name"] for q in reqs] == ["Co Founder"]
+        r = c.post(f"/api/data-requests/{reqs[0]['id']}", json={"approve": True}, headers=CSRF)
+        assert r.status_code == 200 and r.json()["summary"]["conversations"] == 1
+        assert c.get("/api/data-requests").json() == []
+
+    # History gone everywhere, account still there.
+    assert db.query_one("SELECT COUNT(*) n FROM sessions WHERE user_id = ?", (cid,))["n"] == 0
+    assert db.query_one("SELECT COUNT(*) n FROM transcripts WHERE session_id = ?", (sid,))["n"] == 0
+    assert db.query_one("SELECT COUNT(*) n FROM recordings WHERE id = ?", (rid,))["n"] == 0
+    assert db.query_one("SELECT COUNT(*) n FROM memories WHERE user_id = ?", (cid,))["n"] == 0
+    assert db.query_one("SELECT COUNT(*) n FROM access_attempts WHERE raw_identifier = '33333333'")["n"] == 0
+    assert not (recordings.root() / str(cid)).exists()
+    assert not db.query("SELECT rowid FROM transcripts_fts WHERE transcripts_fts MATCH 'launch'")
+    assert registry.get_person(cid) is not None
+
+    with TestClient(app, base_url="http://testserver") as c:
+        c.post("/api/login", json={"username": "admin", "password": "correct horse battery"}, headers=CSRF)
+        # admin deletes the whole account directly (request by email), password required
+        assert c.post(f"/api/people/{cid}/erase", json={"scope": "account", "password": "x"}, headers=CSRF).status_code == 400
+        r = c.post(f"/api/people/{cid}/erase", json={"scope": "account", "password": "correct horse battery"}, headers=CSRF)
+        assert r.status_code == 200, r.text
+        # the last admin can't delete their own account, only their history
+        assert c.post(f"/api/people/{admin.id}/erase", json={"scope": "account", "password": "correct horse battery"},
+                      headers=CSRF).status_code == 400
+    assert registry.get_person(cid) is None
+    assert registry.lookup("telegram", "33333333") is None
+
+
+def test_restore_drill_on_a_snapshot(tmp_path):
+    import json, os, shutil, subprocess, sys, wave
+    from orchestrator import backup
+    snap = backup.snapshot()
+    drill = tmp_path / "drill"
+    (drill / "storage" / "1" / "2026-01-01" / "s1").mkdir(parents=True)
+    shutil.copy(snap, drill / "alfred.db")
+    with wave.open(str(drill / "storage" / "1" / "2026-01-01" / "s1" / "audio.wav"), "wb") as w:
+        w.setnchannels(1); w.setsampwidth(2); w.setframerate(8000); w.writeframes(b"\x00\x01" * 80)
+    live = json.dumps({"transcripts": db.query_one("SELECT COUNT(*) n FROM transcripts")["n"]})
+    env = dict(os.environ, DB_PATH=str(drill / "alfred.db"), STORAGE_ROOT=str(drill / "storage"), LIVE_COUNTS=live)
+    out = subprocess.run([sys.executable, "-m", "orchestrator.restore_drill"], env=env, capture_output=True, text=True,
+                         cwd=str(Path(__file__).resolve().parent.parent), timeout=120)
+    res = json.loads(out.stdout.strip().splitlines()[-1])
+    assert res["ok"], res
+    assert "1 recordings played" in res["detail"]
+
+    # a backup missing most of the data fails
+    env["LIVE_COUNTS"] = json.dumps({"transcripts": 100000})
+    out = subprocess.run([sys.executable, "-m", "orchestrator.restore_drill"], env=env, capture_output=True, text=True,
+                         cwd=str(Path(__file__).resolve().parent.parent), timeout=120)
+    assert out.returncode == 1 and "only" in json.loads(out.stdout.strip().splitlines()[-1])["detail"]
+
+    backup.drill_report(True, res["detail"])
+    ok, detail = backup.drill_health()
+    assert ok and detail.startswith("passed today")

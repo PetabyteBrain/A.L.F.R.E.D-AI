@@ -44,7 +44,11 @@ function Detail({ id, assistant }) {
   return (
     <div className="hud detail" ref={ref}>
       <h3 className="sub flush">{s.display_name} · {s.channel} · {fmtTime(s.started_at)}</h3>
-      {s.recordings.map((r) => (
+      {s.recordings.map((r) => r.deleted_at ? (
+        <div key={r.id} className="muted small">
+          Audio deleted {fmtTime(r.deleted_at)} (kept {s.retention_days} days after a call); the transcript stays.
+        </div>
+      ) : (
         <div key={r.id}>
           <audio controls preload="none" src={audioUrl(r.id)} />
           <div className="muted small">Stereo: left = {s.display_name}, right = {assistant} · {fmtDur(r.duration)}</div>
@@ -91,7 +95,7 @@ export default function Recordings({ assistant }) {
                 <div>
                   <div>
                     {s.display_name} <Tag>{s.channel}</Tag>{" "}
-                    {s.recording_id ? <Tag kind="ok">🎙 {fmtDur(s.duration)}</Tag> : null}
+                    {s.recording_id ? <Tag kind="ok">🎙 {fmtDur(s.duration)}</Tag> : s.audio_deleted_at ? <Tag>audio expired</Tag> : null}
                   </div>
                   <div className="meta">{fmtTime(s.started_at)} · {s.turns} turns · {s.status}</div>
                 </div>

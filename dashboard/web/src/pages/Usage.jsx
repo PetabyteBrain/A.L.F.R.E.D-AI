@@ -3,6 +3,7 @@ import { api } from "../api.js";
 import { usePoll } from "../hooks.js";
 import { Empty, ErrorNote } from "../components/common.jsx";
 import { Panel } from "../components/hud.jsx";
+import BudgetsCard from "../components/BudgetsCard.jsx";
 
 const PERIODS = [7, 30, 90];
 const n = (v) => Number(v) || 0;
@@ -131,6 +132,8 @@ export default function Usage() {
             <Stat label="Voice (TTS)" value={`${compact(tts?.units)} chars`} sub={tts?.cost ? usd(tts.cost) : "ElevenLabs"} />
             <Stat label="Speech-to-text" value={minutes(stt?.units)} sub={stt?.cost ? usd(stt.cost) : "ElevenLabs"} />
           </div>
+
+          <BudgetsCard />
 
           <h3 className="sub">Claude cost per day</h3>
           {u.anthropic_daily.length === 0 ? <Empty>No Claude usage in this period.</Empty>

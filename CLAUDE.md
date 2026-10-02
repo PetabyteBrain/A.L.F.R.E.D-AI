@@ -81,6 +81,10 @@ the original spec is in `docs/archive/original-spec.md`. Keep the plan updated w
 ## Ops
 - Backups: `infra/backup.sh` (Pi crontab 03:30) + `orchestrator/backup.py`; restore in
   `infra/README-backup.md`. Shell scripts must stay LF (`.gitattributes`; this PC has autocrlf).
+- Monthly restore test: `infra/restore-drill.sh` (Pi crontab, 1st 04:30) -> `orchestrator/restore_drill.py`
+  in a throwaway container. Recording retention: `orchestrator/retention.py` (+ Jetson crontab).
+- Budgets: `orchestrator/budgets.py` (warnings to admins only). Data export/deletion:
+  `orchestrator/privacy.py`; a new table holding personal data must be added to `collect` and `erase`.
 - Homelab: hosts in `orchestrator/homelab.yaml`; per-host access via `infra/ops/alfred-ops`
   (forced command) + `~/.config/alfred-ops/allow`. Never widen the key to a shell.
 

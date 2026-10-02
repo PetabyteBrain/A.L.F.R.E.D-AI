@@ -269,6 +269,16 @@ CREATE TABLE IF NOT EXISTS voice_mode (       -- Telegram replies also as voice 
     until      TEXT,                          -- UTC ISO; NULL = until switched off
     updated_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS data_requests (    -- "delete my data" (privacy.py); an admin confirms
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    scope       TEXT NOT NULL,                -- history | account
+    note        TEXT NOT NULL DEFAULT '',
+    status      TEXT NOT NULL DEFAULT 'pending',  -- pending | rejected (done requests vanish with the data)
+    created_at  TEXT NOT NULL,
+    decided_by  INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    decided_at  TEXT
+);
 CREATE TABLE IF NOT EXISTS mfa_challenges (   -- password was right, second factor pending
     token_hash   TEXT PRIMARY KEY,
     user_id      INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -442,6 +452,7 @@ ADDED_COLUMNS = [
     ("tasks", "completed_at", "TEXT"),
     ("tasks", "completed_by", "INTEGER REFERENCES users(id) ON DELETE SET NULL"),
     ("tasks", "result", "TEXT"),
+    ("recordings", "deleted_at", "TEXT"),        # audio removed by the retention policy (transcript kept)
 ]
 
 
@@ -538,6 +549,17 @@ def log_tool_call(
             now_iso(),
         ),
     )
+
+
+def get_setting(key: str, default: Any = None) -> Any:
+    """JSON value from app_settings."""
+    row = query_one("SELECT value FROM app_settings WHERE key = ?", (key,))
+    return json.loads(row["value"]) if row else default
+
+
+def set_setting(key: str, value: Any) -> None:
+    execute("INSERT INTO app_settings(key, value, updated_at) VALUES (?,?,?) ON CONFLICT(key) DO UPDATE SET "
+            "value = excluded.value, updated_at = excluded.updated_at", (key, json.dumps(value), now_iso()))
 
 
 def set_health(service: str, ok: bool, detail: str = "") -> None:

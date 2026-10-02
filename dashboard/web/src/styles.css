@@ -756,3 +756,10 @@ main > .legal-links { margin-top: 8px; }
 .mfa-gate .login-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 18px; }
 .mfa-gate-card { padding: 22px; }
 .mfa-gate-card h1 { margin: 0 0 8px; font-size: 22px; }
+
+/* Budgets, data requests, my data */
+.budgets { margin: 18px 0; }
+.budgets .budget-input { width: 110px; }
+.data-requests { margin-bottom: 18px; padding-bottom: 12px; border-bottom: 1px dashed var(--line); }
+.my-data .btn { margin: 6px 8px 6px 0; }
+.my-data .notice-box { margin-top: 10px; padding: 10px; border: 1px dashed var(--line); }

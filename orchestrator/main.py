@@ -25,6 +25,7 @@ from dashboard.api.google import router as google_router
 from dashboard.api.people import router as people_router
 from dashboard.api.twofa import router as twofa_router
 from dashboard.api.voice import router as voice_router
+from dashboard.api.privacy import router as privacy_router
 from dashboard.api.routes import router as dashboard_router
 from dashboard.api.security import SecurityMiddleware
 
@@ -93,6 +94,7 @@ app.include_router(dashboard_router)
 app.include_router(people_router)
 app.include_router(twofa_router)
 app.include_router(voice_router)
+app.include_router(privacy_router)
 app.include_router(google_router)
 app.include_router(chat_router)
 app.include_router(reminders_router)

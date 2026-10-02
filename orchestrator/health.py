@@ -47,6 +47,11 @@ async def _backup() -> tuple[bool, str]:
     return backup.health_now()
 
 
+async def _restore_drill() -> tuple[bool, str]:
+    from . import backup
+    return backup.drill_health()
+
+
 async def _n8n() -> tuple[bool, str]:
     if not settings.n8n_enabled:
         return False, "not configured"
@@ -65,6 +70,7 @@ PROBES = {
     "elevenlabs": _elevenlabs,
     "jetson_speech": _jetson_speech,
     "backup": _backup,
+    "restore_drill": _restore_drill,
     "n8n": _n8n,
     "google": _google,
 }
@@ -94,6 +100,9 @@ async def background_loop() -> None:
             sessions.close_idle_sessions()
             _housekeeping()
             await check_all()
+            from . import budgets, retention
+            retention.daily()
+            await budgets.check()
         except Exception:
             log.exception("Health loop iteration failed")
         await asyncio.sleep(INTERVAL)
