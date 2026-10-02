@@ -466,6 +466,32 @@ tools:
         start: {type: string, description: "HH:MM local, for custom"}
         end: {type: string, description: "HH:MM local, for custom"}
 
+  - name: reply_by_voice
+    kind: builtin
+    handler: reply_by_voice
+    roles: ["*"]
+    channels: [telegram]
+    description: >-
+      Send your reply to this message as a Telegram voice note (with the text alongside). Use when
+      the person asks to hear the answer ("answer by voice", "send that as a voice note", "I'm
+      driving"). Call it before writing the reply, then write the reply to be spoken.
+    input_schema: {type: object, properties: {}}
+
+  - name: voice_mode
+    kind: builtin
+    handler: voice_mode
+    roles: ["*"]
+    description: >-
+      Read or change the current person's voice mode: while on, all Telegram replies and messages
+      from you (reminders, briefing, reports) also come as voice notes. action: on (optionally for
+      `minutes`, e.g. 60; omit for until switched off), off, or status.
+    input_schema:
+      type: object
+      properties:
+        action: {type: string, enum: ["on", "off", status]}
+        minutes: {type: integer, minimum: 1, maximum: 10080}
+      required: [action]
+
   # Anthropic-hosted web search (runs server-side; billed per search, metered in usage.py).
   # web_search_20250305 is the variant Claude Haiku 4.5 supports.
   - name: web_search

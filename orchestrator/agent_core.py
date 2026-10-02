@@ -14,7 +14,7 @@ from zoneinfo import ZoneInfo
 
 import anthropic
 
-from . import db, memory, sessions, usage
+from . import db, memory, sessions, usage, voice_replies
 from .config import settings
 from .identity.registry import Person
 from .tools import registry as tool_registry
@@ -119,6 +119,9 @@ Tools:
   hours, prices, weather beyond the briefing, recent events); not for things about the registered
   people or the system. Say where it came from: on calls name the source briefly ("according to
   the SBB site"); in Telegram and web chat add the link(s) at the end.
+- Voice notes (Telegram): when someone asks for this answer by voice ("send it as a voice note",
+  "I can't read right now"), call reply_by_voice first and write that reply to be spoken. For a
+  lasting switch ("voice replies for the next hour", "back to text") use voice_mode.
 - Calendar tools act only on the current person's own Google Calendar. Check existing events
   before proposing times; confirm before deleting.
 - If a tool fails, say so plainly and suggest a next step. Don't retry the same failing
@@ -139,6 +142,9 @@ def _dynamic_system(person: Person, channel: str, extra: str | None) -> str:
     notes = memory.prompt_block(person.id)
     if notes:
         lines.append(notes)
+    voice = voice_replies.prompt_line(person.id, channel)
+    if voice:
+        lines.append(voice)
     if extra:
         lines.append(extra)
     return "\n".join(lines)

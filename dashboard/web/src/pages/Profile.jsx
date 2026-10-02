@@ -8,6 +8,7 @@ import MemoryCard from "../components/MemoryCard.jsx";
 import QuietHoursCard from "../components/QuietHoursCard.jsx";
 import GoogleCalendarCard from "../components/GoogleCalendarCard.jsx";
 import TwoFactorCard from "../components/TwoFactorCard.jsx";
+import VoiceModeCard from "../components/VoiceModeCard.jsx";
 import { Panel } from "../components/hud.jsx";
 
 /* Self-service for everyone with dashboard access: name, connections, password. */
@@ -95,6 +96,7 @@ export default function Profile({ assistant, isAdmin, refreshMe }) {
           <TwoFactorCard assistant={assistant} />
           <GoogleCalendarCard assistant={assistant} />
           <QuietHoursCard assistant={assistant} isAdmin={isAdmin} />
+          <VoiceModeCard assistant={assistant} />
           <BriefingCard assistant={assistant} />
           <MemoryCard assistant={assistant} />
         </section>

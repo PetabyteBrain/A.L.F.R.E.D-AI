@@ -264,6 +264,11 @@ CREATE TABLE IF NOT EXISTS mfa_backup_codes (
     code_hash TEXT NOT NULL,
     used_at   TEXT
 );
+CREATE TABLE IF NOT EXISTS voice_mode (       -- Telegram replies also as voice notes (voice_replies.py)
+    user_id    INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    until      TEXT,                          -- UTC ISO; NULL = until switched off
+    updated_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS mfa_challenges (   -- password was right, second factor pending
     token_hash   TEXT PRIMARY KEY,
     user_id      INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,

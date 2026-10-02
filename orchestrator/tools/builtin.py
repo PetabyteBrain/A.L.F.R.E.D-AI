@@ -185,6 +185,32 @@ async def configure_quiet_hours(ctx, mode: str | None = None, start: str | None 
 
 
 @handler
+async def reply_by_voice(ctx) -> dict:
+    from .. import voice_replies
+    from ..identity import registry
+    if not settings.speech_enabled:
+        return {"error": "Speech isn't available right now; answer in text and say so."}
+    if not registry.telegram_for(ctx.person.id):
+        return {"error": "This person has no verified Telegram connection."}
+    voice_replies.request_for(ctx.session_id)
+    return {"ok": True, "note": "This reply goes out as a voice note with the text. Write it to be spoken: "
+                                "natural sentences, no Markdown, lists or URLs; brief unless asked for detail."}
+
+
+@handler
+async def voice_mode(ctx, action: str, minutes: int | None = None) -> dict:
+    from .. import voice_replies
+    if action == "status":
+        return voice_replies.describe(ctx.person.id)
+    if action == "on" and not voice_replies.describe(ctx.person.id)["telegram_linked"]:
+        return {"error": "Voice notes go out on Telegram, and this person has no verified Telegram connection."}
+    try:
+        return voice_replies.set_mode(ctx.person.id, action == "on", minutes)
+    except voice_replies.VoiceError as e:
+        return {"error": str(e)}
+
+
+@handler
 async def search_conversations(ctx, query: str, person: str = "", channel: str = "", days: int = 0) -> dict:
     from .. import search
     from ..scheduler import ScheduleError, resolve_person

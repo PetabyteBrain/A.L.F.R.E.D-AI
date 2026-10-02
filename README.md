@@ -17,7 +17,7 @@ only the assistant's persona and branding are "Alfred" (`ASSISTANT_NAME`). The d
 | Phone | Answers registered callers, speaks sentence by sentence as the reply streams in, says "one moment" while a tool runs, announces that calls are recorded, hangs up by itself when done | call |
 | Calls for you | "Call Max tomorrow at 9 and ask about the invoice": dials now or later, retries no-answer, leaves a short voicemail if a mailbox answers, summarises the call and reports back | any channel, dashboard |
 | Web search | Current information (news, opening hours, prices) with sources; links in chat, source named on calls | any channel |
-| Chat | Telegram (text + voice notes answered with voice) and the dashboard Chat tab with live-streamed replies | Telegram, web |
+| Chat | Telegram (text + voice notes answered with voice; voice-note replies on request or in "voice mode") and the dashboard Chat tab with live-streamed replies | Telegram, web |
 | Reminders | One-off or recurring (daily/weekdays/weekly/monthly), Telegram with Done/Snooze or a call, optional escalation to a call if ignored | any channel, Tasks tab |
 | Daily briefing | Weather (Open-Meteo), today's calendar, reminders, planned calls, overnight call outcomes, tasks; by Telegram or call at a set time | Profile |
 | Tasks & follow-ups | Tasks with owner, due time and follow-up: Alfred checks in with the owner (Telegram buttons or a call), up to 3 times, and tells the requester | any channel, Tasks tab |
@@ -37,7 +37,7 @@ Phone ──► Twilio ──► /twilio/voice ─► identity ─► <Stream> �
                                                          ├─► ElevenLabs Scribe v2 RT (STT)
                                                          ├─► Agent Core (Claude, streamed) ─► tools ─► n8n
                                                          └─◄ ElevenLabs Flash TTS (per sentence) ◄─┘
-Telegram ◄─► long polling ─► identity ─► Agent Core   (voice notes: Scribe batch + Ogg/Opus TTS)
+Telegram ◄─► long polling ─► identity ─► Agent Core   (voice notes: Jetson Whisper + Ogg/Opus TTS)
 Dashboard (React) ─► /api/* (Argon2 login + 2FA, server-side sessions) ─► SQLite + /data/storage
                      /api/chat/stream (SSE)
 n8n ─► /n8n/callback (X-Alfred-Secret) ─► Agent Core ─► Telegram

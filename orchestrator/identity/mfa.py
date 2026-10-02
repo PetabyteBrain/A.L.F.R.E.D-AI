@@ -234,7 +234,7 @@ async def send_telegram_code(token: str) -> None:
         await telegram_handler.send_to_user(
             row["user_id"], f"Your dashboard sign-in code: `{code}`\nValid for {CHALLENGE_MINUTES} minutes. "
             "If you didn't just try to sign in, change your password.", note="sign-in code",
-            record=False, silent=False)
+            record=False, silent=False, voice=False)
     except Exception as e:
         raise RegistryError("The code couldn't be sent on Telegram right now. Use your app or a backup code.") from e
 

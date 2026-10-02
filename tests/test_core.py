@@ -1021,7 +1021,7 @@ def test_reminders_deliver_ack_escalate_and_repeat(monkeypatch):
     friend = registry.lookup("telegram", "22222222")
     sent, calls = [], []
 
-    async def fake_send(user_id, text, note=None, record=True, buttons=None, silent=None):
+    async def fake_send(user_id, text, note=None, record=True, buttons=None, silent=None, voice=None):
         sent.append((user_id, text, buttons))
 
     async def fake_request_call(target, *, requested_by, purpose="", when=None, opening_line=""):
@@ -1131,7 +1131,7 @@ def test_daily_briefing(monkeypatch):
     async def fake_weather(lat, lon):
         return {"conditions": "light rain", "high_c": 14, "low_c": 8, "rain_chance_pct": 70, "precip_mm": 3.1}
 
-    async def fake_send(user_id, text, note=None, record=True, buttons=None, silent=None):
+    async def fake_send(user_id, text, note=None, record=True, buttons=None, silent=None, voice=None):
         sent.append((user_id, text, note))
 
     class FakeMessages:
@@ -1427,7 +1427,7 @@ def test_task_follow_ups(monkeypatch):
     friend = registry.lookup("telegram", "22222222")
     sent, calls = [], []
 
-    async def fake_send(user_id, text, note=None, record=True, buttons=None, silent=None):
+    async def fake_send(user_id, text, note=None, record=True, buttons=None, silent=None, voice=None):
         sent.append({"to": user_id, "text": text, "buttons": buttons})
 
     async def fake_request_call(target, *, requested_by, purpose="", when=None, opening_line="", urgent=False):
@@ -1942,7 +1942,7 @@ def test_meeting_scheduling(monkeypatch):
         booked.append({"uid": uid, "summary": summary, "start": start, "attendees": attendees})
         return {"id": "evt123"}
 
-    async def fake_send(user_id, text, note=None, record=True, buttons=None, silent=None):
+    async def fake_send(user_id, text, note=None, record=True, buttons=None, silent=None, voice=None):
         sent.append({"to": user_id, "text": text, "buttons": buttons})
     monkeypatch.setattr(google_calendar, "is_linked", lambda uid: True)
     monkeypatch.setattr(google_calendar, "busy_intervals", fake_busy)
@@ -2021,7 +2021,7 @@ def test_meeting_invites_respect_quiet_hours(monkeypatch):
     friend = registry.lookup("telegram", "22222222")
     sent, calls = [], []
 
-    async def fake_send(user_id, text, note=None, record=True, buttons=None, silent=None):
+    async def fake_send(user_id, text, note=None, record=True, buttons=None, silent=None, voice=None):
         sent.append({"to": user_id, "text": text, "silent": silent})
 
     async def fake_call(target, *, requested_by, purpose="", when=None, opening_line="", urgent=False):
@@ -2116,8 +2116,9 @@ def test_dashboard_two_factor(monkeypatch):
         settings, mfa_required_roles=frozenset({"admin"}), token_encryption_key=Fernet.generate_key().decode()))
     sent = []
 
-    async def fake_send(user_id, text, note=None, record=True, buttons=None, silent=None):
+    async def fake_send(user_id, text, note=None, record=True, buttons=None, silent=None, voice=None):
         sent.append((user_id, text, record))
+        assert voice is False
     monkeypatch.setattr(telegram_handler, "send_to_user", fake_send)
 
     # RFC 6238 test vector (SHA-1): 94287082 at T=59 -> last 6 digits
@@ -2201,3 +2202,119 @@ def test_dashboard_two_factor(monkeypatch):
 
     mfa.reset(admin_id)
     assert not mfa.enabled(admin_id)
+
+
+def test_voice_notes_on_request_and_voice_mode(monkeypatch):
+    import asyncio
+    from datetime import datetime, timedelta, timezone
+    from types import SimpleNamespace as NS
+    from fastapi.testclient import TestClient
+    from orchestrator import agent_core, telegram_handler as th, voice_replies
+    from orchestrator.config import settings
+    from orchestrator.main import app
+    from orchestrator.stt_tts import elevenlabs
+    from orchestrator.tools import registry as tools
+
+    admin = registry.lookup("telegram", "111")
+    assert voice_replies.plain("## Plan\n- **Call** the [bank](https://x.ch)\n```py\nx=1\n```\nSee https://a.b") == \
+        "Plan\nCall the bank\n(the code is in the message)\nSee the link in the message"
+
+    # reply_by_voice is a Telegram-only tool; voice_mode works everywhere
+    tools.load()
+    assert "reply_by_voice" in {t["name"] for t in tools.tools_for("admin", "telegram")}
+    assert "reply_by_voice" not in {t["name"] for t in tools.tools_for("admin", "web")}
+    assert "voice_mode" in {t["name"] for t in tools.tools_for("friend", "web")}
+
+    tts, sent, replies = [], [], []
+
+    async def fake_tts(text):
+        tts.append(text)
+        return b"OggS-" + str(len(tts)).encode()
+    monkeypatch.setattr(elevenlabs, "synthesize_voice_note", fake_tts)
+    monkeypatch.setattr(type(settings), "elevenlabs_enabled", property(lambda s: True))
+    monkeypatch.setattr(type(settings), "speech_enabled", property(lambda s: True), raising=False)
+
+    class FakeMessages:   # the summary call for long texts
+        async def create(self, **kw):
+            assert "spoken summary" in kw["system"]
+            return NS(content=[NS(type="text", text="Short spoken summary.")], usage=None)
+    monkeypatch.setattr(agent_core, "_client", NS(messages=FakeMessages()))
+
+    answer = {"text": "Your train leaves at 8:12 from platform 3."}
+
+    async def fake_respond(person, channel, session_id, text, **kw):
+        if "voice" in text:
+            out, err = await tools.execute("reply_by_voice", {}, tools.ToolContext(person, session_id, channel))
+            assert not err, out
+        return answer["text"]
+    monkeypatch.setattr(agent_core, "respond", fake_respond)
+
+    class Msg:
+        chat_id, caption, voice, audio, video_note = 111, None, None, None, None
+        def __init__(self, text):
+            self.text = text
+        async def reply_voice(self, voice, caption=None, **kw):
+            replies.append(("voice", voice, caption))
+        async def reply_text(self, text, **kw):
+            replies.append(("text", text))
+
+    def say(text):
+        upd = NS(effective_message=Msg(text), effective_user=NS(id=111, username="t"),
+                 effective_chat=NS(id=111, type="private"))
+        asyncio.run(th.on_message(upd, None))
+
+    # 1. typed message, plain reply -> text only
+    say("when is my train?")
+    assert replies[-1][0] == "text" and not tts
+    # 2. "answer by voice" -> this one reply is a voice note with the text as caption
+    say("answer by voice please")
+    assert replies[-1] == ("voice", b"OggS-1", answer["text"]) and tts == [answer["text"]]
+    say("and the platform?")
+    assert replies[-1][0] == "text"                                  # one-off only
+
+    # 3. voice mode via the API: every reply is a voice note; long ones get a spoken summary
+    with TestClient(app, base_url="http://testserver") as c:
+        c.post("/api/login", json={"username": "admin", "password": "correct horse battery"}, headers=CSRF)
+        assert c.put("/api/voice-mode", json={"on": True, "minutes": 0}, headers=CSRF).status_code == 422
+        r = c.put("/api/voice-mode", json={"on": True, "minutes": 60}, headers=CSRF).json()
+        assert r["on"] and r["until_local"]
+    assert "Voice mode is on" in agent_core._dynamic_system(admin, "telegram", None)
+    assert "Voice mode" not in agent_core._dynamic_system(admin, "call", None)
+    answer["text"] = "Here is the full plan. " + "Details follow with **many** steps. " * 40
+    replies.clear()
+    say("what is the plan?")
+    assert replies[0] == ("voice", b"OggS-2", None) and tts[-1] == "Short spoken summary."
+    assert replies[1][0] == "text" and "full plan" in replies[1][1]
+
+    # 4. proactive messages in voice mode: voice note first, then the text (with its buttons)
+    calls = []
+
+    async def send_voice(chat_id, voice, **kw):
+        calls.append(("voice", chat_id, voice))
+
+    async def send_message(chat_id, text, **kw):
+        calls.append(("text", chat_id, text))
+    monkeypatch.setattr(th, "_app", NS(bot=NS(send_message=send_message, send_voice=send_voice)))
+    asyncio.run(th.send_to_user(admin.id, "Reminder: call the bank.", note="reminder"))
+    assert [k for k, *_ in calls] == ["voice", "text"]
+    calls.clear()
+    asyncio.run(th.send_to_user(admin.id, "Your sign-in code: 123456", record=False, voice=False))
+    assert [k for k, *_ in calls] == ["text"]                        # codes never as voice
+
+    # 5. the Jetson failing mid-request falls back to ElevenLabs
+    from orchestrator.stt_tts import base, jetson
+
+    async def broken(text):
+        raise RuntimeError("jetson down")
+    monkeypatch.setattr(base, "active_name", lambda: "jetson")
+    monkeypatch.setattr(jetson, "synthesize_voice_note", broken)
+    assert asyncio.run(voice_replies.synthesize("Hello.", user_id=admin.id, session_id=None)).startswith(b"OggS-")
+
+    # 6. expiry and switching off
+    db.execute("UPDATE voice_mode SET until = ? WHERE user_id = ?",
+               ((datetime.now(timezone.utc) - timedelta(minutes=1)).isoformat(), admin.id))
+    assert not voice_replies.is_on(admin.id)
+    voice_replies.set_mode(admin.id, True)
+    assert voice_replies.describe(admin.id)["on"] and voice_replies.describe(admin.id)["until"] is None
+    out, _ = asyncio.run(tools.execute("voice_mode", {"action": "off"}, tools.ToolContext(admin, None, "web")))
+    assert not voice_replies.is_on(admin.id)

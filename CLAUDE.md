@@ -75,6 +75,8 @@ the original spec is in `docs/archive/original-spec.md`. Keep the plan updated w
 - Meetings: `orchestrator/meetings.py`; another person's calendar is only read if they turned on
   free/busy sharing, and only busy times ever leave google_calendar.busy_intervals.
 - Calls speak streamed text sentence by sentence (`call_handler.split_speakable`, `_turn`).
+- Voice notes on request / voice mode: `orchestrator/voice_replies.py`; `send_to_user(voice=...)`
+  defaults to the person's voice mode. Pass `voice=False` for anything secret (sign-in codes).
 
 ## Ops
 - Backups: `infra/backup.sh` (Pi crontab 03:30) + `orchestrator/backup.py`; restore in

@@ -133,18 +133,20 @@ async def on_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         stop.set()
         await typing
 
-    if voice and settings.speech_enabled and len(reply) <= VOICE_REPLY_MAX_CHARS:
+    from . import voice_replies
+    asked = voice_replies.pop_request(session_id)
+    if settings.speech_enabled and (voice or asked or voice_replies.is_on(person.id)):
         if await _reply_with_voice(msg, reply, person, session_id):
             return
     await _reply_md(msg, reply)
 
 
 # --- voice notes ---------------------------------------------------------------------------------
-# Voice in -> transcribed (ElevenLabs Scribe) -> normal reply -> sent back as a voice note too.
+# Voice in -> transcribed -> normal reply -> sent back as a voice note too. Replies also go out as
+# voice notes when asked for (reply_by_voice) or in voice mode (orchestrator/voice_replies.py).
 
 VOICE_PREFIX = "(voice message) "
 VOICE_MAX_SECONDS = 300
-VOICE_REPLY_MAX_CHARS = 1500          # longer answers go out as text only (TTS cost, listening time)
 VOICE_NOTE_SYSTEM = ("The person sent a Telegram voice message (transcribed above). Your reply is sent back as a "
                      "voice message with the text as caption, so write it to be spoken: natural sentences, no "
                      "Markdown, lists, URLs or emoji, and keep it brief unless they asked for detail.")
@@ -183,20 +185,19 @@ async def _transcribe(msg, voice, person, session_id: str) -> str | None:
 
 
 async def _reply_with_voice(msg, reply: str, person, session_id: str) -> bool:
-    from . import usage
-    from .stt_tts.base import active_name, speech_module
+    from . import voice_replies
     stop = asyncio.Event()
     rec = asyncio.create_task(_keep_typing(msg.chat_id, stop, ChatAction.RECORD_VOICE))
     try:
-        audio = await speech_module().synthesize_voice_note(reply)
+        spoken = await voice_replies.spoken_text(reply, user_id=person.id, session_id=session_id)
+        audio = await voice_replies.synthesize(spoken, user_id=person.id, session_id=session_id)
     except Exception:
         log.exception("Voice reply synthesis failed")
         return False
     finally:
         stop.set()
         await rec
-    usage.record_tts(len(reply), user_id=person.id, session_id=session_id, provider=active_name())
-    if len(reply) <= 900:   # caption limit is 1024 incl. markup
+    if len(reply) <= voice_replies.CAPTION_MAX:
         await _send_md(lambda text, **kw: msg.reply_voice(voice=audio, caption=text, **kw), reply)
     else:
         await msg.reply_voice(voice=audio)
@@ -205,19 +206,30 @@ async def _reply_with_voice(msg, reply: str, person, session_id: str) -> bool:
 
 
 async def send_to_user(user_id: int, text: str, note: str | None = None, record: bool = True,
-                       buttons: list[list[tuple[str, str]]] | None = None, silent: bool | None = None) -> None:
+                       buttons: list[list[tuple[str, str]]] | None = None, silent: bool | None = None,
+                       voice: bool | None = None) -> None:
     """Proactive message to a registered person (tools, n8n callbacks, reminders).
     `buttons`: rows of (label, callback_data) shown under the last message part.
-    `silent`: no notification sound; by default only during the person's quiet hours."""
-    from . import quiet
+    `silent`: no notification sound; by default only during the person's quiet hours.
+    `voice`: also send it as a voice note first; by default only while their voice mode is on."""
+    from . import quiet, voice_replies
     if silent is None:
         silent = quiet.is_quiet(user_id)
+    if voice is None:
+        voice = voice_replies.is_on(user_id)
     if _app is None:
         raise RuntimeError("Telegram bot is not running.")
     tg = registry.telegram_for(user_id)
     if not tg:
         raise ValueError(f"User {user_id} has no verified Telegram ID in the registry.")
     session_id = sessions.telegram_session_for(user_id, tg)
+    if voice and settings.speech_enabled:
+        try:
+            spoken = await voice_replies.spoken_text(text, user_id=user_id, session_id=session_id)
+            audio = await voice_replies.synthesize(spoken, user_id=user_id, session_id=session_id)
+            await _app.bot.send_voice(chat_id=int(tg), voice=audio, disable_notification=silent)
+        except Exception:
+            log.exception("Voice note for a proactive message failed; sending text only")
     parts = _chunks(text)
     markup = InlineKeyboardMarkup([[InlineKeyboardButton(label, callback_data=data) for label, data in row]
                                    for row in buttons]) if buttons else None
