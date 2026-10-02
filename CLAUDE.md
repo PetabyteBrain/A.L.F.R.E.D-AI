@@ -16,7 +16,10 @@ the original spec is in `docs/archive/original-spec.md`. Keep the plan updated w
 
 ## Architecture rules
 - Every inbound event resolves through `orchestrator/identity/registry.py` first. Unknown or
-  unpermitted → drop silently (no reply, `<Reject>` for calls) and record an access attempt.
+  unpermitted → drop silently (no reply) and record an access attempt. Only exception: unknown
+  *phone* numbers may be screened (`orchestrator/screening.py`, CALL_SCREENING): Alfred takes a
+  message with no tools and no Agent Core, then reports to admins; withheld/blocked/over-limit
+  numbers still get `<Reject reason="busy"/>`.
 - Conversation memory is per (channel, user), rebuilt from `transcripts` (`sessions.history`).
 - Tools are declared in `orchestrator/tools/registry.yaml` and role-gated twice (list + execute).
   New n8n-backed features = n8n workflow + one yaml entry, no Python changes.

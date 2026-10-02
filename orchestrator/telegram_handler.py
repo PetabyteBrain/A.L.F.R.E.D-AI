@@ -256,6 +256,13 @@ async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if kind == "mtg":
         await _meeting_button(q, person, action, rid)
         return
+    if kind == "scr" and action == "block" and rid.isdigit():
+        from . import screening
+        note = screening.block_from_button(int(rid), person)
+        await q.answer(note)
+        if person.is_admin:
+            await _append_note(q, note)
+        return
     if kind == "task" and rid.isdigit() and action in ("done", "notyet"):
         try:
             if action == "done":

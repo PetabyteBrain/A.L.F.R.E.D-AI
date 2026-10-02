@@ -2,7 +2,9 @@
 
 Flow (inbound):
   Twilio POST /twilio/voice  -> caller ID resolved against the registry
-     unknown  -> <Reject reason="busy"/>  (never answered, nothing revealed, no cost)
+     unknown  -> call screening (screening.py): Alfred takes a message for the owner, or
+                 <Reject reason="busy"/> if screening is off / the number is withheld, blocked
+                 or over its daily limit (never answered, nothing revealed, no cost)
      known    -> <Connect><Stream wss://.../twilio/stream> with a one-time token
   Twilio WS /twilio/stream   -> mu-law frames -> STT; committed utterances -> Agent Core
                                 replies -> TTS -> mu-law frames back to Twilio
@@ -70,6 +72,7 @@ class PendingCall:
     amd: bool = False                     # Twilio answering-machine detection running (outbound)
     voicemail: dict | None = None         # who/why, to compose a message if a mailbox answers
     answered_by: str | None = None        # AMD verdict that arrived before the media stream did
+    screening: str | None = None          # caller's number: an unknown caller, Alfred takes a message
 
 
 # Twilio AnsweredBy values (async AMD with DetectMessageEnd): human | machine_end_beep |
@@ -156,8 +159,17 @@ async def inbound_voice(request: Request) -> Response:
     caller = form.get("From", "")
     person = registry.resolve("call", "phone", caller)
     if person is None:
-        log.info("Rejected call from unregistered number %s", caller)
-        return _twiml('<Reject reason="busy"/>')
+        from . import screening
+        boss = screening.accept(caller)
+        if boss is None:
+            log.info("Rejected call from unregistered number %s", caller)
+            return _twiml('<Reject reason="busy"/>')
+        sid = sessions.start_session(boss.id, "call", "screening", external_id=form.get("CallSid"))
+        number = screening.start(sid, caller)
+        p = PendingCall(sid, boss.id, secrets.token_urlsafe(24), screening.greeting(boss), screening=number)
+        _pending[sid] = p
+        log.info("Screening a call from unknown number %s", number)
+        return _stream_twiml(p)
     if not (settings.speech_enabled and settings.public_base_url):
         log.error("Call from %s but ElevenLabs/PUBLIC_BASE_URL not configured", person.display_name)
         return _twiml('<Reject reason="busy"/>')
@@ -405,6 +417,7 @@ class CallSession:
             self._amd_done.set()
         self._early_verdict = pending.answered_by
         self.left_voicemail = False
+        self.who = person.display_name             # for the log
 
     # lifecycle
     async def start(self) -> None:
@@ -433,7 +446,7 @@ class CallSession:
                 t.cancel()
         await self.stt.close()
         duration = self.recorder.close()
-        db.log_activity("call", f"Call with {self.person.display_name} ended ({duration:.0f}s)",
+        db.log_activity("call", f"Call with {self.who} ended ({duration:.0f}s)",
                         self.person.id, self.session_id)
         sessions.end_session(self.session_id, status=self.end_status)
         direction = (db.query_one("SELECT direction FROM sessions WHERE id = ?", (self.session_id,)) or {}).get(
@@ -629,6 +642,56 @@ class CallSession:
                 await self.ws.send_text(json.dumps(msg))
 
 
+class ScreeningCall(CallSession):
+    """An unknown caller: no Agent Core, no tools. Alfred only takes a message (screening.py),
+    hangs up after a goodbye, a few exchanges or MAX_SECONDS, then reports to the admins."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.caller = args[2].screening
+        self.who = f"unknown caller {self.caller}"
+        self.turns = 0
+        self._limit: asyncio.Task | None = None
+
+    async def start(self) -> None:
+        await super().start()
+        self._limit = asyncio.create_task(self._time_limit())
+
+    async def _time_limit(self) -> None:
+        from . import screening
+        await asyncio.sleep(screening.MAX_SECONDS)
+        if not self._closed and not self.hangup_requested:
+            self._say_last("I'm afraid I have to end the call here. I'll pass your message on. Goodbye.")
+
+    def _say_last(self, text: str) -> None:
+        sessions.add_turn(self.session_id, "assistant", text)
+        self.hangup_requested = True
+        self._speak(text)
+        asyncio.create_task(self._hangup_fallback())
+
+    async def _turn(self, text: str) -> None:
+        from . import screening
+        if self.hangup_requested:
+            return
+        self.turns += 1
+        sessions.add_turn(self.session_id, "user", text)
+        reply, done = await screening.next_line(self.session_id, self.person, self.turns)
+        if done or self.turns >= screening.MAX_TURNS:
+            self._say_last(reply)
+        else:
+            sessions.add_turn(self.session_id, "assistant", reply)
+            self._speak(reply)
+
+    async def close(self) -> None:
+        if self._closed:
+            return
+        if self._limit:
+            self._limit.cancel()
+        await super().close()
+        from . import screening
+        asyncio.create_task(screening.report(self.session_id, self.caller, self.person))
+
+
 @router.websocket("/twilio/stream")
 async def media_stream(ws: WebSocket) -> None:
     await ws.accept()
@@ -653,10 +716,11 @@ async def media_stream(ws: WebSocket) -> None:
                     await ws.close(code=1008)
                     return
                 _stream_connected.add(pending.session_id)
-                call = CallSession(ws, start["streamSid"], pending, person, get_provider())
+                cls = ScreeningCall if pending.screening else CallSession
+                call = cls(ws, start["streamSid"], pending, person, get_provider())
                 ACTIVE_CALLS[pending.session_id] = call
                 await call.start()
-                db.log_activity("call", f"Call connected with {person.display_name}", person.id, pending.session_id)
+                db.log_activity("call", f"Call connected with {call.who}", person.id, pending.session_id)
             elif event == "mark" and call is not None:
                 call.on_mark(msg.get("mark", {}).get("name", ""))
             elif event == "stop":

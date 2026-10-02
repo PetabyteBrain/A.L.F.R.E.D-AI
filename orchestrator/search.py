@@ -41,6 +41,25 @@ def _local(ts: str) -> str:
     return datetime.fromisoformat(ts).astimezone(ZoneInfo(settings.timezone)).strftime("%a %d %b %Y %H:%M")
 
 
+def matching_sessions(query: str, where: str = "", params: list | None = None, limit: int = 200) -> dict[str, str]:
+    """Archive search: {session_id: best snippet} for sessions whose transcript matches, best first.
+    `where` is extra SQL on `s` (sessions) / `t` (transcripts), starting with " AND"."""
+    def run(mode: str) -> list[dict]:
+        return db.query(
+            "SELECT t.session_id, snippet(transcripts_fts, 0, '«', '»', '…', 16) AS snippet "
+            "FROM transcripts_fts JOIN transcripts t ON t.id = transcripts_fts.rowid "
+            "JOIN sessions s ON s.id = t.session_id "
+            f"WHERE transcripts_fts MATCH ?{where} AND t.speaker IN ('user', 'assistant') "
+            "ORDER BY bm25(transcripts_fts) LIMIT 2000", (_fts_query(query, mode), *(params or [])))
+    out: dict[str, str] = {}
+    for r in run("AND") or run("OR"):
+        if r["session_id"] not in out:
+            out[r["session_id"]] = r["snippet"]
+            if len(out) >= limit:
+                break
+    return out
+
+
 def search(person: Person, query: str, *, about: Person | None = None, channel: str | None = None,
            days: int | None = None, limit: int = 8) -> list[dict]:
     if channel not in (None, "", "call", "telegram", "web"):

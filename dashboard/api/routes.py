@@ -6,8 +6,9 @@ recordings and activity.
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Literal
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request, Response
 from fastapi.responses import FileResponse
@@ -119,7 +120,8 @@ def _seconds_since(iso: str) -> int:
 
 def _own_session(person: Person, session_id: str) -> dict:
     row = db.query_one(
-        "SELECT s.*, u.display_name FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.id = ?", (session_id,)
+        "SELECT s.*, u.display_name, (SELECT c.caller FROM screened_calls c WHERE c.session_id = s.id) AS screened_caller "
+        "FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.id = ?", (session_id,)
     )
     if not row or (not person.is_admin and row["user_id"] != person.id):
         raise HTTPException(status_code=404)
@@ -158,28 +160,59 @@ async def list_sessions(
     user_id: int | None = Query(default=None, ge=1),
     channel: str | None = Query(default=None, pattern="^(call|telegram|web)$"),
     date: str | None = Query(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$"),
+    date_from: str | None = Query(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$"),
+    date_to: str | None = Query(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$"),
+    q: str | None = Query(default=None, max_length=200),
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0, le=100_000),
 ) -> list[dict]:
+    """Archive list. Filters: person, channel, a day or a date range (local dates), and `q`, a
+    full-text search over the transcripts (best matches first, each with a highlighted snippet)."""
     where, params = _scope(person)
+    if user_id is not None:
+        where += " AND s.user_id = ?"
+        params.append(user_id)
+    if channel:
+        where += " AND s.channel = ?"
+        params.append(channel)
+    if date:                                   # a day from the tree (grouped the same way)
+        where += " AND substr(s.started_at, 1, 10) = ?"
+        params.append(date)
+    tz = ZoneInfo(settings.timezone)
+    if date_from:
+        where += " AND s.started_at >= ?"
+        params.append(datetime.fromisoformat(date_from).replace(tzinfo=tz).astimezone(timezone.utc).isoformat())
+    if date_to:
+        where += " AND s.started_at < ?"
+        params.append((datetime.fromisoformat(date_to).replace(tzinfo=tz) + timedelta(days=1))
+                      .astimezone(timezone.utc).isoformat())
+    hits: dict[str, str] | None = None
+    if q and q.strip():
+        from orchestrator import search
+        try:
+            hits = search.matching_sessions(q, where, list(params), limit=offset + limit)
+        except search.SearchError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        if not hits:
+            return []
+        ids = list(hits)[offset:offset + limit]
+        where, params = f" AND s.id IN ({','.join('?' * len(ids))})", ids
+        limit, offset = len(ids), 0
     sql = ("SELECT s.id, s.user_id, s.channel, s.direction, s.started_at, s.ended_at, s.status, u.display_name, "
            "(SELECT COUNT(*) FROM transcripts t WHERE t.session_id = s.id) AS turns, "
            "(SELECT r.id FROM recordings r WHERE r.session_id = s.id AND r.deleted_at IS NULL LIMIT 1) AS recording_id, "
            "(SELECT r.duration FROM recordings r WHERE r.session_id = s.id LIMIT 1) AS duration, "
-           "(SELECT MAX(r.deleted_at) FROM recordings r WHERE r.session_id = s.id) AS audio_deleted_at "
+           "(SELECT MAX(r.deleted_at) FROM recordings r WHERE r.session_id = s.id) AS audio_deleted_at, "
+           "(SELECT c.caller FROM screened_calls c WHERE c.session_id = s.id) AS screened_caller "
            "FROM sessions s JOIN users u ON u.id = s.user_id WHERE 1=1" + where)
-    if user_id is not None:
-        sql += " AND s.user_id = ?"
-        params.append(user_id)
-    if channel:
-        sql += " AND s.channel = ?"
-        params.append(channel)
-    if date:
-        sql += " AND substr(s.started_at, 1, 10) = ?"
-        params.append(date)
     sql += " ORDER BY s.started_at DESC LIMIT ? OFFSET ?"
-    params += [limit, offset]
-    return db.query(sql, params)
+    rows = db.query(sql, params + [limit, offset])
+    if hits is not None:
+        rank = {sid: i for i, sid in enumerate(hits)}
+        rows.sort(key=lambda r: rank[r["id"]])
+        for r in rows:
+            r["match"] = hits[r["id"]]
+    return rows
 
 
 @router.get("/sessions/{session_id}")

@@ -763,3 +763,11 @@ main > .legal-links { margin-top: 8px; }
 .data-requests { margin-bottom: 18px; padding-bottom: 12px; border-bottom: 1px dashed var(--line); }
 .my-data .btn { margin: 6px 8px 6px 0; }
 .my-data .notice-box { margin-top: 10px; padding: 10px; border: 1px dashed var(--line); }
+
+/* Archive filters + audit export */
+.archive-filters { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 14px; }
+.archive-filters input[type="search"] { flex: 1 1 220px; min-width: 0; }
+.archive-filters .date-range { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
+.snippet { margin-top: 4px; font-size: 12px; color: var(--muted); }
+.snippet mark { background: rgb(var(--ok-rgb) / .25); color: inherit; padding: 0 2px; }
+.export-bar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }

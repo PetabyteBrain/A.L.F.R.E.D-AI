@@ -82,6 +82,8 @@ class Settings:
     ops_key_path: str = field(default_factory=lambda: _env("OPS_KEY_PATH", "/run/secrets/alfred_ops"))
     ops_known_hosts: str = field(default_factory=lambda: _env("OPS_KNOWN_HOSTS", "/run/secrets/ops_known_hosts"))
     voicemail_detection: bool = field(default_factory=lambda: _bool("VOICEMAIL_DETECTION", True))
+    # Unknown numbers: Alfred answers and takes a message for the admins (screening.py). Off = busy.
+    call_screening: bool = field(default_factory=lambda: _bool("CALL_SCREENING", True))
     web_search_enabled: bool = field(default_factory=lambda: _bool("WEB_SEARCH_ENABLED", True))
     price_tts_per_1k_chars: float = field(default_factory=lambda: float(_env("PRICE_ELEVENLABS_TTS_PER_1K_CHARS", "0")))
     price_stt_per_hour: float = field(default_factory=lambda: float(_env("PRICE_ELEVENLABS_STT_PER_HOUR", "0")))

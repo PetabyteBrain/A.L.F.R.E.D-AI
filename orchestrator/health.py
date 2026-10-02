@@ -90,7 +90,8 @@ def _housekeeping() -> None:
     prune_sessions()
     # Blocked-access spam must not grow the DB forever.
     db.execute("DELETE FROM access_attempts WHERE ts < strftime('%Y-%m-%dT%H:%M:%S', 'now', '-90 days')")
-    db.execute("DELETE FROM activity WHERE kind = 'access' AND ts < strftime('%Y-%m-%dT%H:%M:%S', 'now', '-90 days')")
+    # Sign-in and security events are the audit trail (exportable on the Log tab): kept a year.
+    db.execute("DELETE FROM activity WHERE kind = 'access' AND ts < strftime('%Y-%m-%dT%H:%M:%S', 'now', '-365 days')")
 
 
 async def background_loop() -> None:

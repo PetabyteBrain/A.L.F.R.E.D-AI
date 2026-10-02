@@ -269,6 +269,14 @@ CREATE TABLE IF NOT EXISTS voice_mode (       -- Telegram replies also as voice 
     until      TEXT,                          -- UTC ISO; NULL = until switched off
     updated_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS screened_calls (    -- unknown callers Alfred took a message from (screening.py)
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts         TEXT NOT NULL,
+    caller     TEXT NOT NULL,
+    session_id TEXT,
+    summary    TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_screened_caller ON screened_calls(caller, ts);
 CREATE TABLE IF NOT EXISTS data_requests (    -- "delete my data" (privacy.py); an admin confirms
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,

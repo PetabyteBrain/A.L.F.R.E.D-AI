@@ -171,8 +171,9 @@ async def erase(user_id: int, scope: str, *, by: Person) -> dict:
         except Exception:
             log.warning("Google disconnect during erasure failed; removing the link locally", exc_info=True)
 
-    idents = [r["value"] for r in db.query("SELECT value FROM user_identifiers WHERE user_id = ? AND type != 'dashboard'",
-                                           (user_id,))]
+    idents = []
+    for r in db.query("SELECT type, value FROM user_identifiers WHERE user_id = ? AND type != 'dashboard'", (user_id,)):
+        idents += [r["value"], f"{r['type']}:{r['value']}"]     # access_attempts stores "type:value"
     sids = [r["id"] for r in db.query("SELECT id FROM sessions WHERE user_id = ?", (user_id,))]
     n = {"conversations": len(sids)}
     with db.tx() as conn:
