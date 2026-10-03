@@ -363,17 +363,25 @@ async def place_call(ctx, person: str, purpose: str = "", opening_line: str = ""
 
 
 @handler
-async def call_external(ctx, number: str, contact: str, task: str, share: str = "", when: str = "",
-                        confirmed: bool = False) -> dict:
+async def call_external(ctx, number: str, contact: str, task: str, share: str = "", when: str = "") -> dict:
     from .. import external_calls
     try:
-        row = await external_calls.request(ctx.person, ctx.session_id, number=number, contact=contact, task=task,
-                                           share=share, when=when or None, confirmed=confirmed)
+        return await external_calls.request(ctx.person, ctx.session_id, number=number, contact=contact, task=task,
+                                            share=share, when=when or None)
     except external_calls.ExternalCallError as e:
         return {"error": str(e)}
-    if row.get("needs_confirmation"):
+
+
+@handler
+async def confirm_external_call(ctx) -> dict:
+    from .. import external_calls
+    try:
+        row = await external_calls.confirm(ctx.person, ctx.session_id)
+    except external_calls.ExternalCallError as e:
+        return {"error": str(e)}
+    if not row.get("id"):
         return row
-    return {"call_id": row["id"], "status": row["status"], "calling": row["contact"], "at_local_time": row["run_at_local"],
+    return {"dialled": row["status"] != "pending", "call_id": row["id"], "status": row["status"], "calling": row["contact"], "at_local_time": row["run_at_local"],
             "task_id": row["task_id"], "note": "The outcome will be reported back when the call ends."}
 
 

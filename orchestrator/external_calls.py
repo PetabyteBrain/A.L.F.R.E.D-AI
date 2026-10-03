@@ -2,8 +2,9 @@
 
 Only admins and cofounders can ask, and only for a concrete task ("book a table for 4 on Friday
 at 19:00"), never an open-ended chat. Every request:
-- needs an explicit yes from the requester in a later message (enforced: the tool only dials on a
-  second call after a new user turn, with the values from the first one);
+- needs an explicit yes from the requester in a later message (enforced: call_external only prepares
+  and reads back; confirm_external_call dials, and only after a new message from the person, with
+  exactly the prepared values);
 - becomes a task on the requester's list, which the call's outcome completes (or annotates);
 - may only go to a valid number in EXTERNAL_CALL_PREFIXES (default +41, +423), not to premium or
   special numbers, not to registered people (use place_call) and not to blocked numbers;
@@ -110,7 +111,8 @@ def _last_user_turn(session_id: str | None) -> int:
 # --- request ---------------------------------------------------------------------------------
 
 async def request(person: Person, session_id: str | None, *, number: str, contact: str, task: str,
-                  share: str = "", when: str | None = None, confirmed: bool = False) -> dict:
+                  share: str = "", when: str | None = None) -> dict:
+    """Step 1: check everything and prepare the call; nothing is dialled. Returns the read-back."""
     if person.role not in ROLES:
         raise ExternalCallError("Only admins and cofounders can have me call numbers outside the registry.")
     if not settings.external_calls:
@@ -132,27 +134,30 @@ async def request(person: Person, session_id: str | None, *, number: str, contac
     except ScheduleError as e:
         raise ExternalCallError(str(e))
 
-    key = (person.id, number)
-    pending = _pending.get(key)
-    if pending and time.monotonic() - pending["at"] > CONFIRM_TTL_S:
-        _pending.pop(key, None)
-        pending = None
-    if not confirmed or not pending:
-        _pending[key] = {"at": time.monotonic(), "user_turn": _last_user_turn(session_id), "contact": contact,
-                         "task": task, "share": share, "run_at": run_at}
-        return {"needs_confirmation": True,
-                "ask": (f"Call {contact} at {number} {'now' if run_at <= _now() + timedelta(minutes=1) else 'on ' + _local(run_at)}"
-                        f" to: {task}. I'd say I'm an AI assistant calling on your behalf"
-                        + (f" and may share: {share}" if share else " and share nothing beyond your name")
-                        + ". No costs or commitments without you. Shall I?"),
-                "note": "Nothing has been dialled. Read `ask` back and stop. When the person says yes in their "
-                        "next message, call call_external again with the same arguments AND confirmed=true "
-                        "(without confirmed=true it only asks again). If they change something, call without "
-                        "confirmed to get a new read-back."}
+    # One prepared call per person; a new request replaces it.
+    _pending[person.id] = {"at": time.monotonic(), "user_turn": _last_user_turn(session_id), "number": number,
+                           "contact": contact, "task": task, "share": share, "run_at": run_at}
+    when_txt = "now" if run_at <= _now() + timedelta(minutes=1) else "on " + _local(run_at)
+    return {"prepared": True, "dialled": False,
+            "ask": (f"Call {contact} at {number} {when_txt} to: {task}. I'd say I'm an AI assistant calling on your "
+                    "behalf" + (f" and may share: {share}" if share else " and share nothing beyond your name")
+                    + ". No costs or commitments without you. Shall I?"),
+            "next": "Read `ask` back and stop. If the person says yes, call confirm_external_call. If they change "
+                    "something, call call_external again with the new details."}
+
+
+async def confirm(person: Person, session_id: str | None) -> dict:
+    """Step 2: dial the prepared call, only after a new message from the person since step 1."""
+    pending = _pending.get(person.id)
+    if not pending or time.monotonic() - pending["at"] > CONFIRM_TTL_S:
+        _pending.pop(person.id, None)
+        raise ExternalCallError("There's no prepared call to confirm (or it's older than 15 minutes). "
+                                "Prepare it again with call_external.")
     if _last_user_turn(session_id) <= pending["user_turn"]:
-        return {"needs_confirmation": True, "note": "Wait for the person to confirm in their own reply first."}
-    _pending.pop(key, None)
-    contact, task, share, run_at = pending["contact"], pending["task"], pending["share"], pending["run_at"]
+        return {"dialled": False, "note": "The person hasn't answered yet: wait for their yes in their own message."}
+    _pending.pop(person.id, None)
+    number, contact, task, share, run_at = (pending[k] for k in ("number", "contact", "task", "share", "run_at"))
+    _limits(person, number)
 
     from . import tasks
     t = tasks.create(created_by=person, title=f"Call {contact}: {task}", notes=f"Outside call to {number} by "

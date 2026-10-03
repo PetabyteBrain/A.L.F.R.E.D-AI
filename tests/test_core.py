@@ -2740,15 +2740,20 @@ def test_outside_calls_are_task_driven_and_confirmed(monkeypatch):
     monkeypatch.setattr(call_handler, "_twilio_client", lambda: NS(calls=Calls()))
     args = {"number": "+41 31 000 01 00", "contact": "Restaurant Sonne",
             "task": "Book a table for 4 on Friday at 19:00 under the name Mustermann", "share": "the name Mustermann"}
+    confirm = lambda: asyncio.run(tools.execute("confirm_external_call", {}, ctx))
+    out, _ = confirm()
+    assert "no prepared call" in out                                     # nothing to confirm yet
     out, _ = run(args)
-    assert '"needs_confirmation": true' in out and "AI assistant" in out
-    out, _ = run({**args, "confirmed": True})
-    assert '"needs_confirmation": true' in out and not dialed            # no yes from the person yet
+    assert '"prepared": true' in out and '"dialled": false' in out and "AI assistant" in out and not dialed
+    out, _ = confirm()
+    assert '"dialled": false' in out and not dialed                      # no yes from the person yet
     sessions.add_turn(sid_chat, "user", "yes, go ahead")
-    out, _ = run({**args, "task": "something else entirely, swapped in", "confirmed": True})
-    assert dialed and dialed[0]["to"] == "+41310000100"
+    out, _ = confirm()
+    assert dialed and dialed[0]["to"] == "+41310000100", out
     row = db.query_one("SELECT * FROM external_calls ORDER BY id DESC LIMIT 1")
-    assert row["task"].startswith("Book a table") and row["status"] == "dialing"   # the confirmed values, not the swap
+    assert row["task"].startswith("Book a table") and row["status"] == "dialing"   # exactly the prepared values
+    out, _ = confirm()
+    assert "no prepared call" in out                                     # a yes dials once, not twice
     assert tasks.get(row["task_id"])["status"] == "active"
 
     # The call: fixed brief, no tools; the outcome completes the task and goes to the requester.

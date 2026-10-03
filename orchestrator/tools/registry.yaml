@@ -154,9 +154,9 @@ tools:
       Have Alfred phone a number OUTSIDE the registry (a business, an office, a supplier) to get one
       concrete task done, e.g. "call the restaurant at +41 31 000 01 00 and book a table for 4 on
       Friday at 19:00". Not for chats or anything without a clear task; not for registered people
-      (use place_call). Two steps: call it once (no confirmed) and read the returned `ask` back
-      word for word; only after the person says yes in their next message, call it again with the
-      same values and confirmed=true. Alfred introduces itself as an AI assistant calling on the
+      (use place_call). This only PREPARES the call and returns `ask`: read it back word for word
+      and stop; nothing is dialled. When the person says yes, call confirm_external_call. Alfred
+      introduces itself as an AI assistant calling on the
       requester's behalf, shares only `share`, agrees to no costs, and reports the outcome. Rings
       Mon-Sat 08:00-19:00 only (otherwise the next window). Creates a task the outcome completes.
     input_schema:
@@ -167,8 +167,16 @@ tools:
         task: {type: string, description: "The concrete goal of the call, with all details needed (dates, times, quantities)."}
         share: {type: string, description: "What Alfred may tell them to get it done (e.g. the requester's name and email for the booking). Empty = only the requester's name."}
         when: {type: string, description: "Optional ISO local time; default now (or the next calling window)."}
-        confirmed: {type: boolean, description: "true only on the second call, after the person said yes."}
       required: [number, contact, task]
+
+  - name: confirm_external_call
+    kind: builtin
+    handler: confirm_external_call
+    roles: [admin, cofounder]
+    description: >-
+      Dial the outside call prepared with call_external, after the person said yes to the read-back
+      ("yes", "go ahead", "do it"). Takes no arguments: it uses exactly the prepared details.
+    input_schema: {type: object, properties: {}}
 
   - name: list_external_calls
     kind: builtin
