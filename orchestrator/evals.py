@@ -21,7 +21,11 @@ import tempfile
 _TMP = tempfile.mkdtemp(prefix="alfred-evals-")
 os.environ.update({
     "DB_PATH": os.path.join(_TMP, "evals.db"), "STORAGE_ROOT": os.path.join(_TMP, "storage"),
-    "TELEGRAM_BOT_TOKEN": "", "TWILIO_ACCOUNT_SID": "", "TWILIO_AUTH_TOKEN": "", "N8N_BASE_URL": "",
+    # Placeholder telephony so the call tools are offered to the model; every tool call is
+    # intercepted below, so nothing can ever dial (and these values couldn't authenticate anyway).
+    "TWILIO_ACCOUNT_SID": "ACevals", "TWILIO_AUTH_TOKEN": "evals", "TWILIO_PHONE_NUMBER": "+41000000000",
+    "STT_TTS_PROVIDER": "jetson", "SPEECH_URL": "http://127.0.0.1:9", "PUBLIC_BASE_URL": "https://evals.invalid",
+    "TELEGRAM_BOT_TOKEN": "", "N8N_BASE_URL": "",
     "N8N_API_KEY": "", "GOOGLE_CLIENT_ID": "", "WEB_SEARCH_ENABLED": "false", "QUIET_HOURS": "off",
     "ADMIN_TELEGRAM_ID": "", "ADMIN_PHONE": "", "ADMIN_DISPLAY_NAME": "Sam Admin",
 })
