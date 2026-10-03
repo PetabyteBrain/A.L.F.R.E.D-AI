@@ -59,8 +59,10 @@ def _canned(name: str, args: dict) -> dict:
         return {"needs_confirmation": True,
                 "ask": f"Call {args.get('contact')} at {args.get('number')} now to: {args.get('task')}. I'd say I'm an "
                        "AI assistant calling on your behalf and share nothing beyond your name. Shall I?",
-                "note": "Read this back and wait for a clear yes in the person's next message; then call again "
-                        "with confirmed=true."}
+                "note": "Nothing has been dialled. Read `ask` back and stop. When the person says yes in their "
+                        "next message, call call_external again with the same arguments AND confirmed=true "
+                        "(without confirmed=true it only asks again). If they change something, call without "
+                        "confirmed to get a new read-back."}
     if name == "homelab_restart":
         return {"ok": True} if args.get("confirmed") else \
             {"needs_confirmation": True, "ask": f"Restart '{args.get('container')}' on {args.get('host')}?"}
@@ -72,6 +74,9 @@ def _canned(name: str, args: dict) -> dict:
                              "match": "I'll send the «invoice» by Friday", "context": []}]}
     if name == "set_reminder":
         return {"ok": True, "reminder_id": 5, "due_local": "Sat 03 Oct 2026 09:00", "channel": "telegram"}
+    if name == "list_people":                      # read-only: the real (throwaway) registry
+        return [{"name": r["display_name"], "role": r["role"]}
+                for r in db.query("SELECT display_name, role FROM users WHERE active = 1")]
     if name == "homelab_status":
         return {"hosts": [{"host": "host-b", "ok": True, "containers": [{"name": "n8n", "state": "running"}]}]}
     return {"ok": True}

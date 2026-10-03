@@ -145,8 +145,10 @@ async def request(person: Person, session_id: str | None, *, number: str, contac
                         f" to: {task}. I'd say I'm an AI assistant calling on your behalf"
                         + (f" and may share: {share}" if share else " and share nothing beyond your name")
                         + ". No costs or commitments without you. Shall I?"),
-                "note": "Read this back and wait for a clear yes in the person's next message; then call again "
-                        "with confirmed=true."}
+                "note": "Nothing has been dialled. Read `ask` back and stop. When the person says yes in their "
+                        "next message, call call_external again with the same arguments AND confirmed=true "
+                        "(without confirmed=true it only asks again). If they change something, call without "
+                        "confirmed to get a new read-back."}
     if _last_user_turn(session_id) <= pending["user_turn"]:
         return {"needs_confirmation": True, "note": "Wait for the person to confirm in their own reply first."}
     _pending.pop(key, None)
