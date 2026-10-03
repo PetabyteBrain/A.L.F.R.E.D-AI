@@ -94,6 +94,8 @@ the original spec is in `docs/archive/original-spec.md`. Keep the plan updated w
   (forced command) + `~/.config/alfred-ops/allow`. Never widen the key to a shell.
 
 ## Testing
+- Behaviour checks against the real model (costs cents): `python -m orchestrator.evals` (in the
+  container on the Pi, which has the API key). Add a case there when changing prompts or tool rules.
 - `.venv/Scripts/python -m pytest -q` — offline; includes a simulated Twilio call through the
   media-stream WebSocket with fake STT/TTS/agent.
 - `python -m tests.devserver` — built dashboard with demo data on :8765 (admin / devpassword123);

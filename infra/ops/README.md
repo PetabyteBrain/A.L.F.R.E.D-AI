@@ -26,7 +26,10 @@ ssh user@alfred-server 'ssh-keyscan -t ed25519 HOST_IP >> ~/.ssh/alfred_ops_know
 Then add it to `orchestrator/homelab.yaml` and deploy. Until the key is installed, Systems shows the
 host as "access not set up" (no alert).
 
-## Current allowlists (2026-10-01)
+## Current allowlists (2026-10-03)
 
 | Host | Restart/logs allowed for |
 |---|---|
+
+**Tailscale SSH:** if a host has Tailscale SSH switched on, its tailnet IP answers SSH itself (with a
+browser check) and ignores `authorized_keys`. Use the host's LAN IP for it in `homelab.yaml`.
