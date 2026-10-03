@@ -117,7 +117,7 @@ def _outside_confirms_first(calls, replies):
         return "turn 1: the reply doesn't ask for confirmation"
     task = " ".join(a.get("task", "") for n, a in first if n == "call_external")
     friday = _next_weekday(4)
-    if not re.search(rf"(?<!\d){friday.day}(?!\d)", task):
+    if not re.search(rf"(?<!\d)0?{friday.day}(?!\d)", task):     # "9" or "09"
         return f"turn 1: wrong date for 'this Friday' (it's the {friday.day}th): {task!r}"
     if "confirm_external_call" not in _names(calls[1]):
         return "turn 2: didn't place the call after the yes"

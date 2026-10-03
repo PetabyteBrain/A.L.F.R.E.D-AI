@@ -2814,3 +2814,53 @@ def test_outside_calls_are_task_driven_and_confirmed(monkeypatch):
     nxt = external_calls.next_window(sunday).astimezone(tz)
     assert (nxt.weekday(), nxt.hour) == (0, 8)
     assert external_calls.next_window(datetime(2026, 10, 5, 10, 0, tzinfo=tz)).astimezone(tz).hour == 10
+
+
+def test_watchdog_endpoint_and_alert_logic(monkeypatch, tmp_path):
+    import dataclasses, importlib.util, json
+    from fastapi.testclient import TestClient
+    from orchestrator import main
+    from orchestrator.config import settings
+
+    # Alfred side: 404 without the token configured or with a wrong one; flags only, no details.
+    with TestClient(main.app) as c:
+        assert c.get("/internal/watchdog").status_code == 404
+        monkeypatch.setattr(main, "settings", dataclasses.replace(settings, watchdog_token="s3cret-token"))
+        assert c.get("/internal/watchdog", headers={"X-Watchdog-Token": "wrong"}).status_code == 404
+        db.set_health("telegram", False, "secret detail")
+        db.set_health("claude", True, "ok")
+        r = c.get("/internal/watchdog", headers={"X-Watchdog-Token": "s3cret-token"})
+        assert r.status_code == 200
+        body = r.json()
+        assert body["components"]["telegram"] is False and body["components"]["claude"] is True
+        assert "secret detail" not in r.text and body["health_age_s"] < 60
+
+    # Watchdog side: alert after N runs in a row, remind later, report recovery.
+    path = Path(__file__).resolve().parent.parent / "infra" / "watchdog" / "alfred_watchdog.py"
+    spec = importlib.util.spec_from_file_location("alfred_watchdog", path)
+    wd = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(wd)
+    monkeypatch.setattr(wd, "STATE", tmp_path / "state.json")
+    monkeypatch.setattr(wd, "LOG", tmp_path / "log")
+    monkeypatch.setattr(wd, "config", lambda: {"ALFRED_URL": "http://x", "WATCHDOG_TOKEN": "t",
+                                               "TELEGRAM_BOT_TOKEN": "b", "TELEGRAM_CHAT_IDS": "1"})
+    sent, now = [], {"problems": {"alfred"}}
+    monkeypatch.setattr(wd, "send", lambda conf, text: sent.append(text))
+    monkeypatch.setattr(wd, "problems", lambda conf: set(now["problems"]))
+    wd.run()
+    assert sent == []                                   # one failed run: could be a blip
+    wd.run()
+    assert len(sent) == 1 and "isn't answering" in sent[0]
+    wd.run()
+    assert len(sent) == 1                               # no repeat within 6 hours
+    st = json.loads((tmp_path / "state.json").read_text())
+    st["alerted"]["alfred"] -= 7 * 3600
+    (tmp_path / "state.json").write_text(json.dumps(st))
+    wd.run()
+    assert len(sent) == 2 and "Still" in sent[1]
+    now["problems"] = {"jetson_speech"}
+    for _ in range(2):
+        wd.run()
+    assert "Back to normal" in sent[2] and len(sent) == 3   # jetson not yet: needs 3 runs
+    wd.run()
+    assert "Jetson speech server" in sent[3]

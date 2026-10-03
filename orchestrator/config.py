@@ -93,6 +93,9 @@ class Settings:
     price_tts_per_1k_chars: float = field(default_factory=lambda: float(_env("PRICE_ELEVENLABS_TTS_PER_1K_CHARS", "0")))
     price_stt_per_hour: float = field(default_factory=lambda: float(_env("PRICE_ELEVENLABS_STT_PER_HOUR", "0")))
 
+    # Shared secret for /internal/watchdog (the external watchdog on another Pi, infra/watchdog).
+    watchdog_token: str = field(default_factory=lambda: _env("WATCHDOG_TOKEN"))
+
     # --- Privacy / data ---
     # Call audio is deleted this many days after the call (transcripts stay until deleted). 0 = keep.
     recording_retention_days: int = field(default_factory=lambda: int(_env("RECORDING_RETENTION_DAYS", "90")))

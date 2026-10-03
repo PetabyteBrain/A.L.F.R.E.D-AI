@@ -11,7 +11,7 @@ import re
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, PlainTextResponse, Response
 from fastapi.staticfiles import StaticFiles
 
@@ -89,6 +89,28 @@ app.add_middleware(SecurityMiddleware)
 @app.get("/healthz", include_in_schema=False)
 async def healthz() -> dict:
     return {"ok": True}
+
+
+# Components the external watchdog (infra/watchdog, on another Pi) reports on when they fail.
+WATCHDOG_COMPONENTS = ("claude", "telegram", "twilio", "jetson_speech")
+
+
+@app.get("/internal/watchdog", include_in_schema=False)
+async def watchdog(request: Request) -> Response:
+    """For the external watchdog only: component up/down flags (no details) and how old the last
+    health check is (a stuck health loop means Alfred is hung). Needs WATCHDOG_TOKEN; 404 without."""
+    import hmac
+    import json as _json
+    from datetime import datetime, timezone
+    given = request.headers.get("x-watchdog-token", "")
+    if not settings.watchdog_token or not hmac.compare_digest(given.encode(), settings.watchdog_token.encode()):
+        return Response(status_code=404)
+    rows = {r["service"]: r for r in db.query("SELECT service, ok, checked_at FROM health")}
+    newest = max((r["checked_at"] for r in rows.values()), default=None)
+    age = (datetime.now(timezone.utc) - datetime.fromisoformat(newest)).total_seconds() if newest else None
+    body = {"ok": True, "health_age_s": round(age) if age is not None else None,
+            "components": {c: bool(rows[c]["ok"]) for c in WATCHDOG_COMPONENTS if c in rows}}
+    return Response(_json.dumps(body), media_type="application/json", headers={"Cache-Control": "no-store"})
 
 
 app.include_router(call_handler.router)
