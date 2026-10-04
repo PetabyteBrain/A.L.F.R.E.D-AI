@@ -104,6 +104,8 @@ async def check_all() -> None:
 def _housekeeping() -> None:
     from dashboard.api.security import prune_sessions
     prune_sessions()
+    from . import uploads
+    uploads.prune()                     # Telegram files nobody saved (1 h)
     # Blocked-access spam must not grow the DB forever.
     db.execute("DELETE FROM access_attempts WHERE ts < strftime('%Y-%m-%dT%H:%M:%S', 'now', '-90 days')")
     # Sign-in and security events are the audit trail (exportable on the Log tab): kept a year.

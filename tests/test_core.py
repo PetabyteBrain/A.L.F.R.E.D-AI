@@ -3097,3 +3097,83 @@ def test_backup_copy_to_nas(monkeypatch, tmp_path):
     assert not old.exists() and (root / "db" / snap.name).exists()
     backup_nas.report(True, detail)
     assert backup_nas.health_now()[0]
+
+
+
+def test_telegram_files_to_nas_and_receipts(monkeypatch, tmp_path):
+    import asyncio, dataclasses, json
+    from types import SimpleNamespace as NS
+    from orchestrator import agent_core, nas, telegram_handler as th, uploads
+    from orchestrator.config import settings
+    from orchestrator.tools import registry as tools
+    fake = _FakeSMB(tmp_path / "nas")
+    monkeypatch.setattr(nas, "settings", dataclasses.replace(settings, nas_host="nas", nas_user="u", nas_password="p",
+                                                             nas_share_company="Company", nas_share_personal="Alfred_Personal"))
+    monkeypatch.setattr(nas, "_smb", lambda: fake)
+    (tmp_path / "nas" / "Company" / "Clients" / "Acme").mkdir(parents=True)
+    (tmp_path / "nas" / "Company" / "Clients" / "Acme" / "offer.pdf").write_bytes(b"old offer")
+    admin = registry.lookup("telegram", "111")
+    friend = registry.lookup("telegram", "22222222")
+    seen = {}
+
+    async def fake_respond(person, channel, sid, text, *, attachments=None, **kw):
+        seen.update(text=text, attachments=attachments)
+        up = int(text.split("upload #")[1].split(",")[0])
+        out, err = await tools.execute("nas_save_upload", {"upload_id": up, "scope": "company", "folder": "Clients/Acme"},
+                                       tools.ToolContext(person, sid, channel))
+        seen["save"] = json.loads(out)
+        return "Saved."
+    monkeypatch.setattr(agent_core, "respond", fake_respond)
+    replies = []
+
+    class File:
+        async def download_as_bytearray(self):
+            return bytearray(b"%PDF new offer")
+
+    class Doc:
+        file_name, file_size = "offer.pdf", 14
+        async def get_file(self):
+            return File()
+
+    class Msg:
+        chat_id, text, voice, audio, video_note, photo = 111, None, None, None, None, None
+        caption, document = "save to Company Acme", Doc()
+        async def reply_text(self, t, **kw):
+            replies.append(t)
+
+    upd = NS(effective_message=Msg(), effective_user=NS(id=111, username="t"), effective_chat=NS(id=111, type="private"))
+    asyncio.run(th.on_message(upd, None))
+    assert "upload #" in seen["text"] and "offer.pdf" in seen["text"] and "save to Company Acme" in seen["text"]
+    assert seen["save"]["saved"] == "Clients/Acme/offer (2).pdf"                  # never overwrites
+    assert (tmp_path / "nas" / "Company" / "Clients" / "Acme" / "offer.pdf").read_bytes() == b"old offer"
+    assert (tmp_path / "nas" / "Company" / "Clients" / "Acme" / "offer (2).pdf").read_bytes() == b"%PDF new offer"
+    assert not list(uploads._dir().glob("*offer*"))                                # inbox emptied
+
+    # Photos go to the model as images; receipts are filed + logged in a CSV.
+    up = uploads.add(admin, "photo.jpg", b"\xff\xd8fakejpeg")
+    blocks, _ = uploads.model_attachments(up)
+    assert blocks[0]["type"] == "image" and blocks[0]["source"]["media_type"] == "image/jpeg"
+    ctx = tools.ToolContext(admin, None, "telegram")
+    out, err = asyncio.run(tools.execute("log_receipt", {"scope": "personal", "date": "2026-10-04", "shop": "Migros",
+                                                         "amount": 23.5, "category": "food", "upload_id": up.id}, ctx))
+    r = json.loads(out)
+    assert r["logged"] == "2026-10-04 · Migros · 23.50 CHF" and r["file"].startswith("Receipts/2026/2026-10-04 Migros 23.50")
+    folder = tmp_path / "nas" / "Alfred_Personal" / nas.personal_folder(admin) / "Receipts"
+    asyncio.run(tools.execute("log_receipt", {"scope": "personal", "date": "2026-10-05", "shop": "SBB", "amount": 12}, ctx))
+    lines = (folder / "receipts-2026.csv").read_text(encoding="utf-8-sig").splitlines()
+    assert lines[0].startswith("date;shop;amount") and lines[1].startswith("2026-10-04;Migros;23.50;CHF;food")
+    assert lines[2].startswith("2026-10-05;SBB;12.00;CHF") and len(lines) == 3
+    # Someone else's upload can't be used, friends can't file into Company, bad types are refused.
+    up2 = uploads.add(admin, "x.pdf", b"%PDF")
+    out, _ = asyncio.run(tools.execute("nas_save_upload", {"upload_id": up2.id, "scope": "personal", "folder": "Docs"},
+                                       tools.ToolContext(friend, None, "telegram")))
+    assert "don't have that file" in out
+    up3 = uploads.add(friend, "y.pdf", b"%PDF")
+    out, _ = asyncio.run(tools.execute("nas_save_upload", {"upload_id": up3.id, "scope": "company", "folder": "Docs"},
+                                       tools.ToolContext(friend, None, "telegram")))
+    assert "not available" in out or "only for admins" in out
+    try:
+        uploads.add(admin, "evil.exe", b"MZ")
+        raise AssertionError("accepted an .exe")
+    except uploads.UploadError:
+        pass

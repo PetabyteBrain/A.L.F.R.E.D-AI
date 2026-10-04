@@ -235,6 +235,28 @@ async def nas_files(ctx, action: str, scope: str, path: str = "", query: str = "
 
 
 @handler
+async def nas_save_upload(ctx, upload_id: int, scope: str, folder: str, filename: str = "") -> dict:
+    import asyncio
+    from .. import nas, uploads
+    try:
+        return await asyncio.to_thread(uploads.save, ctx.person, upload_id, scope, folder, filename)
+    except (nas.NasError, uploads.UploadError) as e:
+        return {"error": str(e)}
+
+
+@handler
+async def log_receipt(ctx, scope: str, date: str, shop: str, amount: float, currency: str = "CHF", category: str = "",
+                      note: str = "", upload_id: int | None = None) -> dict:
+    import asyncio
+    from .. import nas, uploads
+    try:
+        return await asyncio.to_thread(uploads.log_receipt, ctx.person, scope, date, shop, amount, currency, category,
+                                       note, upload_id)
+    except (nas.NasError, uploads.UploadError) as e:
+        return {"error": str(e)}
+
+
+@handler
 async def company_todo(ctx, action: str, description: str = "", todo: str = "", importance: int | None = None,
                       section: str = "current", status: str | None = None, to: str = "") -> dict:
     import asyncio

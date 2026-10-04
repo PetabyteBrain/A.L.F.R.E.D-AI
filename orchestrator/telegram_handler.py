@@ -108,7 +108,13 @@ async def on_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     session_id = sessions.telegram_session_for(person.id, str(chat.id))
     voice = msg.voice or msg.audio or msg.video_note
     extra = None
-    if voice:
+    attachments: list[dict] = []
+    if msg.document or msg.photo:                  # a file to keep on the NAS (uploads.py)
+        got = await _receive_file(msg, person)
+        if got is None:
+            return
+        text, attachments = got
+    elif voice:
         text = await _transcribe(msg, voice, person, session_id)
         if text is None:
             return
@@ -125,7 +131,7 @@ async def on_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     typing = asyncio.create_task(_keep_typing(chat.id, stop))
     try:
         reply = await agent_core.respond(person, "telegram", session_id, f"{VOICE_PREFIX}{text}" if voice else text,
-                                         extra_system=extra)
+                                         extra_system=extra, attachments=attachments or None)
     except Exception:
         log.exception("Agent failure for Telegram message")
         reply = "Something broke on my side. It's been logged."
@@ -139,6 +145,35 @@ async def on_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         if await _reply_with_voice(msg, reply, person, session_id):
             return
     await _reply_md(msg, reply)
+
+
+async def _receive_file(msg, person) -> tuple[str, list[dict]] | None:
+    """Download a document/photo into the upload inbox; returns (text for the model, image blocks)."""
+    from datetime import datetime
+    from . import nas, uploads
+    if not nas.enabled():
+        await msg.reply_text("I can't keep files yet: the NAS isn't connected.")
+        return None
+    if msg.document:
+        f, name, size = msg.document, msg.document.file_name or "file", msg.document.file_size or 0
+    else:
+        f = msg.photo[-1]                          # the largest size Telegram offers
+        name, size = f"photo {datetime.now().strftime('%Y-%m-%d %H%M')}.jpg", f.file_size or 0
+    if size > uploads.MAX_BYTES:
+        await msg.reply_text("That file is too big for me (max 20 MB).")
+        return None
+    try:
+        data = bytes(await (await f.get_file()).download_as_bytearray())
+        up = uploads.add(person, name, data)
+    except uploads.UploadError as e:
+        await msg.reply_text(str(e))
+        return None
+    except Exception:
+        log.exception("Telegram file download failed")
+        await msg.reply_text("I couldn't download that file just now. Please try again.")
+        return None
+    blocks, extracted = uploads.model_attachments(up)
+    return uploads.describe(up, (msg.caption or "").strip()) + extracted, blocks
 
 
 # --- voice notes ---------------------------------------------------------------------------------

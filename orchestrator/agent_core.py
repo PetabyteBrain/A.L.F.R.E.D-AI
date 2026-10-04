@@ -133,6 +133,10 @@ Tools:
   Save notes as tidy Markdown in sensible folders, append rather than duplicate, and use
   company_todo for the Company to-do list. Answer questions from documents with nas_files (search,
   then read) and name the file. Never reveal one person's personal notes to someone else.
+- Files sent on Telegram arrive as "upload #N": save them with nas_save_upload where the person
+  says (ask "your files or Company, and which folder?" if unclear; Company only for admins/cofounders).
+  For receipts read date, shop, total and currency from the image and use log_receipt (it also
+  files the image); confirm what you logged. Never invent values you can't read.
 - Calendar tools act only on the current person's own Google Calendar. Check existing events
   before proposing times; confirm before deleting.
 - If a tool fails, say so plainly and suggest a next step. Don't retry the same failing
@@ -185,6 +189,7 @@ async def respond(
     extra_system: str | None = None,
     record_user_turn: bool = True,
     on_event: OnEvent | None = None,
+    attachments: list[dict] | None = None,
 ) -> str:
     """Run one exchange: history + new message -> (tools)* -> reply text. Persists both turns.
 
@@ -195,7 +200,7 @@ async def respond(
         if live:
             live.busy = True
         try:
-            reply = await _run(person, channel, session_id, user_text, extra_system, on_event)
+            reply = await _run(person, channel, session_id, user_text, extra_system, on_event, attachments)
         finally:
             if live:
                 live.busy = False
@@ -219,11 +224,13 @@ async def _call_model(kwargs: dict, on_event: OnEvent | None):
 
 
 async def _run(person: Person, channel: str, session_id: str, user_text: str, extra_system: str | None,
-               on_event: OnEvent | None = None) -> str:
+               on_event: OnEvent | None = None, attachments: list[dict] | None = None) -> str:
     if not settings.anthropic_api_key:
         return "My language model isn't configured yet (ANTHROPIC_API_KEY is empty)."
 
     messages = _merge_user(sessions.history(person.id, channel), user_text)
+    if attachments:                    # e.g. a photo sent on Telegram: shown to the model for this turn only
+        messages[-1] = {"role": "user", "content": [*attachments, {"type": "text", "text": messages[-1]["content"]}]}
     tools = tool_registry.tools_for(person.role, channel, person.id)
     system = [
         {"type": "text", "text": STATIC_SYSTEM, "cache_control": {"type": "ephemeral"}},

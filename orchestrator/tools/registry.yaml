@@ -580,6 +580,47 @@ tools:
         query: {type: string}
       required: [action, scope]
 
+  - name: nas_save_upload
+    kind: builtin
+    handler: nas_save_upload
+    roles: ["*"]
+    requires: nas
+    description: >-
+      Save a file the person sent on Telegram ("upload #N") to the NAS. scope personal (their own
+      folder) or company (admins/cofounders); `folder` inside it, e.g. "Clients/Acme" or "Documents";
+      optional `filename` (keep the extension). Never overwrites: an existing name gets " (2)".
+    input_schema:
+      type: object
+      properties:
+        upload_id: {type: integer}
+        scope: {type: string, enum: [personal, company]}
+        folder: {type: string}
+        filename: {type: string}
+      required: [upload_id, scope, folder]
+
+  - name: log_receipt
+    kind: builtin
+    handler: log_receipt
+    roles: ["*"]
+    requires: nas
+    description: >-
+      Log a receipt: appends date, shop, amount, currency, category and note to
+      Receipts/receipts-<year>.csv in the scope (opens in Excel) and, with upload_id, files the
+      receipt photo/PDF under Receipts/<year>/. Read the values from the receipt image; ask if
+      something is unreadable. scope company for company expenses (admins/cofounders), else personal.
+    input_schema:
+      type: object
+      properties:
+        scope: {type: string, enum: [personal, company]}
+        date: {type: string, description: YYYY-MM-DD}
+        shop: {type: string}
+        amount: {type: number, description: Total paid}
+        currency: {type: string, description: "ISO code, default CHF"}
+        category: {type: string, description: "e.g. food, travel, office, software"}
+        note: {type: string}
+        upload_id: {type: integer}
+      required: [scope, date, shop, amount]
+
   - name: company_todo
     kind: builtin
     handler: company_todo
