@@ -31,7 +31,9 @@ the original spec is in `docs/archive/original-spec.md`. Keep the plan updated w
   Gate telephony on `settings.speech_enabled`, never on `elevenlabs_enabled`.
   Voice: Kokoro `bm_george` for now; another voice may come later (roadmap #24): change
   `KOKORO_VOICE` in the Jetson's `~/alfred-speech/.env` and `docker compose up -d`.
-- `STORAGE_ROOT` is the only thing to change for the NAS migration.
+- NAS (TrueNAS, SMB from inside the container): `orchestrator/nas.py` (scopes personal/company, notes,
+  lists, files) and `orchestrator/company_todo.py` (cell-level xlsx edits + backups; never save the
+  workbook with openpyxl). Recordings still use local `STORAGE_ROOT`.
 - Model: `claude-haiku-4-5` (user's choice) via the official `anthropic` SDK (1.x, async client).
   Haiku 4.5 does not take adaptive thinking/effort; don't add them.
 - Keep the static system prompt in `agent_core.STATIC_SYSTEM` byte-stable (prompt caching); put
@@ -89,7 +91,8 @@ the original spec is in `docs/archive/original-spec.md`. Keep the plan updated w
 - Monthly restore test: `infra/restore-drill.sh` (Pi crontab, 1st 04:30) -> `orchestrator/restore_drill.py`
   in a throwaway container. Recording retention: `orchestrator/retention.py` (+ Jetson crontab).
 - Budgets: `orchestrator/budgets.py` (warnings to admins only). Data export/deletion:
-  `orchestrator/privacy.py`; a new table holding personal data must be added to `collect` and `erase`.
+  `orchestrator/privacy.py`; a new table holding personal data must be added to `collect` and `erase`
+  (the personal NAS folder is already included).
 - Homelab: hosts in `orchestrator/homelab.yaml`; per-host access via `infra/ops/alfred-ops`
   (forced command) + `~/.config/alfred-ops/allow`. Never widen the key to a shell.
 
