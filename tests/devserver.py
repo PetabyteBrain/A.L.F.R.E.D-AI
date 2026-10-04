@@ -13,6 +13,11 @@ os.environ.setdefault("DASHBOARD_SESSION_SECRET", "dev-only-secret")
 os.environ.setdefault("TOKEN_ENCRYPTION_KEY", "c9AdNPyDtMmOD7TdD6eFq1tXZNs4myIKk1ZlyADgXdE=")  # dev-only key (2FA secrets, Google tokens)
 os.environ.setdefault("ADMIN_DISPLAY_NAME", "Erika Mustermann")
 os.environ.setdefault("ADMIN_TELEGRAM_ID", "100000001")
+# A fake, local NAS (data-dev/nas) so the Notes tab works without touching the real one.
+os.environ.setdefault("NAS_HOST", "dev-nas")
+os.environ.setdefault("NAS_USER", "dev")
+os.environ.setdefault("NAS_PASSWORD", "dev")
+os.environ.setdefault("NAS_COMPANY_TODO", "To-Do.xlsx")
 
 import uvicorn  # noqa: E402
 
@@ -169,8 +174,22 @@ def fake_claude() -> None:
     agent_core._client = NS(messages=Messages(), models=Models())
 
 
+def fake_nas() -> None:
+    from orchestrator import nas, company_todo
+    from tests.fake_nas import FakeSMB, todo_workbook
+    base = root / "nas"
+    for share in ("Company", "Alfred_Personal"):
+        (base / share).mkdir(parents=True, exist_ok=True)
+    if not (base / "Company" / "To-Do.xlsx").exists():
+        todo_workbook(base / "Company" / "To-Do.xlsx")
+    fake = FakeSMB(base)
+    nas._smb = lambda: fake
+    company_todo._smb = lambda: fake
+
+
 if __name__ == "__main__":
     seed()
+    fake_nas()
     fake_claude()
     seed_live_call()
     uvicorn.run("orchestrator.main:app", host="127.0.0.1", port=8765)

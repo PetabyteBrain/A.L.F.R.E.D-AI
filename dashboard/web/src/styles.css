@@ -771,3 +771,22 @@ main > .legal-links { margin-top: 8px; }
 .snippet { margin-top: 4px; font-size: 12px; color: var(--muted); }
 .snippet mark { background: rgb(var(--ok-rgb) / .25); color: inherit; padding: 0 2px; }
 .export-bar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+
+/* Notes & lists (NAS) */
+.notes-grid { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 24px; }
+@media (max-width: 900px) { .notes-grid { grid-template-columns: minmax(0, 1fr); } }
+.note-tree .day { width: 100%; }
+.note-folder { font: 600 10px var(--font-display); letter-spacing: .2em; text-transform: uppercase; color: var(--muted); margin: 12px 0 4px; }
+.note-view { margin-top: 14px; padding: 14px; }
+.note-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
+.note-body { margin-top: 10px; overflow-wrap: anywhere; }
+.note-editor { width: 100%; min-height: 320px; margin-top: 10px; font: 400 13px var(--font-mono); resize: vertical; }
+.note-editor.small { min-height: 120px; }
+.new-note { margin-bottom: 12px; }
+.list-grid { display: grid; gap: 12px; margin-bottom: 12px; }
+.list-card { padding: 12px; }
+.list-card .toggle { display: flex; gap: 8px; align-items: center; margin: 4px 0; }
+.list-card .toggle.done span { text-decoration: line-through; color: var(--muted); }
+.list-card .field-row input, .company-todo .field-row input { flex: 1 1 160px; min-width: 0; }
+.company-todo { margin-top: 24px; }
+.company-todo table select { max-width: 140px; }

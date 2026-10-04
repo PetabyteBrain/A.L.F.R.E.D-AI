@@ -37,6 +37,7 @@ MAX_READ_CHARS = 20_000
 MAX_READ_BYTES = 15_000_000
 MAX_WRITE_CHARS = 50_000
 SEARCH_MAX_FILES = 400
+_FOOTER = re.compile(r"\n*---\n_Last updated [^\n]*_\s*$")
 _session_lock = threading.Lock()
 _session_ready = False
 
@@ -339,7 +340,8 @@ def save_note(person: Person, scope: str, title: str, content: str, folder: str 
             text = _read_text(smb, full).rstrip() + f"\n\n## {stamp} ({person.display_name.split()[0]})\n\n{content}\n"
         else:
             name = rel.rsplit("\\", 1)[-1][:-3]
-            text = content if content.lstrip().startswith("# ") else f"# {name}\n\n{content}"
+            body = _FOOTER.sub("", content)              # an edited note: don't stack "Last updated" lines
+            text = body if body.lstrip().startswith("# ") else f"# {name}\n\n{body}"
             text = text.rstrip() + f"\n\n---\n_Last updated {stamp} by {person.display_name} via {settings.assistant_name}_\n"
         _write_text(smb, full, text)
         return exists
@@ -441,7 +443,7 @@ def _match(items: list[dict], text: str) -> int:
 
 
 def list_op(person: Person, scope: str, name: str, op: str, items: list[str] | None = None) -> dict:
-    """op: show | add | check | uncheck | remove | clear_done."""
+    """op: show | create | add | check | uncheck | remove | clear_done."""
     smb = _smb()
     _ensure_root(person, scope)
     rel = _list_path(name)
@@ -455,8 +457,14 @@ def list_op(person: Person, scope: str, name: str, op: str, items: list[str] | N
             if cur is None:
                 raise NasError(f"There's no list called '{title}'.")
             return cur
+        if op == "create":
+            if cur is not None:
+                raise NasError(f"A list called '{title}' already exists.")
+            cur = []
         cur = cur or []
-        if op == "add":
+        if op == "create":
+            pass
+        elif op == "add":
             if not items:
                 raise NasError("What should I add?")
             have = {i["text"].lower() for i in cur}
