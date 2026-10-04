@@ -102,6 +102,8 @@ class Settings:
     nas_password: str = field(default_factory=lambda: _env("NAS_PASSWORD"))
     nas_share_company: str = field(default_factory=lambda: _env("NAS_SHARE_COMPANY", "Company"))
     nas_share_personal: str = field(default_factory=lambda: _env("NAS_SHARE_PERSONAL", "Alfred_Personal"))
+    # Folder for Alfred's own backup copy, inside the personal share (hidden: not reachable by the tools)
+    nas_backup_path: str = field(default_factory=lambda: _env("NAS_BACKUP_PATH", ".alfred-backups"))
     nas_company_todo: str = field(default_factory=lambda: _env(
         "NAS_COMPANY_TODO", "Admin/To-Do.xlsx"))
 

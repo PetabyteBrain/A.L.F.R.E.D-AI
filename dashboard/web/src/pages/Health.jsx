@@ -16,7 +16,8 @@ const ALFRED = {
   elevenlabs_tts: "ElevenLabs voice",
   google: "Google Calendar",
   n8n: "Automations (n8n)",
-  backup: "Backups",
+  backup: "Backups · Jetson",
+  backup_nas: "Backups · NAS",
   restore_drill: "Restore test (monthly)",
   nas: "NAS (files, notes, lists)",
 };

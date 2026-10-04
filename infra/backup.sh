@@ -4,6 +4,7 @@
 #   2. snapshot + recordings + .env -> Jetson NVMe over SSH (dedicated key, rrsync -no-del:
 #      this key can only write into the backup folder and can never delete there)
 #   3. result reported to Alfred (Systems page; Telegram alert on failure)
+#   4. the same snapshot + recordings + .env -> NAS (orchestrator/backup_nas.py, health row backup_nas)
 set -uo pipefail
 
 cd "$(dirname "$0")/.." || exit 1
@@ -26,4 +27,8 @@ rsync -a --chmod=F600 -e "$SSH" .env "$TARGET:config/" </dev/null || fail "copy 
 SIZE=$(du -h "data/backups/nightly/$NAME" | cut -f1)
 FILES=$(find data/storage -type f | wc -l)
 report ok "db $SIZE + $FILES recording files -> Jetson"
+
+# 4. second copy on the NAS (separate health row; a failure here doesn't hide the Jetson result)
+NAS=$(docker compose exec -T alfred python -m orchestrator.backup_nas copy "$NAME" < .env | tail -1)
+echo "$(date -Is) NAS copy: $NAS"
 echo "$(date -Is) backup done: $NAME ($SIZE), $FILES storage files"

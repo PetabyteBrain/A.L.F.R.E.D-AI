@@ -52,6 +52,13 @@ async def _restore_drill() -> tuple[bool, str]:
     return backup.drill_health()
 
 
+async def _backup_nas() -> tuple[bool, str]:
+    from . import backup_nas, nas
+    if not nas.enabled():
+        return False, "NAS not configured"
+    return backup_nas.health_now()
+
+
 async def _nas() -> tuple[bool, str]:
     from . import nas
     if not nas.enabled():
@@ -77,6 +84,7 @@ PROBES = {
     "elevenlabs": _elevenlabs,
     "jetson_speech": _jetson_speech,
     "backup": _backup,
+    "backup_nas": _backup_nas,
     "restore_drill": _restore_drill,
     "nas": _nas,
     "n8n": _n8n,

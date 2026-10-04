@@ -34,6 +34,15 @@ scp user@100.64.0.6:/ssd/backups/alfred/db/alfred-<newest>.db ~/alfred/data/alfr
 cd ~/alfred && docker compose up -d --build
 ```
 
+## Second copy on the NAS
+
+Right after the Jetson copy, `backup.sh` sends the same snapshot, the recordings (only new or
+changed files) and `.env` to the NAS: `Alfred_Personal/.alfred-backups/{db,storage,config}`
+(`orchestrator/backup_nas.py`, `NAS_BACKUP_PATH`). DB copies are kept 30 days, audio 97 days.
+Systems shows it as "Backups · NAS". Protection against deletion comes from the TrueNAS
+periodic snapshots of the Alfred_Personal dataset. To restore from the NAS, copy those three
+folders back the same way as from the Jetson (any SMB client, e.g. the NAS web shell or a laptop).
+
 ## Monthly restore test
 
 `infra/restore-drill.sh` runs on the 1st of each month at 04:30 (Pi crontab):

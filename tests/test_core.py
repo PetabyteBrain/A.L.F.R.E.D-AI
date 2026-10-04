@@ -3065,3 +3065,35 @@ def test_company_todo_edits_only_the_cells_it_changes(monkeypatch, tmp_path):
     # Open in Excel (~$ lock file) -> nothing is written.
     (xlsx.parent / "~$-Do_Company_V1.0.xlsx").write_text("lock")
     assert "open in Excel" in run(admin, {"action": "add", "description": "Test", "importance": 1})["error"]
+
+
+def test_backup_copy_to_nas(monkeypatch, tmp_path):
+    import dataclasses, os, time
+    from orchestrator import backup, backup_nas, nas
+    from orchestrator.config import settings
+    fake = _FakeSMB(tmp_path / "nas")
+    s2 = dataclasses.replace(settings, nas_host="nas", nas_user="u", nas_password="p",
+                             nas_share_personal="Alfred_Personal", nas_backup_path=".alfred-backups")
+    for mod in (nas, backup_nas):
+        monkeypatch.setattr(mod, "settings", s2)
+    monkeypatch.setattr(nas, "_smb", lambda: fake)
+    (tmp_path / "nas" / "Alfred_Personal").mkdir(parents=True)
+    snap = backup.snapshot()
+    admin = registry.lookup("telegram", "111")
+    _fake_call(admin.id, 1, "backup me")
+
+    detail = backup_nas.copy(snap.name, b"SECRET=1\n")
+    root = tmp_path / "nas" / "Alfred_Personal" / ".alfred-backups"
+    assert (root / "db" / snap.name).read_bytes() == snap.read_bytes()
+    assert (root / "config" / ".env").read_bytes() == b"SECRET=1\n"
+    wavs = list((root / "storage").rglob("audio.wav"))
+    assert wavs and "new" in detail
+    again = backup_nas.copy(snap.name, None)                       # second run only sends changes
+    assert again.split(", ")[1].startswith("0 new")
+    old = root / "db" / "alfred-2020-01-01T000000Z.db"              # retention: old DB copies go
+    old.write_bytes(b"x")
+    os.utime(old, (time.time() - 40 * 86400,) * 2)
+    backup_nas.copy(snap.name, None)
+    assert not old.exists() and (root / "db" / snap.name).exists()
+    backup_nas.report(True, detail)
+    assert backup_nas.health_now()[0]
