@@ -3126,3 +3126,39 @@ def test_briefing_includes_company_todo(monkeypatch, tmp_path):
                                                            "Offizielles eröffnungsdatum definieren"}
     out = asyncio.run(briefing._company_todo(admin, monday + timedelta(days=15)))   # only on Mondays
     assert "in_progress_for_2_weeks_or_more" not in out
+
+
+def test_recordings_move_to_nas_after_14_days(monkeypatch, tmp_path):
+    import dataclasses
+    from datetime import datetime, timedelta, timezone
+    from fastapi.testclient import TestClient
+    from orchestrator import nas, recording_archive, retention
+    from orchestrator.config import settings
+    from orchestrator.main import app
+    from orchestrator.storage import recordings
+    fake = _FakeSMB(tmp_path / "nas")
+    s2 = dataclasses.replace(settings, nas_host="nas", nas_user="u", nas_password="p", nas_share_personal="Alfred_Personal",
+                             nas_recordings_path=".alfred-recordings", recordings_to_nas_after_days=14)
+    for mod in (nas, recording_archive):
+        monkeypatch.setattr(mod, "settings", s2)
+    monkeypatch.setattr(nas, "_smb", lambda: fake)
+    (tmp_path / "nas" / "Alfred_Personal").mkdir(parents=True)
+    admin = registry.lookup("telegram", "111")
+    old_sid, old_rid = _fake_call(admin.id, 20, "an old call to archive")
+    new_sid, new_rid = _fake_call(admin.id, 2, "a recent call stays local")
+    local_old = recordings.resolve_safe(db.query_one("SELECT file_path FROM recordings WHERE id=?", (old_rid,))["file_path"])
+    wav = local_old.read_bytes()
+
+    assert recording_archive.archive_old() >= 1
+    fp = db.query_one("SELECT file_path FROM recordings WHERE id=?", (old_rid,))["file_path"]
+    assert fp.startswith("nas:") and not local_old.parent.exists()                 # freed on the Pi
+    assert recording_archive.read_bytes(fp) == wav
+    assert not db.query_one("SELECT file_path FROM recordings WHERE id=?", (new_rid,))["file_path"].startswith("nas:")
+    with TestClient(app, base_url="http://testserver") as c:                       # dashboard still plays it
+        c.post("/api/login", json={"username": "admin", "password": "correct horse battery"}, headers=CSRF)
+        r = c.get(f"/api/recordings/{old_rid}/audio")
+        assert r.status_code == 200 and r.content == wav
+    # Retention deletes it on the NAS too.
+    retention.purge(datetime.now(timezone.utc) + timedelta(days=90))
+    assert not list((tmp_path / "nas" / "Alfred_Personal" / ".alfred-recordings").rglob("audio.wav"))
+    assert db.query_one("SELECT deleted_at FROM recordings WHERE id=?", (old_rid,))["deleted_at"]

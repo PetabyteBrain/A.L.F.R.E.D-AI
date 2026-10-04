@@ -104,12 +104,12 @@ def export_zip(user_id: int) -> bytes:
             log.warning("NAS part of the export failed", exc_info=True)
         for r in db.query("SELECT r.id, r.file_path, s.started_at FROM recordings r JOIN sessions s ON s.id = r.session_id "
                           "WHERE s.user_id = ? AND r.deleted_at IS NULL", (user_id,)):
+            from . import recording_archive
             try:
-                path = recordings.resolve_safe(r["file_path"])
-            except PermissionError:
+                data = recording_archive.read_bytes(r["file_path"])      # Pi or NAS
+            except Exception:  # noqa: BLE001 — missing file: skip it
                 continue
-            if path.exists():
-                z.write(path, f"recordings/{r['started_at'][:10]}-call-{r['id']}.wav")
+            z.writestr(f"recordings/{r['started_at'][:10]}-call-{r['id']}.wav", data)
     db.log_activity("access", "Data export downloaded", user_id=user_id)
     return buf.getvalue()
 
@@ -211,6 +211,11 @@ async def erase(user_id: int, scope: str, *, by: Person) -> dict:
     folder = settings.storage_root / str(user_id)
     if folder.is_dir():
         shutil.rmtree(folder, ignore_errors=True)
+    try:                                             # their recordings already moved to the NAS
+        from . import recording_archive
+        recording_archive.erase_user(user_id)
+    except Exception:  # noqa: BLE001
+        log.warning("Couldn't delete the archived NAS recordings of #%s", user_id, exc_info=True)
     try:                                             # their personal NAS folder
         from . import nas
         n["nas_folder"] = nas.erase_personal(user_id)

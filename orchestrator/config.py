@@ -104,6 +104,9 @@ class Settings:
     nas_share_personal: str = field(default_factory=lambda: _env("NAS_SHARE_PERSONAL", "Alfred_Personal"))
     # Folder for Alfred's own backup copy, inside the personal share (hidden: not reachable by the tools)
     nas_backup_path: str = field(default_factory=lambda: _env("NAS_BACKUP_PATH", ".alfred-backups"))
+    # Call recordings move from the Pi to this hidden folder in the personal share after N days (0 = never)
+    nas_recordings_path: str = field(default_factory=lambda: _env("NAS_RECORDINGS_PATH", ".alfred-recordings"))
+    recordings_to_nas_after_days: int = field(default_factory=lambda: int(_env("RECORDINGS_TO_NAS_AFTER_DAYS", "14")))
     nas_company_todo: str = field(default_factory=lambda: _env(
         "NAS_COMPANY_TODO", "Admin/To-Do.xlsx"))
 

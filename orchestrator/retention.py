@@ -14,7 +14,6 @@ from datetime import datetime, timedelta, timezone
 
 from . import db
 from .config import settings
-from .storage import recordings
 
 log = logging.getLogger(__name__)
 
@@ -28,10 +27,11 @@ def purge(now: datetime | None = None) -> int:
         return 0
     cutoff = ((now or datetime.now(timezone.utc)) - timedelta(days=days)).isoformat()
     rows = db.query("SELECT id, file_path FROM recordings WHERE deleted_at IS NULL AND created_at < ?", (cutoff,))
+    from . import recording_archive
     for r in rows:
         try:
-            recordings.resolve_safe(r["file_path"]).unlink(missing_ok=True)
-        except (OSError, PermissionError):
+            recording_archive.delete(r["file_path"])       # on the Pi or already on the NAS
+        except Exception:  # noqa: BLE001
             log.exception("Could not delete recording %s", r["id"])
             continue
         db.execute("UPDATE recordings SET deleted_at = ? WHERE id = ?", (db.now_iso(), r["id"]))

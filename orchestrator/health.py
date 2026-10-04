@@ -119,8 +119,9 @@ async def background_loop() -> None:
             sessions.close_idle_sessions()
             _housekeeping()
             await check_all()
-            from . import budgets, retention
+            from . import budgets, recording_archive, retention
             retention.daily()
+            await asyncio.to_thread(recording_archive.daily)
             await budgets.check()
         except Exception:
             log.exception("Health loop iteration failed")

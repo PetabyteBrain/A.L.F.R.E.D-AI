@@ -330,13 +330,23 @@ async def recordings_tree(person: Person = Depends(current_person)) -> list[dict
 
 
 @router.get("/recordings/{recording_id}/audio")
-async def recording_audio(recording_id: int, person: Person = Depends(current_person)) -> FileResponse:
+async def recording_audio(recording_id: int, person: Person = Depends(current_person)) -> Response:
     rec = db.query_one("SELECT session_id, file_path, deleted_at FROM recordings WHERE id = ?", (recording_id,))
     if not rec:
         raise HTTPException(status_code=404)
     _own_session(person, rec["session_id"])
     if rec["deleted_at"]:
         raise HTTPException(status_code=410, detail="The audio was deleted after the retention period.")
+    from orchestrator import nas, recording_archive
+    if recording_archive.is_nas(rec["file_path"]):          # older recordings live on the NAS
+        import asyncio
+        try:
+            data = await asyncio.to_thread(recording_archive.read_bytes, rec["file_path"])
+        except (nas.NasError, PermissionError) as e:
+            raise HTTPException(status_code=404, detail=f"Audio not available: {e}")
+        return Response(data, media_type="audio/wav", headers={
+            "Cache-Control": "private, no-store",
+            "Content-Disposition": f'attachment; filename="{rec["session_id"]}.wav"'})
     try:
         path = recordings.resolve_safe(rec["file_path"])
     except PermissionError:
