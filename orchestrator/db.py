@@ -269,6 +269,11 @@ CREATE TABLE IF NOT EXISTS voice_mode (       -- Telegram replies also as voice 
     until      TEXT,                          -- UTC ISO; NULL = until switched off
     updated_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS nas_folders (       -- each person's folder in the personal NAS share (nas.py)
+    user_id    INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    folder     TEXT NOT NULL UNIQUE,
+    created_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS external_calls (    -- task calls to numbers outside the registry (external_calls.py)
     id           INTEGER PRIMARY KEY AUTOINCREMENT,
     task_id      INTEGER REFERENCES tasks(id) ON DELETE SET NULL,

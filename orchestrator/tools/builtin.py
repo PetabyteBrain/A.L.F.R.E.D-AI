@@ -185,6 +185,75 @@ async def configure_quiet_hours(ctx, mode: str | None = None, start: str | None 
 
 
 @handler
+async def nas_notes(ctx, action: str, scope: str, title: str = "", content: str = "", folder: str = "",
+                    new_path: str = "") -> dict:
+    import asyncio
+    from .. import nas
+    p = ctx.person
+    try:
+        if action == "list":
+            return await asyncio.to_thread(nas.list_notes, p, scope, folder)
+        if action == "read":
+            return await asyncio.to_thread(nas.read_file, p, scope, nas._note_path(title, folder).replace("\\", "/"))
+        if action in ("create", "replace", "append"):
+            return await asyncio.to_thread(nas.save_note, p, scope, title, content, folder, action)
+        if action == "move":
+            return await asyncio.to_thread(nas.move_note, p, scope, title, new_path)
+        if action == "trash":
+            return await asyncio.to_thread(nas.trash_note, p, scope, title)
+        return {"error": "Unknown action."}
+    except nas.NasError as e:
+        return {"error": str(e)}
+
+
+@handler
+async def nas_list(ctx, action: str, scope: str, name: str = "", items: list | None = None) -> dict:
+    import asyncio
+    from .. import nas
+    try:
+        if action == "all":
+            return await asyncio.to_thread(nas.all_lists, ctx.person, scope)
+        return await asyncio.to_thread(nas.list_op, ctx.person, scope, name, action, items)
+    except nas.NasError as e:
+        return {"error": str(e)}
+
+
+@handler
+async def nas_files(ctx, action: str, scope: str, path: str = "", query: str = "") -> dict:
+    import asyncio
+    from .. import nas
+    try:
+        if action == "list":
+            return await asyncio.to_thread(nas.list_dir, ctx.person, scope, path)
+        if action == "search":
+            return await asyncio.to_thread(nas.search, ctx.person, scope, query, path)
+        if action == "read":
+            return await asyncio.to_thread(nas.read_file, ctx.person, scope, path)
+        return {"error": "Unknown action."}
+    except nas.NasError as e:
+        return {"error": str(e)}
+
+
+@handler
+async def company_todo(ctx, action: str, description: str = "", todo: str = "", importance: int | None = None,
+                      section: str = "current", status: str | None = None, to: str = "") -> dict:
+    import asyncio
+    from .. import nas, company_todo as wt
+    try:
+        if action == "show":
+            return await asyncio.to_thread(wt.show, ctx.person)
+        if action == "add":
+            return await asyncio.to_thread(wt.add, ctx.person, description, importance or 3, section)
+        if action == "update":
+            return await asyncio.to_thread(wt.update, ctx.person, todo or description, status, importance)
+        if action == "move":
+            return await asyncio.to_thread(wt.move, ctx.person, todo or description, to)
+        return {"error": "Unknown action."}
+    except nas.NasError as e:
+        return {"error": str(e)}
+
+
+@handler
 async def reply_by_voice(ctx) -> dict:
     from .. import voice_replies
     from ..identity import registry

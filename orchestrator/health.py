@@ -52,6 +52,13 @@ async def _restore_drill() -> tuple[bool, str]:
     return backup.drill_health()
 
 
+async def _nas() -> tuple[bool, str]:
+    from . import nas
+    if not nas.enabled():
+        return False, "not configured"
+    return await asyncio.to_thread(nas.health)
+
+
 async def _n8n() -> tuple[bool, str]:
     if not settings.n8n_enabled:
         return False, "not configured"
@@ -71,6 +78,7 @@ PROBES = {
     "jetson_speech": _jetson_speech,
     "backup": _backup,
     "restore_drill": _restore_drill,
+    "nas": _nas,
     "n8n": _n8n,
     "google": _google,
 }

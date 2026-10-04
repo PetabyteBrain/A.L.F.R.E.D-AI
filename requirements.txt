@@ -11,3 +11,6 @@ python-multipart>=0.0.20
 tzdata>=2025.2
 cryptography>=46
 segno>=1.6
+smbprotocol>=1.15
+openpyxl>=3.1
+pypdf>=5.0

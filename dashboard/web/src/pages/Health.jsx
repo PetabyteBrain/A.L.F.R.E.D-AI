@@ -18,6 +18,7 @@ const ALFRED = {
   n8n: "Automations (n8n)",
   backup: "Backups",
   restore_drill: "Restore test (monthly)",
+  nas: "NAS (files, notes, lists)",
 };
 const order = (s) => {
   const i = Object.keys(ALFRED).indexOf(s);

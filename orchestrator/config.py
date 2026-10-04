@@ -96,6 +96,15 @@ class Settings:
     # Shared secret for /internal/watchdog (the external watchdog on another Pi, infra/watchdog).
     watchdog_token: str = field(default_factory=lambda: _env("WATCHDOG_TOKEN"))
 
+    # --- NAS (TrueNAS, SMB): notes, lists, files, Company to-do (orchestrator/nas.py) ---
+    nas_host: str = field(default_factory=lambda: _env("NAS_HOST"))
+    nas_user: str = field(default_factory=lambda: _env("NAS_USER"))
+    nas_password: str = field(default_factory=lambda: _env("NAS_PASSWORD"))
+    nas_share_company: str = field(default_factory=lambda: _env("NAS_SHARE_COMPANY", "Company"))
+    nas_share_personal: str = field(default_factory=lambda: _env("NAS_SHARE_PERSONAL", "Alfred_Personal"))
+    nas_company_todo: str = field(default_factory=lambda: _env(
+        "NAS_COMPANY_TODO", "Admin/To-Do.xlsx"))
+
     # --- Privacy / data ---
     # Call audio is deleted this many days after the call (transcripts stay until deleted). 0 = keep.
     recording_retention_days: int = field(default_factory=lambda: int(_env("RECORDING_RETENTION_DAYS", "90")))

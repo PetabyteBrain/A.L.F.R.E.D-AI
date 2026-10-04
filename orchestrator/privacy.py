@@ -95,6 +95,13 @@ def export_zip(user_id: int) -> bytes:
                    f"exported {data['exported_at']}.\ndata.json: profile, connections, conversations with "
                    "transcripts, notes, reminders, tasks, meetings, settings, activity and usage.\n"
                    "recordings/: call audio that is still kept (see the retention period in the privacy policy).\n")
+        try:                                         # their personal NAS folder (notes, lists, files)
+            from . import nas
+            person = registry.get_person(user_id)
+            if person:
+                nas.export_personal(person, z)
+        except Exception:  # noqa: BLE001 — the export still works without the NAS
+            log.warning("NAS part of the export failed", exc_info=True)
         for r in db.query("SELECT r.id, r.file_path, s.started_at FROM recordings r JOIN sessions s ON s.id = r.session_id "
                           "WHERE s.user_id = ? AND r.deleted_at IS NULL", (user_id,)):
             try:
@@ -204,6 +211,12 @@ async def erase(user_id: int, scope: str, *, by: Person) -> dict:
     folder = settings.storage_root / str(user_id)
     if folder.is_dir():
         shutil.rmtree(folder, ignore_errors=True)
+    try:                                             # their personal NAS folder
+        from . import nas
+        n["nas_folder"] = nas.erase_personal(user_id)
+    except Exception:  # noqa: BLE001
+        log.warning("Couldn't delete the personal NAS folder of #%s", user_id, exc_info=True)
+        n["nas_folder"] = False
 
     if scope == "account":
         from dashboard.api.security import revoke_user_sessions

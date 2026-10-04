@@ -2864,3 +2864,204 @@ def test_watchdog_endpoint_and_alert_logic(monkeypatch, tmp_path):
     assert "Back to normal" in sent[2] and len(sent) == 3   # jetson not yet: needs 3 runs
     wd.run()
     assert "Jetson speech server" in sent[3]
+
+
+class _FakeSMB:
+    """smbclient stand-in: \\nas\Share\path -> <tmp>/Share/path. Shares that are 'denied' raise like TrueNAS."""
+
+    def __init__(self, root, denied=()):
+        self.root, self.denied = Path(root), set(denied)
+
+    def _p(self, unc):
+        parts = [x for x in unc.split("\\") if x]
+        if parts[1] in self.denied:
+            raise OSError("[NtStatus 0xc0000022] STATUS_ACCESS_DENIED")
+        return self.root.joinpath(*parts[1:])
+
+    def register_session(self, *a, **kw): pass
+    def reset_connection_cache(self): pass
+
+    def open_file(self, unc, mode="r", encoding=None, newline=None, **kw):
+        path = self._p(unc)
+        if "w" in mode:
+            path.parent.mkdir(parents=True, exist_ok=True)
+        return open(path, mode, encoding=encoding if "b" not in mode else None,
+                    newline=newline if "b" not in mode else None)
+
+    def stat(self, unc):
+        path = self._p(unc)
+        if not path.exists():
+            raise FileNotFoundError(unc)
+        return path.stat()
+
+    def makedirs(self, unc, exist_ok=False):
+        self._p(unc).mkdir(parents=True, exist_ok=exist_ok)
+
+    def listdir(self, unc):
+        return [x.name for x in self._p(unc).iterdir()]
+
+    def scandir(self, unc):
+        import os
+        return list(os.scandir(self._p(unc)))
+
+    def walk(self, unc):
+        import os
+        base = self._p(unc)
+        for dirpath, dirs, files in os.walk(base):
+            rel = Path(dirpath).relative_to(base)
+            yield (unc + ("\\" + str(rel).replace("/", "\\") if str(rel) != "." else "")), dirs, files
+
+    def rename(self, a, b):
+        self._p(a).rename(self._p(b))
+
+    def remove(self, unc):
+        self._p(unc).unlink()
+
+
+def _todo_workbook(path):
+    """A copy of the Company to-do layout (3 sections, rows 6-30)."""
+    import openpyxl
+    from openpyxl.formatting.rule import CellIsRule
+    from openpyxl.styles import PatternFill
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Tabelle1"
+    ws["A1"] = "COMPANY To Do Liste"
+    ws["A4"], ws["H4"], ws["O4"] = "AKTUELLES", "ZUKUNFT", "FERTIG"
+    for col, head in zip("ABCDHIJKOPQ", ["Position", "wichtigkeit", "Status", "beschreibung"] * 2 + ["Position", "wichtigkeit", "beschreibung"]):
+        ws[f"{col}5"] = head
+    for r in range(6, 31):
+        for pos, imp, st in (("A", "B", "C"), ("H", "I", "J")):
+            ws[f"{pos}{r}"] = 1 if r == 6 else f"=SUM({pos}{r - 1} + 1)"
+            ws[f"{imp}{r}"] = 1
+            ws[f"{st}{r}"] = "not started"
+        ws[f"O{r}"] = 1 if r == 6 else f"=SUM(O{r - 1} + 1)"
+        ws[f"P{r}"] = 1
+    ws["B6"], ws["C6"], ws["D6"] = 5, "in progress", "KLG Gründung Abschliessen"
+    ws["B7"], ws["C7"], ws["D7"] = 4, "in progress", "Offizielles eröffnungsdatum definieren"
+    ws["B8"], ws["D8"] = 4, "Angebote erweitern"
+    ws["I6"], ws["K6"] = 4, "Planung des Online Shops Starten"
+    ws.conditional_formatting.add("C6:C30", CellIsRule(operator="equal", formula=['"done"'],
+                                                       fill=PatternFill("solid", start_color="00FF00")))
+    path.parent.mkdir(parents=True, exist_ok=True)
+    wb.save(path)
+
+
+def test_nas_notes_lists_files_and_permissions(monkeypatch, tmp_path):
+    import asyncio, dataclasses, json
+    from orchestrator import nas
+    from orchestrator.config import settings
+    from orchestrator.tools import registry as tools
+    fake = _FakeSMB(tmp_path)
+    monkeypatch.setattr(nas, "settings", dataclasses.replace(settings, nas_host="nas", nas_user="alfred-ai",
+                                                             nas_password="x", nas_share_company="Company",
+                                                             nas_share_personal="Alfred_Personal"))
+    monkeypatch.setattr(nas, "_smb", lambda: fake)
+    (tmp_path / "Company" / "Admin").mkdir(parents=True)
+    (tmp_path / "Company" / "Admin" / "offer.md").write_text("# Offer\nWebsite package: CHF 2400, 3 weeks.")
+    admin = registry.lookup("telegram", "111")
+    friend = registry.lookup("telegram", "22222222")
+
+    def run(person, name, args):
+        out, err = asyncio.run(tools.execute(name, args, tools.ToolContext(person, None, "telegram")))
+        return json.loads(out) if not err and out.startswith("{") else out
+
+    assert "nas_notes" in {t["name"] for t in tools.tools_for("friend", "telegram")}
+    assert "company_todo" not in {t["name"] for t in tools.tools_for("friend", "telegram")}
+
+    # Personal notes: each person in their own folder.
+    r = run(admin, "nas_notes", {"action": "create", "scope": "personal", "title": "Ideas", "folder": "Projects",
+                                 "content": "- Alfred email address"})
+    assert r["saved"] == "Notes/Projects/Ideas.md"
+    r = run(admin, "nas_notes", {"action": "create", "scope": "personal", "title": "Projects/Ideas", "content": "x"})
+    assert "already exists" in r["error"]
+    run(admin, "nas_notes", {"action": "append", "scope": "personal", "title": "Projects/Ideas", "content": "- NAS notes"})
+    a_folder = nas.personal_folder(admin)
+    text = (tmp_path / "Alfred_Personal" / a_folder / "Notes" / "Projects" / "Ideas.md").read_text(encoding="utf-8")
+    assert text.startswith("# Ideas") and "Alfred email address" in text and "NAS notes" in text
+    run(friend, "nas_notes", {"action": "create", "scope": "personal", "title": "Secret", "content": "friend only"})
+    assert run(admin, "nas_notes", {"action": "list", "scope": "personal"})["notes"] == ["Projects/Ideas.md"]
+    assert nas.personal_folder(friend) != a_folder
+    # Friends can't touch the company share; nobody can escape their scope.
+    assert "only for admins and cofounders" in run(friend, "nas_files", {"action": "list", "scope": "company"})["error"]
+    for bad in ("../" + nas.personal_folder(friend) + "/Notes/Secret.md", "..\\x", "C:/Windows", ".trash/x.md"):
+        assert "error" in run(admin, "nas_files", {"action": "read", "scope": "personal", "path": bad}), bad
+
+    # Lists
+    run(admin, "nas_list", {"action": "add", "scope": "personal", "name": "Shopping", "items": ["Milk", "Bread", "milk"]})
+    r = run(admin, "nas_list", {"action": "check", "scope": "personal", "name": "Shopping", "items": ["bread"]})
+    assert r["open"] == ["Milk"] and r["done"] == ["Bread"]
+    md = (tmp_path / "Alfred_Personal" / a_folder / "Lists" / "Shopping.md").read_text(encoding="utf-8")
+    assert "- [ ] Milk" in md and "- [x] Bread" in md
+    assert run(admin, "nas_list", {"action": "all", "scope": "personal"})["lists"] == ["Shopping"]
+    assert "isn't on that list" in run(admin, "nas_list", {"action": "remove", "scope": "personal", "name": "Shopping",
+                                                           "items": ["Eggs"]})["error"]
+
+    # Files: search and read company documents (read-only).
+    r = run(admin, "nas_files", {"action": "search", "scope": "company", "query": "website package"})
+    assert r["matches"][0]["path"] == "Admin/offer.md" and "CHF 2400" in r["matches"][0]["match"]
+    assert "CHF 2400" in run(admin, "nas_files", {"action": "read", "scope": "company", "path": "Admin/offer.md"})["text"]
+    # Trash instead of delete.
+    r = run(admin, "nas_notes", {"action": "trash", "scope": "personal", "title": "Projects/Ideas"})
+    assert r["trashed"] == "Notes/Projects/Ideas.md"
+    assert list((tmp_path / "Alfred_Personal" / a_folder / ".trash").iterdir())
+
+    # A share without permissions gives a plain message, not a crash.
+    monkeypatch.setattr(nas, "_smb", lambda: _FakeSMB(tmp_path, denied={"Alfred_Personal"}))
+    assert "refused access" in run(admin, "nas_list", {"action": "all", "scope": "personal"})["error"]
+    ok, detail = nas.health()
+    assert not ok and "Company ok" in detail and "personal" in detail
+
+
+def test_company_todo_edits_only_the_cells_it_changes(monkeypatch, tmp_path):
+    import asyncio, dataclasses, io, json, zipfile
+    import openpyxl
+    from orchestrator import nas, company_todo
+    from orchestrator.config import settings
+    from orchestrator.tools import registry as tools
+    fake = _FakeSMB(tmp_path)
+    s2 = dataclasses.replace(settings, nas_host="nas", nas_user="u", nas_password="p", nas_share_company="Company",
+                             nas_company_todo="Admin/To-Do.xlsx")
+    for mod in (nas, company_todo):
+        monkeypatch.setattr(mod, "settings", s2)
+    monkeypatch.setattr(nas, "_smb", lambda: fake)
+    monkeypatch.setattr(company_todo, "_smb", lambda: fake)
+    xlsx = tmp_path / "Company" / "Admin" / "templates" / "To-Do.xlsx"
+    _todo_workbook(xlsx)
+    before = zipfile.ZipFile(io.BytesIO(xlsx.read_bytes()))
+    admin = registry.lookup("telegram", "111")
+    friend = registry.lookup("telegram", "22222222")
+
+    def run(person, args):
+        out, err = asyncio.run(tools.execute("company_todo", args, tools.ToolContext(person, None, "telegram")))
+        return json.loads(out) if not err else out
+
+    assert "not available" in run(friend, {"action": "show"})
+    shown = run(admin, {"action": "show"})
+    assert [i["description"] for i in shown["current"]][:3] == ["KLG Gründung Abschliessen",
+                                                               "Offizielles eröffnungsdatum definieren", "Angebote erweitern"]
+    assert shown["future"][0]["description"] == "Planung des Online Shops Starten"
+
+    r = run(admin, {"action": "add", "description": "Alfred E-Mail einrichten", "importance": 3})
+    assert r["ok"] and "AKTUELLES" in r["done"]
+    r = run(admin, {"action": "update", "todo": "angebote", "status": "done"})
+    assert "FERTIG" in r["done"]
+    r = run(admin, {"action": "move", "todo": "online shop", "to": "current"})
+    assert "AKTUELLES" in r["done"]
+    assert "More than one" in run(admin, {"action": "update", "todo": "e", "importance": 2})["error"]
+
+    ws = openpyxl.load_workbook(xlsx).worksheets[0]
+    assert ws["D8"].value == "Alfred E-Mail einrichten" and ws["B8"].value == 3     # gap closed after the move
+    assert ws["D9"].value == "Planung des Online Shops Starten" and ws["Q6"].value == "Angebote erweitern"
+    assert ws["K6"].value in (None, "") and ws["A7"].value == "=SUM(A6 + 1)"          # formulas untouched
+    after = zipfile.ZipFile(io.BytesIO(xlsx.read_bytes()))
+    sheet = company_todo._sheet_name(after)
+    for info in before.infolist():                                                   # everything else byte for byte
+        if info.filename != sheet:
+            assert before.read(info.filename) == after.read(info.filename), info.filename
+    backups = list((tmp_path / "Company" / ".alfred-backups").iterdir())
+    assert len(backups) == 3
+
+    # Open in Excel (~$ lock file) -> nothing is written.
+    (xlsx.parent / "~$-Do_Company_V1.0.xlsx").write_text("lock")
+    assert "open in Excel" in run(admin, {"action": "add", "description": "Test", "importance": 1})["error"]

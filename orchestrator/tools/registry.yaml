@@ -519,6 +519,89 @@ tools:
         start: {type: string, description: "HH:MM local, for custom"}
         end: {type: string, description: "HH:MM local, for custom"}
 
+  # --- NAS: notes, lists, files (scope personal = the person's own folder; company = admins/cofounders) ---
+  - name: nas_notes
+    kind: builtin
+    handler: nas_notes
+    roles: ["*"]
+    requires: nas
+    description: >-
+      Markdown notes on the NAS. scope: personal (the current person's own notes) or company (shared
+      company notes, admins/cofounders only). action: list (optionally in `folder`), read (path),
+      create / replace / append (title + content, optional `folder` to keep them sorted, e.g.
+      "Clients" or "Ideas"), move (path -> new_path, to tidy up), trash (moves to the NAS trash).
+      Keep titles short and folders tidy; append to an existing note instead of making duplicates.
+    input_schema:
+      type: object
+      properties:
+        action: {type: string, enum: [list, read, create, replace, append, move, trash]}
+        scope: {type: string, enum: [personal, company]}
+        title: {type: string, description: "Note title or path inside Notes/, e.g. 'Clients/Acme'"}
+        content: {type: string, description: Markdown text for create/replace/append}
+        folder: {type: string}
+        new_path: {type: string}
+      required: [action, scope]
+
+  - name: nas_list
+    kind: builtin
+    handler: nas_list
+    roles: ["*"]
+    requires: nas
+    description: >-
+      Checklists on the NAS (Markdown files in Lists/): shopping, packing, ideas, team lists.
+      scope personal (own) or company (admins/cofounders). action: all (names of the lists), show,
+      add, check, uncheck, remove, clear_done. `items` for add/check/uncheck/remove. A list is
+      created on the first add. For the Company company to-do use company_todo instead.
+    input_schema:
+      type: object
+      properties:
+        action: {type: string, enum: [all, show, add, check, uncheck, remove, clear_done]}
+        scope: {type: string, enum: [personal, company]}
+        name: {type: string}
+        items: {type: array, items: {type: string}}
+      required: [action, scope]
+
+  - name: nas_files
+    kind: builtin
+    handler: nas_files
+    roles: ["*"]
+    requires: nas
+    description: >-
+      Browse, search and read files on the NAS (read-only: text, Markdown, Word, Excel, PDF).
+      scope personal (own folder) or company (company files, admins/cofounders). action: list
+      (folder `path`), search (`query`: file names and contents), read (`path`). Use it to answer
+      questions from documents (contracts, offers, invoices, notes) and say which file it came from.
+    input_schema:
+      type: object
+      properties:
+        action: {type: string, enum: [list, search, read]}
+        scope: {type: string, enum: [personal, company]}
+        path: {type: string}
+        query: {type: string}
+      required: [action, scope]
+
+  - name: company_todo
+    kind: builtin
+    handler: company_todo
+    roles: [admin, cofounder]
+    requires: nas
+    description: >-
+      The Company company to-do list (the Excel file on the NAS; German entries are fine, keep the
+      wording the person uses). action: show; add (description, importance 1-5, section current
+      or future); update (todo = words from the description, status not started / in progress /
+      done (done moves it to FERTIG), and/or importance); move (todo, to current or future).
+    input_schema:
+      type: object
+      properties:
+        action: {type: string, enum: [show, add, update, move]}
+        description: {type: string}
+        todo: {type: string}
+        importance: {type: integer, minimum: 1, maximum: 5}
+        section: {type: string, enum: [current, future]}
+        status: {type: string, enum: [not started, in progress, done]}
+        to: {type: string, enum: [current, future]}
+      required: [action]
+
   - name: reply_by_voice
     kind: builtin
     handler: reply_by_voice

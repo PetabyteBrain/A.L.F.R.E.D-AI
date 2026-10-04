@@ -90,6 +90,9 @@ def _available(spec: ToolSpec, person_id: int | None = None) -> bool:
         return settings.twilio_enabled and settings.speech_enabled and bool(settings.public_base_url)
     if spec.name == "send_telegram_message":
         return settings.telegram_enabled
+    if spec.config.get("requires") == "nas":
+        from .. import nas
+        return nas.enabled()
     if spec.name.startswith("homelab_") or spec.name == "minecraft_status":
         from .. import homelab
         return homelab.enabled()
