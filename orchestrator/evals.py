@@ -199,7 +199,7 @@ def _document_question(calls, replies):
         return "didn't search the NAS documents"
     if finds[0].get("scope") != "company":
         return f"searched the wrong space: {finds[0].get('scope')}"
-    return None if "2400" in replies[-1] else "didn't answer from the document"
+    return None if re.search(r"2[ ,'’]?400", replies[-1]) else "didn't answer from the document"
 
 
 def _friend_no_company(calls, replies):
@@ -266,6 +266,13 @@ async def run_case(case: Case, people: dict) -> tuple[str | None, list[list[Call
 
         async def fake_execute(name, args, ctx, _turn=turn):
             _turn.append((name, dict(args)))
+            if name == "call_external" and any(n == "call_external" for t in calls for n, _ in t):
+                # like external_calls.request: the same call prepared again after the person answered
+                return json.dumps({"prepared": True, "dialled": False, "already_read_back": True,
+                                   "next": "This exact call was already read back and the person has answered "
+                                           "since. If their answer was yes, call confirm_external_call now (don't "
+                                           "read it back again). If they asked for a change, prepare it again with "
+                                           "the changed details."}), False
             return json.dumps(_canned(name, args)), False
         real = tool_registry.execute
         tool_registry.execute = fake_execute

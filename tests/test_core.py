@@ -2748,6 +2748,8 @@ def test_outside_calls_are_task_driven_and_confirmed(monkeypatch):
     out, _ = confirm()
     assert '"dialled": false' in out and not dialed                      # no yes from the person yet
     sessions.add_turn(sid_chat, "user", "yes, go ahead")
+    out, _ = run({**args, "task": args["task"] + " 2026"})               # model re-prepares instead of confirming
+    assert '"already_read_back": true' in out and not dialed
     out, _ = confirm()
     assert dialed and dialed[0]["to"] == "+41310000100", out
     row = db.query_one("SELECT * FROM external_calls ORDER BY id DESC LIMIT 1")

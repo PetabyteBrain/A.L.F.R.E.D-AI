@@ -134,6 +134,16 @@ async def request(person: Person, session_id: str | None, *, number: str, contac
     except ScheduleError as e:
         raise ExternalCallError(str(e))
 
+    # The same call prepared again after the person answered the read-back: the model forgot to
+    # confirm. Keep the read-back the person saw and point it at confirm_external_call.
+    prev = _pending.get(person.id)
+    if prev and time.monotonic() - prev["at"] <= CONFIRM_TTL_S and prev["number"] == number \
+            and prev["share"] == share and _same_task(prev["task"], task) \
+            and _last_user_turn(session_id) > prev["user_turn"]:
+        return {"prepared": True, "dialled": False, "already_read_back": True,
+                "next": "This exact call was already read back and the person has answered since. If their answer "
+                        "was yes, call confirm_external_call now (don't read it back again). If they asked for a "
+                        "change, prepare it again with the changed details."}
     # One prepared call per person; a new request replaces it.
     _pending[person.id] = {"at": time.monotonic(), "user_turn": _last_user_turn(session_id), "number": number,
                            "contact": contact, "task": task, "share": share, "run_at": run_at}
@@ -144,6 +154,12 @@ async def request(person: Person, session_id: str | None, *, number: str, contac
                     + ". No costs or commitments without you. Shall I?"),
             "next": "Read `ask` back and stop. If the person says yes, call confirm_external_call. If they change "
                     "something, call call_external again with the new details."}
+
+
+def _same_task(a: str, b: str) -> bool:
+    """Same request, maybe reworded a little ("Friday 09 October" vs "Friday 09 October 2026")."""
+    import difflib
+    return difflib.SequenceMatcher(None, a.lower(), b.lower()).ratio() >= 0.9
 
 
 async def confirm(person: Person, session_id: str | None) -> dict:
