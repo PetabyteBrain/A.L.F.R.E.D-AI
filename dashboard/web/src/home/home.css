@@ -153,7 +153,7 @@ h1::after { color: var(--accent); transform: translateX(2px); animation: glitch 
 .r4 { bottom: 10%; right: 4%; animation-delay: 1.9s; } .r4::after { right: 100%; transform: scaleX(-1); }
 
 /* ---------- strip ---------- */
-.strip { display: grid; grid-template-columns: repeat(4, 1fr); border: 1px solid var(--line); background: rgb(var(--a) / .04); margin: 0 0 90px; }
+.strip { display: grid; grid-template-columns: repeat(5, 1fr); border: 1px solid var(--line); background: rgb(var(--a) / .04); margin: 0 0 90px; }
 .strip > div { padding: 18px 20px; display: grid; gap: 4px; }
 .strip > div + div { border-left: 1px solid var(--line); }
 .strip .k { font: 400 11px var(--mono); letter-spacing: .22em; text-transform: uppercase; color: var(--muted); }
@@ -230,7 +230,7 @@ html.js .reveal.in { opacity: 1; transform: none; }
   .hero-visual { order: -1; max-width: 460px; margin: 0 auto; width: 100%; }
   .cards { grid-template-columns: 1fr 1fr; }
   .strip { grid-template-columns: 1fr 1fr; }
-  .strip > div:nth-child(3) { border-left: 0; }
+  .strip > div:nth-child(odd) { border-left: 0; }
   .strip > div:nth-child(n+3) { border-top: 1px solid var(--line); }
 }
 @media (max-width: 760px) {

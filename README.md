@@ -1,9 +1,10 @@
 # Alfred
 
 Personal AI butler (persona modelled on Alfred Pennyworth) reachable by **phone** (Twilio, Swiss
-number), **Telegram** (text and voice notes) and a **web chat**, backed by **Claude Haiku 4.5**,
-wired into **n8n**, with a password-protected **dashboard**. Only people in the registry get
-answers; everyone else is ignored silently.
+number), **Telegram** (text, voice notes, files and photos) and a **web chat**, backed by
+**Claude Haiku 4.5**, with self-hosted speech on a **Jetson Orin**, notes/lists/files on a
+**TrueNAS** box, wired into **n8n**, and a **dashboard** with two-factor sign-in. Only people in
+the registry get answers; unknown callers can leave a message, everyone else is ignored silently.
 
 Runs as one Docker container on **alfred-server** (`/home/user/alfred`). The project, service,
 container and hostname keep their original `alfred` names (alfred.example.com, `docker compose exec alfred`);
@@ -14,34 +15,39 @@ only the assistant's persona and branding are "Alfred" (`ASSISTANT_NAME`). The d
 
 | Area | What it does | Where |
 |---|---|---|
-| Phone | Answers registered callers, speaks sentence by sentence as the reply streams in, says "one moment" while a tool runs, announces that calls are recorded, hangs up by itself when done | call |
-| Calls for you | "Call Max tomorrow at 9 and ask about the invoice": dials now or later, retries no-answer, leaves a short voicemail if a mailbox answers, summarises the call and reports back | any channel, dashboard |
+| Phone | Answers registered callers, speaks sentence by sentence as the reply streams in, says "one moment" while a tool runs, announces that calls are recorded, hangs up by itself when done. Unknown numbers: Alfred takes a message without naming anyone and relays it to the right admin/cofounder (block button); withheld/blocked numbers get "busy" | call |
+| Calls for you | "Call Max tomorrow at 9 and ask about the invoice": dials now or later, retries no-answer, leaves a short voicemail if a mailbox answers, summarises the call and reports back. Admins/cofounders can also have Alfred ring a business for one concrete task ("book a table for 4 on Friday"), only after a yes, Mon–Sat 08–19, as a declared AI assistant | any channel, Tasks tab |
 | Web search | Current information (news, opening hours, prices) with sources; links in chat, source named on calls | any channel |
-| Chat | Telegram (text + voice notes answered with voice; voice-note replies on request or in "voice mode") and the dashboard Chat tab with live-streamed replies | Telegram, web |
+| Chat | Telegram (text + voice notes answered with voice; voice-note replies on request or in "voice mode"; files and photos, which Alfred can read and file on the NAS) and the dashboard Chat tab with live-streamed replies | Telegram, web |
 | Reminders | One-off or recurring (daily/weekdays/weekly/monthly), Telegram with Done/Snooze or a call, optional escalation to a call if ignored | any channel, Tasks tab |
-| Daily briefing | Weather (Open-Meteo), today's calendar, reminders, planned calls, overnight call outcomes, tasks; by Telegram or call at a set time | Profile |
+| Daily briefing | Weather (Open-Meteo), today's calendar, reminders, planned calls, overnight call outcomes, tasks, the top Company to-dos (admins/cofounders; Monday nudge for items stuck in progress); by Telegram or call at a set time | Profile |
 | Tasks & follow-ups | Tasks with owner, due time and follow-up: Alfred checks in with the owner (Telegram buttons or a call), up to 3 times, and tells the requester | any channel, Tasks tab |
 | Memory | Short per-person notes ("prefers calls after 9") used in that person's conversations only; editable. Plus full-text search over all past conversations ("what did Max say about the invoice?") | any channel, Profile |
+| Notes & lists | Markdown notes (folders, append, move, trash) and checklists on the NAS: a personal space per person and a shared Company space (admins/cofounders) | any channel, Notes tab |
+| Files & documents | Browse, search (by meaning, English + German) and read Word, Excel, PDF and text files on the NAS and answer from them with the file named; files and photos sent on Telegram are filed where you say (never overwritten) | any channel |
+| Receipts | Send a photo of a receipt: Alfred reads date, shop and amount, files the photo and adds a line to an Excel-ready CSV | Telegram |
+| Company to-do | The company Excel to-do list: show, add, change status/importance, move between sections; only the touched cells change, with a backup before each edit | any channel (admin/cofounder), Notes tab |
 | Calendar | Per-user Google Calendar: list, create, move, delete events (Limited Use) | any channel, Profile |
 | Meetings | "Find an hour with Max next week": common free times (opt-in free/busy sharing, times only), each person asked by Telegram buttons or call, booked with Google invitations | any channel (admin/cofounder), Tasks |
 | Automations | Full n8n API for the admin, webhook tools, async results via callback | any channel |
 | Quiet hours | Household default (22:00-07:00) + per person; calls others asked for wait, messages go silent, "urgent" overrides | Profile |
-| Homelab | Status of the Pis/Jetson and their containers, logs, confirmed restarts (admin), Minecraft players; alerts when something breaks | any channel (admin), Systems |
-| Backups | Nightly verified database snapshot + recordings to the Jetson (`infra/README-backup.md`) | automatic |
-| Safety | Registry-only access, roles, code verification of new phone/Telegram connections, hardened dashboard | everywhere |
-| Dashboard | Live sessions (terminate), archive with audio, tasks/reminders/calls, event log, health, people, API usage and cost | `/app` |
+| Homelab | Status of all Pis, the Jetson and their containers, logs, confirmed restarts (admin), Minecraft players; alerts when something breaks. An external watchdog on host-d alerts if Alfred himself is down | any channel (admin), Systems |
+| Backups | Nightly verified database snapshot + recordings + `.env` to the Jetson (no-delete key) and to the NAS (snapshot-protected); monthly automatic restore test (`infra/README-backup.md`) | automatic, Systems |
+| Safety & privacy | Registry-only access, roles, code verification of new connections, dashboard 2FA (authenticator app or Telegram code), call audio deleted after 90 days, "download / delete my data", monthly cost budgets with admin alerts, behaviour checks against the real model | everywhere |
+| Dashboard | Live sessions (terminate), archive with audio and search/filters, tasks/reminders/calls, notes & lists, event log (CSV export), health, people, API usage, budgets | `/app` |
 
 ```
-Phone ──► Twilio ──► /twilio/voice ─► identity ─► <Stream> ─► /twilio/stream (WS)
-                                                         │ mu-law 8k
-                                                         ├─► ElevenLabs Scribe v2 RT (STT)
-                                                         ├─► Agent Core (Claude, streamed) ─► tools ─► n8n
-                                                         └─◄ ElevenLabs Flash TTS (per sentence) ◄─┘
-Telegram ◄─► long polling ─► identity ─► Agent Core   (voice notes: Jetson Whisper + Ogg/Opus TTS)
+Phone ──► Twilio ──► /twilio/voice ─► identity ─┬─► <Stream> ─► /twilio/stream (WS), mu-law 8k
+                                    unknown no. ─┘     ├─► Jetson Whisper (STT)   ┐ ElevenLabs as
+                                    (screening:        ├─► Agent Core (Claude)    │ automatic
+                                     no tools)         └─◄ Jetson Kokoro (TTS)    ┘ fallback
+Telegram ◄─► long polling ─► identity ─► Agent Core   (voice notes, files, photos)
 Dashboard (React) ─► /api/* (Argon2 login + 2FA, server-side sessions) ─► SQLite + /data/storage
                      /api/chat/stream (SSE)
+Agent Core ─► tools ─► n8n · Google Calendar · homelab (alfred-ops) · NAS over SMB (notes, lists, files, to-do)
 n8n ─► /n8n/callback (X-Alfred-Secret) ─► Agent Core ─► Telegram
-Background loops: calls · reminders · task follow-ups · briefings · health (quiet-hours aware)
+Background loops: calls · reminders · task follow-ups · briefings · health · retention · budgets · homelab
+Nightly: backup → Jetson + NAS · monthly restore test · watchdog on host-d every 2 min
 ```
 
 The full, current project plan (architecture, data model, phases, roadmap) is in
@@ -56,7 +62,7 @@ The full, current project plan (architecture, data model, phases, roadmap) is in
 | 3 | Twilio Media Streams + ElevenLabs STT/TTS + stereo recording | live |
 | 4 | Dashboard + additions (people, calls for others, calendar, usage, web chat, reminders, briefing, voice notes, memory, verification, quiet hours, task follow-ups) | live |
 | 5 | Self-hosted speech on the Jetson Orin (Whisper large-v3-turbo + Kokoro `bm_george`) | live; `speech_server/`, ElevenLabs as fallback |
-| 6 | NAS storage | change `STORAGE_ROOT` + one bind mount in `docker-compose.yml` |
+| 6 | NAS (TrueNAS over SMB): notes, lists, files, Company to-do, receipts, second backup, recordings after 14 days | live |
 
 ## First start on the Pi
 
@@ -126,12 +132,22 @@ Telegram needs no public URL. Twilio does. Following the existing homelab patter
 data/alfred.db
 data/storage/{user_id}/{YYYY-MM-DD}/{session_id}/audio.wav        # calls: stereo, L=caller R=Alfred
 data/storage/{user_id}/{YYYY-MM-DD}/{session_id}/transcript.json  # calls, Telegram and web sessions
-data/backups/                                                     # DB snapshots taken before migrations
+data/backups/                                                     # nightly verified DB snapshots (last 3)
+data/inbox/                                                       # Telegram files waiting to be filed (1 h)
+
+NAS, share Alfred_Personal:  <person>/Notes/ · <person>/Lists/ · <person>/Receipts/   (one folder per person)
+                             .alfred-backups/{db,storage,config}   (nightly copy)
+                             .alfred-recordings/{user_id}/...      (recordings older than 14 days)
+NAS, share Company:           company files (read-only for Alfred) · Notes/ · Lists/ · Receipts/
+                             the to-do workbook · .alfred-backups/ (copies before each to-do edit)
 ```
 
 ## Dashboard security
 
 - Argon2id password hashes; the login throttle trips after 10 failures per IP or 5 per username in 15 min.
+- Two-factor sign-in (authenticator app or a code on Telegram, backup codes), required for admins
+  (`DASHBOARD_2FA_REQUIRED_ROLES`); lost phone: another admin resets it, or
+  `python -m orchestrator.identity.mfa reset <username>` on the server.
 - Server-side sessions: the cookie (`__Host-alfred`, HttpOnly, Secure, SameSite=Strict) holds a
   random token; only its HMAC is stored. Idle timeout 60 min, hard cap 12 h. Logout, password
   change, role change, disabling a person, or `admin_cli logout-all` revoke sessions immediately.
@@ -152,6 +168,8 @@ data/backups/                                                     # DB snapshots
 python -m venv .venv && .venv/Scripts/pip install -r requirements.txt pytest pytest-asyncio
 cd dashboard/web && npm install && npm run build && cd ../..
 .venv/Scripts/python -m pytest -q        # offline tests incl. a simulated phone call + security checks
+# behaviour checks against the real model (a few cents), on the Pi:
+#   docker compose exec alfred python -m orchestrator.evals
 .venv/Scripts/python -m tests.devserver  # built dashboard with demo data: http://127.0.0.1:8765 (admin / devpassword123)
 cd dashboard/web && npm run dev          # hot-reload React on :5180, proxies /api to the devserver
 ```
@@ -172,8 +190,8 @@ Schema changes migrate themselves on start (`db.init_db`); take a DB snapshot in
 ## Open questions
 
 - First real n8n workflow beyond the echo test and the daily weather alert.
-- Retention of recordings/transcripts once the NAS is in place.
 - Whether phone, Telegram and web context should merge per person (today: separate threads;
-  memory notes are shared across all of them).
+  memory notes and conversation search work across all of them).
+- Alfred's own email address (#7): which address and provider.
 
 The feature roadmap is in [docs/PROJECT_PLAN.md](docs/PROJECT_PLAN.md#10-roadmap--feature-expansions).
