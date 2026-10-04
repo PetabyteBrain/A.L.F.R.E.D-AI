@@ -3162,3 +3162,42 @@ def test_recordings_move_to_nas_after_14_days(monkeypatch, tmp_path):
     retention.purge(datetime.now(timezone.utc) + timedelta(days=90))
     assert not list((tmp_path / "nas" / "Alfred_Personal" / ".alfred-recordings").rglob("audio.wav"))
     assert db.query_one("SELECT deleted_at FROM recordings WHERE id=?", (old_rid,))["deleted_at"]
+
+
+def test_nas_find_by_meaning(monkeypatch, tmp_path):
+    import asyncio, dataclasses, json
+    from orchestrator import nas, nas_search
+    from orchestrator.config import settings
+    from orchestrator.tools import registry as tools
+    fake = _FakeSMB(tmp_path)
+    monkeypatch.setattr(nas, "settings", dataclasses.replace(settings, nas_host="nas", nas_user="u", nas_password="p",
+                                                             nas_share_company="Company", nas_share_personal="Alfred_Personal"))
+    monkeypatch.setattr(nas, "_smb", lambda: fake)
+    monkeypatch.setattr(nas_search, "_smb", lambda: fake)
+    d = tmp_path / "Company" / "Admin"
+    d.mkdir(parents=True)
+    (d / "Leistungsangebot.md").write_text("# Leistungsangebot\nWebseite Paket: Preis CHF 2400, Lieferung in 3 Wochen.", encoding="utf-8")
+    (d / "Protokoll.md").write_text("Sitzung: Logo besprochen.", encoding="utf-8")
+    calls = []
+
+    def fake_ask(system, content, max_tokens, user_id):
+        calls.append(system[:20])
+        if "search terms" in system:
+            return '{"terms": ["website", "webseite", "preis", "price", "angebot"]}'
+        assert "Leistungsangebot.md" in content and "Protokoll" not in content      # only real candidates
+        return '[{"i": 0, "why": "Lists the website package price"}]'
+    monkeypatch.setattr(nas_search, "_ask", fake_ask)
+    admin = registry.lookup("telegram", "111")
+    out, err = asyncio.run(tools.execute("nas_files", {"action": "find", "scope": "company",
+                                                       "query": "what do we charge for a website?"},
+                                         tools.ToolContext(admin, None, "telegram")))
+    r = json.loads(out)
+    assert r["matches"][0]["path"] == "Admin/Leistungsangebot.md" and "CHF 2400" in r["matches"][0]["excerpt"]
+    assert "webseite" in r["searched_for"] and len(calls) == 2
+    nas_search.find(admin, "company", "website price again")                         # cached text, still works
+    friend = registry.lookup("telegram", "22222222")
+    try:
+        nas_search.find(friend, "company", "website price")
+        raise AssertionError("friend searched Company")
+    except nas.NasError:
+        pass

@@ -227,6 +227,9 @@ async def nas_files(ctx, action: str, scope: str, path: str = "", query: str = "
             return await asyncio.to_thread(nas.list_dir, ctx.person, scope, path)
         if action == "search":
             return await asyncio.to_thread(nas.search, ctx.person, scope, query, path)
+        if action == "find":
+            from .. import nas_search
+            return await asyncio.to_thread(nas_search.find, ctx.person, scope, query, path)
         if action == "read":
             return await asyncio.to_thread(nas.read_file, ctx.person, scope, path)
         return {"error": "Unknown action."}

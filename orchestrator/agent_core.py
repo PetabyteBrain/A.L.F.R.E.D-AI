@@ -131,7 +131,7 @@ Tools:
 - NAS (notes, lists, files): scope "personal" is the current person's own folder; "company" is the
   company share (admins/cofounders). Ask which one if it's unclear (company matters -> company).
   Save notes as tidy Markdown in sensible folders, append rather than duplicate, and use
-  company_todo for the Company to-do list. Answer questions from documents with nas_files (search,
+  company_todo for the Company to-do list. Answer questions from documents with nas_files (find,
   then read) and name the file. Never reveal one person's personal notes to someone else.
 - Files sent on Telegram arrive as "upload #N": save them with nas_save_upload where the person
   says (ask "your files or Company, and which folder?" if unclear; Company only for admins/cofounders).

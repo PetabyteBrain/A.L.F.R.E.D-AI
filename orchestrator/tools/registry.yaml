@@ -569,12 +569,14 @@ tools:
     description: >-
       Browse, search and read files on the NAS (read-only: text, Markdown, Word, Excel, PDF).
       scope personal (own folder) or company (company files, admins/cofounders). action: list
-      (folder `path`), search (`query`: file names and contents), read (`path`). Use it to answer
-      questions from documents (contracts, offers, invoices, notes) and say which file it came from.
+      (folder `path`), find (`query` in plain words: searches by meaning, in English and German,
+      best for questions and topics), search (`query`: exact words in names/contents), read
+      (`path`). To answer questions from documents: find, then read the best file, and say which
+      file it came from.
     input_schema:
       type: object
       properties:
-        action: {type: string, enum: [list, search, read]}
+        action: {type: string, enum: [list, find, search, read]}
         scope: {type: string, enum: [personal, company]}
         path: {type: string}
         query: {type: string}

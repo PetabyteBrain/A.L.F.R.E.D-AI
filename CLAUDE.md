@@ -33,7 +33,9 @@ the original spec is in `docs/archive/original-spec.md`. Keep the plan updated w
   `KOKORO_VOICE` in the Jetson's `~/alfred-speech/.env` and `docker compose up -d`.
 - NAS (TrueNAS, SMB from inside the container): `orchestrator/nas.py` (scopes personal/company, notes,
   lists, files) and `orchestrator/company_todo.py` (cell-level xlsx edits + backups; never save the
-  workbook with openpyxl). Recordings still use local `STORAGE_ROOT`.
+  workbook with openpyxl). Telegram files: `orchestrator/uploads.py`; search by meaning:
+  `orchestrator/nas_search.py`. Recordings are written to local `STORAGE_ROOT` and moved to the NAS
+  after 14 days (`orchestrator/recording_archive.py`); always read/delete them through that module.
 - Model: `claude-haiku-4-5` (user's choice) via the official `anthropic` SDK (1.x, async client).
   Haiku 4.5 does not take adaptive thinking/effort; don't add them.
 - Keep the static system prompt in `agent_core.STATIC_SYSTEM` byte-stable (prompt caching); put
