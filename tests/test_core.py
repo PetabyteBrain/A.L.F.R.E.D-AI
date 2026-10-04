@@ -3177,3 +3177,30 @@ def test_telegram_files_to_nas_and_receipts(monkeypatch, tmp_path):
         raise AssertionError("accepted an .exe")
     except uploads.UploadError:
         pass
+
+
+def test_briefing_includes_company_todo(monkeypatch, tmp_path):
+    import asyncio, dataclasses
+    from datetime import datetime, timedelta
+    from orchestrator import briefing, nas, company_todo
+    from orchestrator.config import settings
+    fake = _FakeSMB(tmp_path)
+    s2 = dataclasses.replace(settings, nas_host="nas", nas_user="u", nas_password="p", nas_share_company="Company",
+                             nas_company_todo="todo.xlsx")
+    for mod in (nas, company_todo):
+        monkeypatch.setattr(mod, "settings", s2)
+    monkeypatch.setattr(nas, "_smb", lambda: fake)
+    monkeypatch.setattr(company_todo, "_smb", lambda: fake)
+    _todo_workbook(tmp_path / "Company" / "todo.xlsx")
+    admin = registry.lookup("telegram", "111")
+    friend = registry.lookup("telegram", "22222222")
+    monday = datetime(2026, 10, 5, 7, 0)
+    out = asyncio.run(briefing._company_todo(admin, monday))
+    assert out["top_current"][0]["todo"] == "KLG Gründung Abschliessen" and out["open_current"] == 3
+    assert "in_progress_for_2_weeks_or_more" not in out                     # first seen today
+    assert asyncio.run(briefing._company_todo(friend, monday)) is None         # company info: admins/cofounders only
+    out = asyncio.run(briefing._company_todo(admin, monday + timedelta(days=14)))
+    assert set(out["in_progress_for_2_weeks_or_more"]) == {"KLG Gründung Abschliessen",
+                                                           "Offizielles eröffnungsdatum definieren"}
+    out = asyncio.run(briefing._company_todo(admin, monday + timedelta(days=15)))   # only on Mondays
+    assert "in_progress_for_2_weeks_or_more" not in out

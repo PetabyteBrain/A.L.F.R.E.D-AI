@@ -204,6 +204,10 @@ async def gather(person: Person) -> dict:
     if _uses_tool(person.role, "list_tasks"):
         out["open_tasks"] = [t["title"] for t in db.query("SELECT title FROM tasks WHERE status = 'active' ORDER BY id LIMIT 15")]
 
+    company = await _company_todo(person, now)
+    if company:
+        out["company_todo"] = company
+
     if person.is_admin and settings.n8n_enabled:
         try:
             from .tools import n8n_tool
@@ -217,6 +221,39 @@ async def gather(person: Person) -> dict:
     return out
 
 
+STALE_DAYS = 14
+_PROGRESS_KEY = "company_progress_seen"
+
+
+async def _company_todo(person: Person, now: datetime) -> dict | None:
+    """Admins/cofounders: the top open Company to-dos; on Mondays also what's been "in progress"
+    for 2+ weeks (tracked here, since the workbook has no dates)."""
+    import asyncio
+    from . import nas, company_todo
+    if person.role not in nas.COMPANY_ROLES or not nas.enabled():
+        return None
+    try:
+        todo = await asyncio.to_thread(company_todo.show, person)
+    except Exception as e:  # noqa: BLE001
+        log.warning("Briefing Company to-do failed: %s", e)
+        return {"note": "unavailable right now"}
+    current = sorted(todo["current"], key=lambda i: -(i.get("importance") or 0))
+    out = {"top_current": [{"todo": i["description"], "importance": i.get("importance"), "status": i.get("status")}
+                           for i in current[:5]],
+           "open_current": len(current), "future": len(todo["future"])}
+    seen = db.get_setting(_PROGRESS_KEY, {}) or {}
+    today = now.date().isoformat()
+    in_progress = {i["description"] for i in current if (i.get("status") or "").lower() == "in progress"}
+    seen = {d: seen.get(d, today) for d in in_progress}          # forget items that moved on
+    db.set_setting(_PROGRESS_KEY, seen)
+    if now.weekday() == 0:
+        stale = [d for d, first in seen.items()
+                 if (now.date() - datetime.fromisoformat(first).date()).days >= STALE_DAYS]
+        if stale:
+            out["in_progress_for_2_weeks_or_more"] = stale
+    return out
+
+
 # --- composing & sending -------------------------------------------------------------------------
 
 async def compose(person: Person, data: dict, channel: str) -> str:
@@ -227,12 +264,14 @@ async def compose(person: Person, data: dict, channel: str) -> str:
     style = ("It will be read aloud on a phone call: 4-7 short spoken sentences, no lists, no symbols, "
              "no emoji, times said naturally." if channel == "call" else
              "It is a Telegram message: a greeting line, then short lines grouped as needed (weather, "
-             "calendar, reminders, calls, tasks), plain text with at most a few emoji as markers, no "
+             "calendar, reminders, calls, tasks, Company to-do), plain text with at most a few emoji as markers, no "
              "headings, no Markdown tables. Under 900 characters.")
     system = (f"You are {settings.assistant_name}, a discreet, warm British butler (Alfred Pennyworth's manner) "
               f"writing {who}'s daily briefing. Use ONLY the facts in the JSON; never invent events or details. "
               f"Skip sections that are empty or missing; say 'a clear calendar' if calendar_today is an empty "
-              f"list. Mention anything 'unavailable' in a few words. {style} Address them as {who}. End with one "
+              f"list. For company_todo give the top few items briefly; if in_progress_for_2_weeks_or_more is "
+              f"present, add a gentle nudge about those. Mention anything 'unavailable' in a few words. {style} "
+              f"Address them as {who}. End with one "
               f"brief, dry, kind remark, not a question.")
     if not settings.anthropic_api_key:
         return f"Good morning, {who}. (Briefing text needs the language model, which isn't configured.)"
