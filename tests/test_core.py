@@ -1221,7 +1221,7 @@ def test_telegram_voice_note_round_trip(monkeypatch):
             return File()
 
     class Msg:
-        chat_id, text, caption, audio, video_note = 111, None, None, None, None
+        chat_id, text, caption, audio, video_note, document, photo = 111, None, None, None, None, None, None
         voice = Voice()
         async def reply_voice(self, voice, caption=None, **kw):
             replies.append(("voice", voice, caption))
@@ -2250,7 +2250,7 @@ def test_voice_notes_on_request_and_voice_mode(monkeypatch):
     monkeypatch.setattr(agent_core, "respond", fake_respond)
 
     class Msg:
-        chat_id, caption, voice, audio, video_note = 111, None, None, None, None
+        chat_id, caption, voice, audio, video_note, document, photo = 111, None, None, None, None, None, None
         def __init__(self, text):
             self.text = text
         async def reply_voice(self, voice, caption=None, **kw):
