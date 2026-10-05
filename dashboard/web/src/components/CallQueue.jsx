@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { api } from "../api.js";
 import { usePoll } from "../hooks.js";
 import { Empty, ErrorNote, Tag } from "./common.jsx";
@@ -6,9 +6,15 @@ import CallDialog from "./CallDialog.jsx";
 
 const STATUS_KIND = { pending: "", dialing: "busy", done: "ok", voicemail: "busy", no_answer: "bad", failed: "bad", cancelled: "" };
 
-/* Upcoming + recent call requests, with outcome reports. */
+/* Upcoming call requests; finished ones in an "Archived" tab with a search. */
 export default function CallQueue({ me, assistant }) {
-  const { data: rows, error, reload } = usePoll(() => api("/calls/scheduled"), 10000);
+  const [tab, setTab] = useState("upcoming");
+  const [search, setSearch] = useState("");
+  const [q, setQ] = useState("");
+  useEffect(() => { const t = setTimeout(() => setQ(search.trim()), 300); return () => clearTimeout(t); }, [search]);
+  const path = tab === "upcoming" ? "/calls/scheduled?include_done=false"
+    : `/calls/scheduled?${new URLSearchParams({ archived: "true", q })}`;
+  const { data: rows, error, reload } = usePoll(() => api(path), tab === "upcoming" ? 10000 : 0, [path]);
   const { data: targets } = usePoll(() => (me.can_request_calls ? api("/calls/targets") : Promise.resolve([])));
   const [open, setOpen] = useState(false);
   const [err, setErr] = useState("");
@@ -27,12 +33,24 @@ export default function CallQueue({ me, assistant }) {
   return (
     <>
       <h3 className="sub">
-        Call queue
+        Calls
         {me.can_request_calls && <button className="btn primary small" onClick={() => setOpen(true)}>Schedule a call</button>}
       </h3>
+      <div className="call-tabs">
+        <div className="seg" role="tablist" aria-label="Calls">
+          <button role="tab" className={tab === "upcoming" ? "active" : ""} aria-selected={tab === "upcoming"} onClick={() => setTab("upcoming")}>Upcoming</button>
+          <button role="tab" className={tab === "archived" ? "active" : ""} aria-selected={tab === "archived"} onClick={() => setTab("archived")}>Archived</button>
+        </div>
+        {tab === "archived" && (
+          <input type="search" value={search} placeholder="Search name, purpose or result…" aria-label="Search archived calls"
+                 maxLength={100} onChange={(e) => setSearch(e.target.value)} />
+        )}
+      </div>
       <ErrorNote error={error || err} />
       {notice && <div className="notice" role="status" onClick={() => setNotice("")}>{notice}</div>}
-      {rows && rows.length === 0 && <Empty>No calls requested yet. Ask {assistant} "call Max tomorrow at 9 and ask about the invoice".</Empty>}
+      {rows && rows.length === 0 && (tab === "upcoming"
+        ? <Empty>No calls planned. Ask {assistant} "call Max tomorrow at 9 and ask about the invoice".</Empty>
+        : <Empty>{q ? "No archived call matches." : "No finished calls yet."}</Empty>)}
       <div className="list">
         {(rows || []).map((c) => (
           <div className="row call-row" key={c.id}>

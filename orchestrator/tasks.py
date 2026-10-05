@@ -28,7 +28,7 @@ FOLLOW_UP_EVERY = timedelta(hours=24)
 MAX_FOLLOW_UPS = 3
 FOLLOW_UP_KINDS = ("none", "telegram", "call")
 _COLS = ("t.id, t.title, t.notes, t.status, t.schedule, t.next_run_at, t.owner_user_id, t.requested_by, t.due_at, "
-         "t.follow_up, t.follow_up_at, t.follow_ups, t.completed_at, t.completed_by, t.result, t.created_at, "
+         "t.follow_up, t.follow_up_at, t.follow_ups, t.completed_at, t.completed_by, t.result, t.created_at, t.category, "
          "o.display_name AS owner_name, r.display_name AS requester_name")
 _FROM = "FROM tasks t LEFT JOIN users o ON o.id = t.owner_user_id LEFT JOIN users r ON r.id = t.requested_by"
 

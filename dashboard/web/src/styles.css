@@ -790,3 +790,38 @@ main > .legal-links { margin-top: 8px; }
 .list-card .field-row input, .company-todo .field-row input { flex: 1 1 160px; min-width: 0; }
 .company-todo { margin-top: 24px; }
 .company-todo table select { max-width: 140px; }
+
+/* Agenda: categories, month calendar, editor */
+.cat-meeting { --cat: #4fc3f7; } .cat-reminder { --cat: #ffd54f; } .cat-task { --cat: #81c784; }
+.cat-call { --cat: #ba68c8; } .cat-work { --cat: #ff8a65; } .cat-personal { --cat: #f06292; } .cat-other { --cat: #90a4ae; }
+.cat-dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: var(--cat, #90a4ae); margin-right: 6px; vertical-align: middle; }
+.cat-select { display: inline-flex; align-items: center; }
+.cat-select select { padding: 3px 6px; font-size: 12px; }
+.cat-filters { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 10px; }
+.chip { display: inline-flex; align-items: center; gap: 2px; padding: 3px 9px; border: 1px solid var(--line); background: transparent; color: inherit; font: 400 12px var(--font-mono); cursor: pointer; border-radius: 12px; }
+.chip.off { opacity: .45; }
+.agenda-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; justify-content: space-between; }
+.month { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 2px; }
+.month .dow { font: 600 10px var(--font-display); letter-spacing: .18em; text-transform: uppercase; color: var(--muted); padding: 4px 6px; }
+.month .cell { min-height: 92px; border: 1px solid var(--line); padding: 3px; display: flex; flex-direction: column; gap: 2px; overflow: hidden; }
+.month .cell.out { opacity: .45; }
+.month .cell.today { border-color: rgb(var(--ok-rgb) / .8); box-shadow: inset 0 0 0 1px rgb(var(--ok-rgb) / .4); }
+.cell-day { align-self: flex-end; background: none; border: 0; color: var(--muted); font: 400 11px var(--font-mono); cursor: pointer; }
+.month .ev { text-align: left; background: color-mix(in srgb, var(--cat) 18%, transparent); border: 0; border-left: 3px solid var(--cat);
+  color: inherit; font-size: 11px; padding: 1px 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
+.month .ev.gone { text-decoration: line-through; opacity: .6; }
+.month .more { background: none; border: 0; color: var(--muted); font-size: 11px; text-align: left; cursor: pointer; }
+.agenda-editor, .agenda-day { margin-top: 14px; padding: 14px; }
+.agenda-day .row { width: 100%; }
+.call-tabs { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 10px; }
+.call-tabs input[type="search"] { flex: 1 1 220px; min-width: 0; }
+.n8n-panel .sub a.btn { margin-left: 10px; }
+@media (max-width: 700px) {
+  .month .cell { min-height: 54px; }
+  .month .ev { font-size: 0; padding: 0; height: 6px; }       /* phones: coloured bars; tap the day for details */
+}
+/* Agenda editor / day list: a drawer on the right, always in view */
+.agenda-editor, .agenda-day { position: fixed; right: 16px; top: 76px; width: min(400px, calc(100vw - 32px));
+  max-height: calc(100vh - 96px); overflow-y: auto; overflow-x: hidden; z-index: 60; margin: 0; background: var(--bg);
+  box-shadow: 0 12px 40px rgb(0 0 0 / .55); }
+.agenda-editor { z-index: 61; }

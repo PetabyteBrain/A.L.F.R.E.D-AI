@@ -251,6 +251,7 @@ async def items(person: Person, start: str, end: str) -> dict:
                         "title": r["text"], "start": t.isoformat(), "all_day": False, "category": r["category"],
                         "recurrence": r["recurrence"], "channel": r["channel"], "link_state": r["link_state"],
                         "linked_event": r["event_id"] if r["link_state"] == "linked" else None,
+                        "duplicate_of": r["event_id"] if r["link_state"] == "duplicate" else None,
                         "link_note": r["link_note"], "status": r["status"], "editable": True})
     for t in db.query("SELECT id, title, due_at, category, status FROM tasks WHERE owner_user_id = ? AND status = 'active' "
                       "AND due_at IS NOT NULL AND due_at BETWEEN ? AND ?", (person.id, _iso(s), _iso(e))):

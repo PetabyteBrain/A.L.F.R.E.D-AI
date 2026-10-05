@@ -2,6 +2,7 @@ import { useState } from "react";
 import { api } from "../api.js";
 import { usePoll } from "../hooks.js";
 import { Empty, ErrorNote, Tag } from "./common.jsx";
+import { CategorySelect } from "./categories.jsx";
 
 const FOLLOW = { none: "No follow-up", telegram: "Telegram check-in", call: "Phone check-in" };
 
@@ -104,6 +105,7 @@ export default function TaskList({ me, assistant }) {
             </div>
             {canEdit(x) && (
               <div className="row-actions">
+                <CategorySelect kind="task" id={x.id} value={x.category} onChanged={reload} />
                 <button className="btn small" disabled={busy} onClick={() => run(() => api(`/tasks/${Number(x.id)}/done`, { method: "POST", body: {} }))}>Done</button>
                 <button className="btn ghost small" disabled={busy} onClick={() => run(() => api(`/tasks/${Number(x.id)}`, { method: "DELETE" }))}>Cancel</button>
               </div>
