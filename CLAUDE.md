@@ -50,6 +50,8 @@ the original spec is in `docs/archive/original-spec.md`. Keep the plan updated w
 - Per-role switches: `orchestrator/permissions.py` (+ `permission:` on tools in registry.yaml). Check
   `permissions.allowed(role, ...)` server-side for anything a switch covers; admins always pass.
 - Unknown non-API pages get `public/not-found.html` (`main._http_errors`); API paths keep JSON 404.
+- Files in `public/` have fixed names and Cloudflare caches .css/.js/.svg: link shared ones through
+  `main._FIXED_NAME_ASSETS` (served pages get `?v=<content hash>`), and check theme work on the live site.
 - Permissions: always use `routes.current_person` (respects an admin's "view as" role preview);
   `routes.real_person` only for the preview switch itself (`dashboard/api/viewas.py`).
 - Tasks and Files stay mounted in the background (`App.jsx` KEEP_ALIVE) so state survives tab switches;
