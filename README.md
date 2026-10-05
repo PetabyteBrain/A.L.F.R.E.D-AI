@@ -8,8 +8,9 @@ the registry get answers; unknown callers can leave a message, everyone else is 
 
 Runs as one Docker container on **alfred-server** (`/home/user/alfred`). The project, service,
 container and hostname keep their original `alfred` names (alfred.example.com, `docker compose exec alfred`);
-only the assistant's persona and branding are "Alfred" (`ASSISTANT_NAME`). The dashboard has two skins:
-**Stark** (holographic HUD) and **Batcave** (bat-signal yellow on gunmetal).
+only the assistant's persona and branding are "Alfred" (`ASSISTANT_NAME`). The dashboard has three skins:
+**Stark** (holographic HUD), **Batcave** (bat-signal yellow on gunmetal) and **Matrix** (green-screen
+terminal with digital rain).
 
 ## What Alfred can do
 

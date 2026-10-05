@@ -1,10 +1,11 @@
 import { createContext, useContext, useEffect } from "react";
 import { useStoredState } from "./hooks.js";
 
-// Two skins for the same dashboard. "alfred" keeps its id so saved preferences still work.
+// Skins for the same dashboard. "alfred" keeps its id so saved preferences still work.
 export const THEMES = {
   alfred: { label: "Stark", wordmark: "A.L.F.R.E.D.", subtitle: "Personal butler system · Stark HUD" },
   batcave: { label: "Batcave", wordmark: "ALFRED", subtitle: "Wayne Manor · Batcave terminal" },
+  matrix: { label: "Matrix", wordmark: "ALFRED", subtitle: "Green-screen terminal · Construct" },
 };
 export const DEFAULT_THEME = "alfred";
 export const normalizeTheme = (t) => (THEMES[t] ? t : DEFAULT_THEME); // e.g. old "friday" -> alfred

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useThemeName } from "../theme.js";
+import { RAIN_GLYPHS as GLYPHS } from "./hud.jsx";
 
 const reduceMotion = () => window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
@@ -73,6 +74,43 @@ function rain(ctx, size) {
   };
 }
 
+/* Matrix: columns of glyphs falling, a bright head and a fading green trail. */
+function digitalRain(ctx, size) {
+  const FS = 16;
+  const cols = Math.ceil(size.w / FS);
+  const drops = Array.from({ length: cols }, () => ({ y: Math.random() * -60, speed: 0.35 + Math.random() * 0.65 }));
+  const glyph = () => GLYPHS[Math.floor(Math.random() * GLYPHS.length)];
+  ctx.fillStyle = "#000";
+  ctx.fillRect(0, 0, size.w, size.h);
+  ctx.font = `${FS}px "Share Tech Mono", monospace`;
+  ctx.textBaseline = "top";
+  return (move) => {
+    if (!move) {                                    // reduced motion: a still scatter of code
+      for (let i = 0; i < cols; i++) {
+        for (let r = 0; r < 6; r++) {
+          ctx.fillStyle = `rgba(0,255,65,${0.05 + Math.random() * 0.12})`;
+          ctx.fillText(glyph(), i * FS, Math.random() * size.h);
+        }
+      }
+      return;
+    }
+    ctx.fillStyle = "rgba(0,0,0,0.09)";            // fade the trails
+    ctx.fillRect(0, 0, size.w, size.h);
+    for (let i = 0; i < cols; i++) {
+      const d = drops[i];
+      const y = Math.floor(d.y) * FS;
+      if (d.y >= 0) {
+        ctx.fillStyle = "rgba(0,255,65,0.55)";
+        ctx.fillText(glyph(), i * FS, y - FS);
+        ctx.fillStyle = "rgba(210,255,220,0.85)";     // the bright head
+        ctx.fillText(glyph(), i * FS, y);
+      }
+      d.y += d.speed;
+      if (y > size.h && Math.random() > 0.975) { d.y = Math.random() * -20; d.speed = 0.35 + Math.random() * 0.65; }
+    }
+  };
+}
+
 export default function Backdrop() {
   const theme = useThemeName();
   const canvasRef = useRef(null);
@@ -91,7 +129,7 @@ export default function Backdrop() {
       size.w = window.innerWidth; size.h = window.innerHeight;
       canvas.width = size.w * dpr; canvas.height = size.h * dpr;
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      draw = theme === "batcave" ? rain(ctx, size) : particles(ctx, size, pointer);
+      draw = theme === "batcave" ? rain(ctx, size) : theme === "matrix" ? digitalRain(ctx, size) : particles(ctx, size, pointer);
       draw(false);
     };
     setup();

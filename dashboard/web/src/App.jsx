@@ -134,7 +134,7 @@ export default function App() {
   const Page = active.Page;
   const skin = THEMES[theme];
   const assistant = me.assistant_name || "Alfred";
-  const wordmark = theme === "alfred" ? assistant.toUpperCase().split("").join(".") + "." : assistant.toUpperCase();
+  const wordmark = theme === "alfred" ? assistant.toUpperCase().split("").join(".") + "." : assistant.toUpperCase();  // matrix adds a cursor in CSS
   const index = String(tabs.indexOf(active) + 1).padStart(2, "0");
 
   return (

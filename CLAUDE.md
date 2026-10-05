@@ -2,8 +2,8 @@
 
 Personal AI butler "Alfred" (phone + Telegram + dashboard). Renamed from Alfred on 2026-09-28:
 user-facing name comes from `ASSISTANT_NAME`; infra names (folder, container, domain, cookie,
-CSRF value, localStorage keys) intentionally stay `alfred`. Dashboard skins: `alfred` (Stark HUD)
-and `batcave` (see `dashboard/web/src/theme.js`). Full spec lives in the README; the
+CSRF value, localStorage keys) intentionally stay `alfred`. Dashboard skins: `alfred` (Stark HUD),
+`batcave` and `matrix` (see `dashboard/web/src/theme.js`). Full spec lives in the README; the
 current plan is `docs/PROJECT_PLAN.md` (mirrored to `C:\Users\user\Downloads\alfred-agent-spec.md`);
 the original spec is in `docs/archive/original-spec.md`. Keep the plan updated when features land.
 

@@ -26,9 +26,39 @@ export function BatSignal({ size = "md", label }) {
   );
 }
 
-/* The theme's emblem: arc reactor on the Stark HUD, bat-signal in the Batcave. */
+// Half-width katakana, digits and a few symbols, as in the digital rain.
+export const RAIN_GLYPHS = "ｱｲｳｴｵｶｷｸｹｺｻｼｽｾｿﾀﾁﾂﾃﾄﾅﾆﾇﾈﾉﾊﾋﾌﾍﾎﾏﾐﾑﾒﾓﾔﾕﾖﾗﾘﾙﾚﾛﾜﾝ0123456789:=*+<>¦";
+const RING_TEXT = Array.from({ length: 34 }, (_, i) => RAIN_GLYPHS[(i * 7) % RAIN_GLYPHS.length]).join(" ");
+
+/* Matrix: a ring of falling-code glyphs around a terminal cursor. */
+export function CodeRing({ size = "md", label }) {
+  const ticks = Array.from({ length: 36 }, (_, i) => {
+    const a = (i * 10) * (Math.PI / 180);
+    const r0 = i % 3 === 0 ? 50 : 53;
+    return `M ${100 + r0 * Math.cos(a)} ${100 + r0 * Math.sin(a)} L ${100 + 56 * Math.cos(a)} ${100 + 56 * Math.sin(a)}`;
+  });
+  return (
+    <div className={`reactor emblem-code reactor-${size}`} role={label ? "img" : undefined} aria-label={label} aria-hidden={label ? undefined : true}>
+      <svg viewBox="0 0 200 200">
+        <defs><path id="code-ring" d="M 100 100 m -76 0 a 76 76 0 1 1 152 0 a 76 76 0 1 1 -152 0" /></defs>
+        <circle className="r-halo" cx="100" cy="100" r="62" />
+        <g className="spin spin-slow"><circle className="ring ring-dash-a" cx="100" cy="100" r="96" /></g>
+        <g className="spin spin-rev"><text className="code-text"><textPath href="#code-ring">{RING_TEXT}</textPath></text></g>
+        <g className="spin spin-med"><path className="ring ring-ticks" d={ticks.join(" ")} /></g>
+        <rect className="code-core" x="64" y="64" width="72" height="72" />
+        <text className="code-a" x="100" y="114" textAnchor="middle">A</text>
+        <rect className="code-cursor" x="88" y="120" width="24" height="5" />
+      </svg>
+    </div>
+  );
+}
+
+/* The theme's emblem: arc reactor on the Stark HUD, bat-signal in the Batcave, code ring in the Matrix. */
 export function Emblem(props) {
-  return useThemeName() === "batcave" ? <BatSignal {...props} /> : <ArcReactor {...props} />;
+  const theme = useThemeName();
+  if (theme === "batcave") return <BatSignal {...props} />;
+  if (theme === "matrix") return <CodeRing {...props} />;
+  return <ArcReactor {...props} />;
 }
 
 /* Arc reactor: layered rotating rings around a glowing core (pure SVG + CSS animation). */

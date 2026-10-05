@@ -2,6 +2,7 @@
    A.L.F.R.E.D. dashboard — two skins
    data-theme="alfred"  : Stark holographic HUD (cyan)
    data-theme="batcave" : Batcave terminal (bat-signal yellow on gunmetal)
+   data-theme="matrix"  : green-screen terminal (phosphor green on black, digital rain)
    Everything reads the tokens below; theme-specific overrides live at the end.
    ========================================================================== */
 
@@ -22,6 +23,16 @@
   --bad-rgb: 224 36 44;
   --ok-rgb: 176 222 104;
   --bg: #050506;
+  --bg-deep: #000000;
+}
+
+:root[data-theme="matrix"] {
+  --accent-rgb: 0 255 65;        /* phosphor green */
+  --accent2-rgb: 0 120 30;       /* deep green */
+  --warn-rgb: 230 255 60;        /* acid yellow */
+  --bad-rgb: 255 70 70;
+  --ok-rgb: 150 255 180;         /* pale mint, distinct from the accent */
+  --bg: #000300;
   --bg-deep: #000000;
 }
 
@@ -905,3 +916,99 @@ main[hidden], [hidden] { display: none !important; }
 .tg-now::before { content: ""; position: absolute; left: -4px; top: -3px; width: 8px; height: 8px; border-radius: 50%; background: #ff5252; }
 .tg-ev.short { white-space: nowrap; line-height: 1.5; }
 .agenda { min-width: 0; }
+
+
+/* ==========================================================================
+   Matrix skin: green-screen terminal. Monospace everywhere, square corners, phosphor glow,
+   digital rain behind (Backdrop.jsx), a code-ring emblem (hud.jsx CodeRing).
+   ========================================================================== */
+:root[data-theme="matrix"] {
+  --text: rgb(0 255 65 / .86);
+  --text-strong: #d6ffdf;
+  --muted: rgb(0 255 65 / .52);
+  --faint: rgb(0 255 65 / .28);
+  --line: rgb(0 255 65 / .2);
+  --line-strong: rgb(0 255 65 / .55);
+  --fill: rgb(0 255 65 / .04);
+  --glow: 0 0 8px rgb(0 255 65 / .55);
+  --font-display: "Share Tech Mono", ui-monospace, Consolas, monospace;
+  --font-body: "Share Tech Mono", ui-monospace, Consolas, monospace;
+}
+:root[data-theme="matrix"] body { background: #000; font-weight: 400; font-size: 14px; letter-spacing: .01em; }
+:root[data-theme="matrix"] body::before { background: repeating-linear-gradient(0deg, rgb(0 0 0 / .28) 0 1px, transparent 1px 3px); }
+:root[data-theme="matrix"] body::after { background: radial-gradient(ellipse at center, transparent 50%, rgb(0 0 0 / .8) 100%); }
+:root[data-theme="matrix"] .backdrop canvas { opacity: .42; }
+:root[data-theme="matrix"] .backdrop .floor { display: none; }
+:root[data-theme="matrix"] ::selection { background: rgb(0 255 65 / .85); color: #000; }
+
+/* panels: black glass, thin green frame, small square brackets */
+:root[data-theme="matrix"] .hud {
+  background: linear-gradient(180deg, rgb(0 10 2 / .9), rgb(0 4 1 / .92));
+  border: 1px solid rgb(0 255 65 / .22);
+  box-shadow: inset 0 0 24px rgb(0 255 65 / .05), 0 0 0 1px rgb(0 0 0 / .6);
+  backdrop-filter: blur(1px);
+}
+:root[data-theme="matrix"] .hud::before { --l: 12px; --t: 1px; filter: drop-shadow(0 0 4px rgb(0 255 65 / .8)); }
+:root[data-theme="matrix"] .hud:not(.modal):hover { border-color: rgb(0 255 65 / .45); box-shadow: inset 0 0 28px rgb(0 255 65 / .08), 0 0 22px -6px rgb(0 255 65 / .35); }
+:root[data-theme="matrix"] .hud-code { background: var(--accent); color: #000; }
+:root[data-theme="matrix"] .modal.hud { background: #000c02; }
+
+/* type: everything mono, headings in caps with a prompt, no faux bold */
+:root[data-theme="matrix"] :is(h1, h2, h3, .btn, .sub, .wordmark, .op-label, .theme-switch button, .sys-status,
+  .rail-nav button, .g-value, .g-label, .tag, .seg button, .field > span, .kv > span, .st-label, .st-value, .chip) { font-weight: 400; }
+:root[data-theme="matrix"] .page-title h1 { font-size: clamp(24px, 3vw, 34px); letter-spacing: .12em; text-transform: uppercase;
+  text-shadow: 0 0 12px rgb(0 255 65 / .7), 0 0 34px rgb(0 255 65 / .25); }
+:root[data-theme="matrix"] .page-title h1::before { content: "> "; color: var(--accent); }
+:root[data-theme="matrix"] .sub::before { content: "//"; color: var(--faint); }
+:root[data-theme="matrix"] :is(.hud h2, .hud-head h2) { text-shadow: 0 0 8px rgb(0 255 65 / .5); }
+:root[data-theme="matrix"] b { color: var(--text-strong); font-weight: 400; text-shadow: 0 0 6px rgb(0 255 65 / .45); }
+:root[data-theme="matrix"] .wordmark { letter-spacing: .3em; text-shadow: 0 0 10px rgb(0 255 65 / .9), 0 0 30px rgb(0 255 65 / .35); }
+:root[data-theme="matrix"] .wordmark::after { content: "_"; margin-left: .1em; animation: cursor 1.05s steps(1) infinite; }
+:root[data-theme="matrix"] .login-mark { font-weight: 400; letter-spacing: .2em; text-shadow: 0 0 16px rgb(0 255 65 / .9), 0 0 50px rgb(0 255 65 / .35); }
+:root[data-theme="matrix"] .login-mark::after { content: "_"; animation: cursor 1.05s steps(1) infinite; }
+:root[data-theme="matrix"] .clock-time { color: var(--accent); text-shadow: 0 0 10px rgb(0 255 65 / .7); }
+@keyframes cursor { 50% { opacity: 0; } }
+
+/* controls: square, outlined, inverted when active (like a selected terminal line) */
+:root[data-theme="matrix"] .btn { clip-path: none; background: transparent; border-color: rgb(0 255 65 / .55); letter-spacing: .14em; font-size: 12px; }
+:root[data-theme="matrix"] .btn.small { font-size: 11px; }
+:root[data-theme="matrix"] .btn:hover:not(:disabled), :root[data-theme="matrix"] .btn.primary { background: rgb(0 255 65 / .14); color: var(--text-strong); }
+:root[data-theme="matrix"] .btn.primary:hover:not(:disabled) { background: var(--accent); color: #000; box-shadow: 0 0 14px rgb(0 255 65 / .6); }
+:root[data-theme="matrix"] .btn.danger:hover:not(:disabled) { background: var(--bad); color: #000; }
+:root[data-theme="matrix"] :is(.seg button.active, .theme-switch button.active) { background: var(--accent); color: #000; text-shadow: none; }
+:root[data-theme="matrix"] :is(input, select, textarea) { font-family: var(--font-mono); background: rgb(0 0 0 / .6); border-bottom-color: rgb(0 255 65 / .4); caret-color: var(--accent); }
+:root[data-theme="matrix"] :is(input, select, textarea):focus { background: rgb(0 20 5 / .8); box-shadow: 0 6px 14px -8px rgb(0 255 65 / .8); }
+:root[data-theme="matrix"] select option { background: #000; color: var(--text-strong); }
+:root[data-theme="matrix"] :is(input[type="date"], input[type="time"], input[type="datetime-local"])::-webkit-calendar-picker-indicator { filter: invert(55%) sepia(100%) saturate(2000%) hue-rotate(80deg); }
+:root[data-theme="matrix"] :is(.chip, .tag) { border-radius: 0; }
+:root[data-theme="matrix"] .chip { background: rgb(0 0 0 / .5); }
+:root[data-theme="matrix"] .theme-switch button { font-size: 10px; letter-spacing: .12em; padding: 8px 6px; }
+
+/* shell */
+:root[data-theme="matrix"] .rail { background: linear-gradient(180deg, rgb(0 8 2 / .95), rgb(0 0 0 / .96)); border-right-color: rgb(0 255 65 / .18); }
+:root[data-theme="matrix"] .rail::after { box-shadow: 0 0 16px rgb(0 255 65 / .7); }
+:root[data-theme="matrix"] .rail-nav button { letter-spacing: .14em; }
+:root[data-theme="matrix"] .rail-nav button.active { background: linear-gradient(90deg, rgb(0 255 65 / .18), rgb(0 255 65 / .02)); color: #e8ffec; }
+:root[data-theme="matrix"] .rail-nav button.active .nav-label::before { content: "> "; color: var(--accent); }
+:root[data-theme="matrix"] .topline { border-bottom-color: rgb(0 255 65 / .2); background: linear-gradient(180deg, #000 70%, rgb(0 0 0 / 0)); }
+:root[data-theme="matrix"] .row { background: rgb(0 255 65 / .025); border-left-color: rgb(0 255 65 / .25); }
+:root[data-theme="matrix"] .blip { box-shadow: 0 0 10px rgb(0 255 65 / .9); }
+:root[data-theme="matrix"] .g-fill { filter: drop-shadow(0 0 4px rgb(0 255 65 / .8)); }
+:root[data-theme="matrix"] .g-track { stroke: rgb(0 255 65 / .1); }
+:root[data-theme="matrix"] .msg.theirs .bubble { background: rgb(0 14 3 / .92); border-color: rgb(0 255 65 / .2); border-left-color: var(--accent); }
+:root[data-theme="matrix"] .md :is(h1, h2, h3, h4) { color: var(--text-strong); text-shadow: 0 0 8px rgb(0 255 65 / .5); }
+:root[data-theme="matrix"] code { background: rgb(0 255 65 / .08); color: var(--text-strong); }
+:root[data-theme="matrix"] :is(.agenda-editor, .agenda-day) { background: #000; box-shadow: 0 0 0 1px rgb(0 255 65 / .3), 0 12px 40px rgb(0 0 0 / .8), 0 0 30px -10px rgb(0 255 65 / .4); }
+:root[data-theme="matrix"] :is(.month .ev, .tg-ev, .tg-allday-cell .ev) { background: color-mix(in srgb, var(--cat) 16%, #000); }
+:root[data-theme="matrix"] :is(.tg-col.today, .month .cell.today) { background-color: rgb(0 255 65 / .05); }
+
+/* code-ring emblem */
+.emblem-code .r-halo { fill: rgb(0 255 65 / .1); }
+.emblem-code .ring { stroke: rgb(0 255 65 / .75); }
+.emblem-code .ring-dash-a { stroke-width: 1; stroke-dasharray: 3 7; opacity: .7; }
+.emblem-code .code-text { font: 400 15px "Share Tech Mono", monospace; fill: rgb(0 255 65 / .85); letter-spacing: 2px; }
+.emblem-code .code-core { fill: rgb(0 20 5 / .9); stroke: var(--accent); stroke-width: 1.5; filter: drop-shadow(0 0 8px rgb(0 255 65 / .6)); }
+.emblem-code .code-a { font: 400 48px "Share Tech Mono", monospace; fill: #d6ffdf; filter: drop-shadow(0 0 6px rgb(0 255 65 / .9)); }
+.emblem-code .code-cursor { fill: var(--accent); animation: cursor 1.05s steps(1) infinite; }
+.reactor-sm.emblem-code :is(.code-text, .ring-dash-a) { display: none; }
+:root[data-theme="matrix"] .readout { background: rgb(0 6 1 / .94); }
