@@ -275,8 +275,7 @@ async def update(person: Person, kind: str, item_id, *, title: str | None = None
         category = check_category(category)
     if kind == "event":
         if category:
-            db.execute("INSERT INTO event_categories(user_id, event_id, category) VALUES (?,?,?) ON CONFLICT(user_id, "
-                       "event_id) DO UPDATE SET category = excluded.category", (person.id, str(item_id), category))
+            _set_event_category(person.id, str(item_id), category)
         if title or start:
             fields = {"summary": title}
             if start:
@@ -323,6 +322,78 @@ async def update(person: Person, kind: str, item_id, *, title: str | None = None
             db.execute("UPDATE tasks SET category = ? WHERE id = ?", (category, int(item_id)))
         return tasks.get(int(item_id))
     raise AgendaError("That item can't be changed here.")
+
+
+def _set_event_category(user_id: int, event_id: str, category: str) -> None:
+    db.execute("INSERT INTO event_categories(user_id, event_id, category) VALUES (?,?,?) ON CONFLICT(user_id, "
+               "event_id) DO UPDATE SET category = excluded.category", (user_id, event_id, category))
+
+
+async def create(person: Person, mode: str, *, title: str, start: str, category: str = "", duration_min: int = 60,
+                 channel: str = "telegram", recurrence: str | None = None, also_calendar: bool = False,
+                 minutes_before: int = 15, follow_up: str = "none") -> dict:
+    """New item from the calendar page. `mode` says what Alfred does with it:
+    'reminder' — Alfred reminds you (optionally also as a calendar event, the reminder tied to it);
+    'task' — a task due then, optionally followed up by Telegram or a call;
+    'calendar' — only a Google Calendar entry; Alfred does nothing with it.
+    `start` is local ISO; a bare date (YYYY-MM-DD) is an all-day calendar entry."""
+    from . import google_calendar, reminders, tasks
+    title = " ".join(str(title or "").split())
+    if not title:
+        raise AgendaError("Give it a title.")
+    all_day = len(start.strip()) == 10
+    if all_day and mode != "calendar":
+        raise AgendaError("Reminders and tasks need a time.")
+    duration_min = max(5, min(int(duration_min or 60), 24 * 60))
+    cat = check_category(category) if category else None
+
+    async def new_event(summary: str) -> dict:
+        if not google_calendar.is_linked(person.id):
+            raise AgendaError("Link your Google Calendar on your Profile first.")
+        if all_day:
+            d = datetime.strptime(start.strip(), "%Y-%m-%d")
+            end = (d + timedelta(days=1)).strftime("%Y-%m-%d")
+            s = start.strip()
+        else:
+            t = _utc(start).astimezone(_tz())
+            s, end = t.isoformat(timespec="minutes"), (t + timedelta(minutes=duration_min)).isoformat(timespec="minutes")
+        try:
+            return await google_calendar.create_event(person.id, summary[:300], s, end)
+        except google_calendar.GoogleError as e:
+            raise AgendaError(str(e))
+
+    if mode == "calendar":
+        ev = await new_event(title)
+        _set_event_category(person.id, ev["id"], cat or "other")
+        db.log_activity("task", f"{person.display_name} added '{title[:60]}' to their calendar", user_id=person.id)
+        return {"kind": "event", "id": ev["id"]}
+    if mode == "reminder":
+        if also_calendar:
+            if recurrence not in (None, "", "none"):
+                raise AgendaError("A repeating reminder can't be tied to one calendar event; turn off the calendar entry.")
+            minutes_before = max(0, min(int(minutes_before), 7 * 24 * 60))
+            if _utc(start) - timedelta(minutes=minutes_before) <= datetime.now(timezone.utc):
+                raise AgendaError("That reminder would be in the past.")
+            ev = await new_event(title)
+            _set_event_category(person.id, ev["id"], cat or "reminder")
+            r = await remind_for_event(person, ev["id"], minutes_before, channel)
+        else:
+            try:
+                r = reminders.create(created_by=person, text=title, when=start, recurrence=recurrence or None,
+                                     channel=channel, category=cat or "reminder")
+            except reminders.ReminderError as e:
+                raise AgendaError(str(e))
+        if cat:
+            db.execute("UPDATE reminders SET category = ? WHERE id = ?", (cat, r["id"]))
+        return {"kind": "reminder", "id": r["id"]}
+    if mode == "task":
+        try:
+            t = tasks.create(created_by=person, title=title, due=start, follow_up=follow_up or "none")
+        except tasks.TaskError as e:
+            raise AgendaError(str(e))
+        db.execute("UPDATE tasks SET category = ? WHERE id = ?", (cat or "task", t["id"]))
+        return {"kind": "task", "id": t["id"]}
+    raise AgendaError("Choose reminder, task or calendar only.")
 
 
 def dismiss(person: Person, reminder_id: int) -> dict:

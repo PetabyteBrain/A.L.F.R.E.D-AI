@@ -19,7 +19,7 @@ function wrap(el, before, after = "", linePrefix = false) {
 }
 
 /* One open file: Markdown edit / preview / checklist, or download + replace for other types. */
-export default function FileEditor({ file, onSaved }) {
+export default function FileEditor({ file, onSaved, onDirty }) {
   const { scope, path } = file;
   const [doc, setDoc] = useState(null);
   const [text, setText] = useState("");
@@ -32,6 +32,7 @@ export default function FileEditor({ file, onSaved }) {
   const dirty = doc && text !== doc.text;
   const hasChecks = text.split("\n").some((l) => CHECK.test(l));
   const isList = /(^|\/)Lists\//i.test(path);
+  useEffect(() => { onDirty?.(Boolean(dirty)); }, [dirty]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function load() {
     setErr("");

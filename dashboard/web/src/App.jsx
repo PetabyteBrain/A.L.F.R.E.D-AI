@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { api, setUnauthorizedHandler } from "./api.js";
-import { usePoll, useStoredState } from "./hooks.js";
+import { PageActive, usePoll, useStoredState } from "./hooks.js";
 import { THEMES, ThemeContext, useTheme } from "./theme.js";
 import Login from "./components/Login.jsx";
 import TwoFactorCard from "./components/TwoFactorCard.jsx";
@@ -31,6 +31,10 @@ const TABS = [
   { id: "usage", label: "Usage", title: "API usage", kicker: "Tokens, minutes & cost", Page: Usage, admin: true },
   { id: "profile", label: "Profile", title: "My profile", kicker: "Identity & connections", Page: Profile },
 ];
+
+// Pages kept mounted in the background once opened, so switching tabs and coming back carries on where you
+// were (view, date, folder, open files, unsaved edits). In memory only: a reload or a new sign-in starts fresh.
+const KEEP_ALIVE = new Set(["tasks", "notes"]);
 
 function SystemStatus() {
   const { data } = usePoll(() => api("/health"), 30000);
@@ -64,6 +68,11 @@ export default function App() {
     if (new URLSearchParams(window.location.search).has("google")) setTab("profile");
   }, [setTab]);
   const [theme, setTheme] = useTheme();
+  const [visited, setVisited] = useState(() => new Set());
+  useEffect(() => {                       // signed out: forget; signed in: remember each kept page once opened
+    if (!me) setVisited((v) => (v.size ? new Set() : v));
+    else if (KEEP_ALIVE.has(tab)) setVisited((v) => (v.has(tab) ? v : new Set(v).add(tab)));
+  }, [tab, me]);
 
   const signOut = useCallback(() => setMe(null), []);
   useEffect(() => {
@@ -187,10 +196,20 @@ export default function App() {
             )}
           </header>
 
-          <main key={active.id} className="page-enter">
-            {active.id === "live" && <Stats />}
-            <Page me={me} isAdmin={isAdmin} assistant={assistant} refreshMe={refreshMe} />
-          </main>
+          {!KEEP_ALIVE.has(active.id) && (
+            <main key={active.id} className="page-enter">
+              {active.id === "live" && <Stats />}
+              <Page me={me} isAdmin={isAdmin} assistant={assistant} refreshMe={refreshMe} />
+            </main>
+          )}
+          {tabs.filter((t) => KEEP_ALIVE.has(t.id) && (t.id === active.id || visited.has(t.id))).map((t) => (
+            // keyed by who is looking, so a role preview starts the page afresh
+            <main key={`${t.id}:${me.id}:${me.viewing_as || ""}`} className="page-enter" hidden={t.id !== active.id}>
+              <PageActive.Provider value={t.id === active.id}>
+                <t.Page me={me} isAdmin={isAdmin} assistant={assistant} refreshMe={refreshMe} />
+              </PageActive.Provider>
+            </main>
+          ))}
         </div>
       </div>
     </ThemeContext.Provider>

@@ -3299,6 +3299,36 @@ def test_agenda_links_reminders_to_calendar(monkeypatch):
         assert arch and all(x["status"] not in ("pending", "dialing") for x in arch) and "boat" in arch[0]["purpose"]
         assert c.get("/api/calls/scheduled", params={"archived": "true", "q": "zebra"}).json() == []
 
+        # Creating from the calendar: Alfred acts on it (reminder / task) or calendar only.
+        async def fake_create(user_id, summary, start, end, **kw):
+            eid = f"new{len(events)}"
+            s = {"date": start} if len(start) == 10 else {"dateTime": start}
+            e = {"date": end} if len(end) == 10 else {"dateTime": end}
+            events[eid] = {"id": eid, "summary": summary, "start": s, "end": e, "status": "confirmed"}
+            return google_calendar._compact(events[eid])
+        monkeypatch.setattr(google_calendar, "create_event", fake_create)
+        local = (t0 + timedelta(days=1)).astimezone(agenda._tz()).replace(tzinfo=None).isoformat(timespec="minutes")
+        new = lambda **b: c.post("/api/agenda", json=b, headers=CSRF)  # noqa: E731
+        cal = new(mode="calendar", title="Birthday", start=local[:10], category="personal").json()
+        assert cal["kind"] == "event" and events[cal["id"]]["start"] == {"date": local[:10]}
+        assert agenda.event_category(admin.id, {"id": cal["id"]}) == "personal"
+        assert not db.query_one("SELECT 1 FROM reminders WHERE event_id = ?", (cal["id"],))       # Alfred does nothing
+        rem = new(mode="reminder", title="Pick up parcel", start=local, recurrence="weekly", category="personal").json()
+        row = reminders.get(rem["id"])
+        assert row["recurrence"] == "weekly" and row["category"] == "personal" and row["link_state"] in (None, "none")
+        both = new(mode="reminder", title="Board meeting", start=local, also_calendar=True, minutes_before=30,
+                   category="work", duration_min=90).json()
+        row = reminders.get(both["id"])
+        assert row["link_state"] == "linked" and row["category"] == "work"
+        ev = events[row["event_id"]]
+        assert datetime.fromisoformat(ev["end"]["dateTime"]) - datetime.fromisoformat(ev["start"]["dateTime"]) == timedelta(minutes=90)
+        assert datetime.fromisoformat(row["due_at"]) == datetime.fromisoformat(ev["start"]["dateTime"]) - timedelta(minutes=30)
+        task = new(mode="task", title="Send invoice", start=local, category="work").json()
+        assert task["kind"] == "task" and db.query_one("SELECT category FROM tasks WHERE id = ?", (task["id"],))["category"] == "work"
+        assert new(mode="reminder", title="x", start=local[:10]).status_code == 400             # needs a time
+        assert new(mode="reminder", title="x", start=local, recurrence="daily", also_calendar=True).status_code == 400
+        assert new(mode="reminder", title="x", start="2020-01-01T10:00").status_code == 400     # in the past
+
 
 
 def test_file_explorer(monkeypatch, tmp_path):

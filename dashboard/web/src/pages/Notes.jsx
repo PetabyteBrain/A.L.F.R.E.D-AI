@@ -149,6 +149,17 @@ export default function Notes({ assistant }) {
   const [tabs, setTabs] = useState([]);              // open files [{scope, path}]
   const [active, setActive] = useState(null);
   const [refresh, setRefresh] = useState(0);
+  const [dirty, setDirty] = useState(() => new Set());     // open files with unsaved edits
+  const markDirty = useCallback((k, d) => setDirty((s) => {
+    if (d === s.has(k)) return s;
+    const n = new Set(s); d ? n.add(k) : n.delete(k); return n;
+  }), []);
+  useEffect(() => {                                        // closing or reloading the browser tab
+    if (!dirty.size) return undefined;
+    const warn = (e) => { e.preventDefault(); e.returnValue = ""; };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [dirty]);
   const { data: recent, reload: reloadRecent } = usePoll(() => api("/nas/recent"), 0, [refresh]);
   const key = (f) => `${f.scope}:${f.path}`;
 
@@ -158,6 +169,8 @@ export default function Notes({ assistant }) {
     setTimeout(() => reloadRecent(), 300);
   }, [reloadRecent]);
   const close = (f) => {
+    if (dirty.has(key(f)) && !window.confirm(`"${f.path.split("/").pop()}" has unsaved changes. Close it anyway?`)) return;
+    markDirty(key(f), false);
     setTabs((t) => t.filter((x) => key(x) !== key(f)));
     if (active === key(f)) setActive(null);
   };
@@ -191,19 +204,21 @@ export default function Notes({ assistant }) {
               {tabs.map((t) => (
                 <span key={key(t)} className={`file-tab${key(t) === active ? " active" : ""}`}>
                   <button role="tab" aria-selected={key(t) === active} onClick={() => setActive(key(t))} title={`${SCOPE_LABEL[t.scope]}: ${t.path}`}>
-                    {t.path.split("/").pop()}
+                    {t.path.split("/").pop()}{dirty.has(key(t)) && <span className="dirty-dot" title="Unsaved changes"> •</span>}
                   </button>
                   <button aria-label={`Close ${t.path}`} onClick={() => close(t)}>×</button>
                 </span>
               ))}
             </div>
           )}
-          {current ? (
-            <>
-              <div className="muted tiny file-path">{SCOPE_LABEL[current.scope]} / {current.path}</div>
-              <FileEditor key={key(current)} file={current} onSaved={() => setRefresh((n) => n + 1)} />
-            </>
-          ) : <Empty>Open a file from the explorer, or create a new note or list.</Empty>}
+          {/* every open file stays mounted, so switching between file tabs keeps unsaved edits */}
+          {tabs.map((t) => (
+            <div key={key(t)} hidden={key(t) !== active}>
+              <div className="muted tiny file-path">{SCOPE_LABEL[t.scope]} / {t.path}</div>
+              <FileEditor file={t} onSaved={() => setRefresh((n) => n + 1)} onDirty={(d) => markDirty(key(t), d)} />
+            </div>
+          ))}
+          {!current && <Empty>Open a file from the explorer, or create a new note or list.</Empty>}
         </div>
       </div>
       {scope === "company" && st.company_todo && <CompanyTodo />}

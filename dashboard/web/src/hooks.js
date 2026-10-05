@@ -1,8 +1,14 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { ApiError } from "./api.js";
 
-// Load data now and optionally every `intervalMs`; pauses while the tab is hidden.
+// False while a page is kept in the background (App keeps Tasks and Files mounted when you switch tabs).
+export const PageActive = createContext(true);
+export const usePageActive = () => useContext(PageActive);
+
+// Load data now and optionally every `intervalMs`; pauses while the browser tab or the page is hidden
+// and refreshes when the page comes back.
 export function usePoll(loader, intervalMs = 0, deps = []) {
+  const active = useContext(PageActive);
   const [data, setData] = useState(null);
   const [error, setError] = useState("");
   const loaderRef = useRef(loader);
@@ -18,12 +24,13 @@ export function usePoll(loader, intervalMs = 0, deps = []) {
   }, []);
 
   useEffect(() => {
+    if (!active) return undefined;
     reload();
     if (!intervalMs) return undefined;
     const id = setInterval(() => { if (!document.hidden) reload(); }, intervalMs);
     return () => clearInterval(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [reload, intervalMs, ...deps]);
+  }, [reload, intervalMs, active, ...deps]);
 
   return { data, error, reload };
 }

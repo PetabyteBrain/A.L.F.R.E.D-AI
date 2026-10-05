@@ -36,6 +36,19 @@ class EventReminder(LinkBody):
     channel: Literal["telegram", "call"] = "telegram"
 
 
+class NewItem(Strict):
+    mode: Literal["reminder", "task", "calendar"]
+    title: str = Field(min_length=1, max_length=300)
+    start: str = Field(min_length=10, max_length=40)
+    category: str = Field(default="", max_length=20)
+    duration_min: int = Field(default=60, ge=5, le=1440)
+    channel: Literal["telegram", "call"] = "telegram"
+    recurrence: Literal["", "daily", "weekdays", "weekly", "monthly"] = ""
+    also_calendar: bool = False
+    minutes_before: int = Field(default=15, ge=0, le=10080)
+    follow_up: Literal["none", "telegram", "call"] = "none"
+
+
 def _fail(e: Exception) -> HTTPException:
     return HTTPException(status_code=400, detail=str(e))
 
@@ -54,6 +67,17 @@ async def change_item(body: ItemChange, person: Person = Depends(current_person)
     try:
         return await agenda.update(person, body.kind, body.id, title=body.title or None, start=body.start or None,
                                    category=body.category or None)
+    except (agenda.AgendaError, reminders.ReminderError, ValueError) as e:
+        raise _fail(e)
+
+
+@router.post("/agenda")
+async def create_item(body: NewItem, person: Person = Depends(current_person)) -> dict:
+    try:
+        return await agenda.create(person, body.mode, title=body.title, start=body.start, category=body.category,
+                                   duration_min=body.duration_min, channel=body.channel,
+                                   recurrence=body.recurrence or None, also_calendar=body.also_calendar,
+                                   minutes_before=body.minutes_before, follow_up=body.follow_up)
     except (agenda.AgendaError, reminders.ReminderError, ValueError) as e:
         raise _fail(e)
 
