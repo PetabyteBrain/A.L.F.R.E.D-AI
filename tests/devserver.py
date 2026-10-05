@@ -183,8 +183,9 @@ def fake_nas() -> None:
     if not (base / "Company" / "To-Do.xlsx").exists():
         todo_workbook(base / "Company" / "To-Do.xlsx")
     fake = FakeSMB(base)
-    nas._smb = lambda: fake
-    company_todo._smb = lambda: fake
+    from orchestrator import nas_files, nas_search
+    for mod in (nas, company_todo, nas_files, nas_search):
+        mod._smb = lambda: fake
 
 
 if __name__ == "__main__":

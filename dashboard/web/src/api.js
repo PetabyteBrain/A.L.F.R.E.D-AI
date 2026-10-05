@@ -63,5 +63,20 @@ export async function apiStream(path, body, onEvent) {
   }
 }
 
+// Multipart upload (files): same CSRF header, the browser sets the multipart boundary itself.
+export async function apiUpload(path, formData) {
+  const res = await fetch(`/api${path}`, {
+    method: "POST", headers: { Accept: "application/json", "X-Requested-With": "alfred" },
+    credentials: "same-origin", cache: "no-store", body: formData,
+  });
+  if (res.status === 401) { onUnauthorized(); throw new ApiError(401, "Signed out"); }
+  if (!res.ok) {
+    let detail = res.statusText;
+    try { const j = await res.json(); if (typeof j.detail === "string") detail = j.detail; } catch { /* not JSON */ }
+    throw new ApiError(res.status, detail);
+  }
+  return res.json();
+}
+
 // Only ever build audio URLs from numeric IDs returned by the API.
 export const audioUrl = (id) => `/api/recordings/${Number(id)}/audio`;

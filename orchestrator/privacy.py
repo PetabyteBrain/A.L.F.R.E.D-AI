@@ -202,7 +202,8 @@ async def erase(user_id: int, scope: str, *, by: Person) -> dict:
         conn.execute("DELETE FROM meeting_invites WHERE user_id = ?", (user_id,))
         conn.execute("DELETE FROM scheduled_calls WHERE target_user_id = ? OR requested_by = ?", (user_id, user_id))
         conn.execute("DELETE FROM external_calls WHERE requested_by = ?", (user_id,))
-        for table in ("briefings", "quiet_hours", "voice_mode", "context_resets", "google_accounts"):
+        for table in ("briefings", "quiet_hours", "voice_mode", "context_resets", "google_accounts", "nas_recent",
+                      "event_categories"):
             conn.execute(f"DELETE FROM {table} WHERE user_id = ?", (user_id,))
         conn.execute("DELETE FROM activity WHERE user_id = ?", (user_id,))
         for value in idents:

@@ -121,6 +121,9 @@ def check_scope(person: Person, scope: str) -> None:
     if scope == "company":
         if person.role not in COMPANY_ROLES:
             raise NasError("The Company files are only for admins and cofounders.")
+    elif scope == "people":                    # every personal folder: admins only (dashboard explorer)
+        if not person.is_admin:
+            raise NasError("Only admins can open everyone's folders.")
     elif scope != "personal":
         raise NasError("Scope must be 'personal' or 'company'.")
 
@@ -130,6 +133,8 @@ def _root(person: Person, scope: str) -> str:
     h = settings.nas_host
     if scope == "company":
         return rf"\\{h}\{settings.nas_share_company}"
+    if scope == "people":
+        return rf"\\{h}\{settings.nas_share_personal}"
     return rf"\\{h}\{settings.nas_share_personal}\{personal_folder(person)}"
 
 

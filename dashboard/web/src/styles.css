@@ -825,3 +825,33 @@ main > .legal-links { margin-top: 8px; }
   max-height: calc(100vh - 96px); overflow-y: auto; overflow-x: hidden; z-index: 60; margin: 0; background: var(--bg);
   box-shadow: 0 12px 40px rgb(0 0 0 / .55); }
 .agenda-editor { z-index: 61; }
+
+/* Notes & files: explorer + tabbed editor */
+.files-grid { display: grid; grid-template-columns: minmax(240px, 1fr) minmax(0, 2fr); gap: 20px; align-items: start; }
+@media (max-width: 900px) { .files-grid { grid-template-columns: minmax(0, 1fr); } }
+.crumbs { font: 400 13px var(--font-mono); margin-bottom: 8px; overflow-wrap: anywhere; }
+.link { background: none; border: 0; color: inherit; text-decoration: underline; cursor: pointer; padding: 0; font: inherit; }
+.explorer-tools { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+.file-list { display: grid; gap: 2px; }
+.file-row { display: flex; align-items: center; gap: 8px; padding: 4px 6px; border: 1px solid transparent; }
+.file-row:hover { border-color: var(--line); }
+.file-name { flex: 1 1 auto; min-width: 0; text-align: left; background: none; border: 0; color: inherit; cursor: pointer;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 2px 0; font: inherit; }
+.file-actions { display: inline-flex; gap: 4px; opacity: .55; }
+.file-row:hover .file-actions { opacity: 1; }
+.file-actions button, .file-actions a { background: none; border: 0; color: inherit; cursor: pointer; text-decoration: none; padding: 2px 4px; }
+.recent-files { margin-top: 18px; display: grid; gap: 6px; }
+.recent-files .file-name { display: block; width: 100%; font-size: 13px; }
+.file-tabs { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 8px; border-bottom: 1px solid var(--line); }
+.file-tab { display: inline-flex; align-items: center; border: 1px solid var(--line); border-bottom: 0; }
+.file-tab.active { background: rgb(var(--accent-rgb) / .12); }
+.file-tab button { background: none; border: 0; color: inherit; cursor: pointer; padding: 4px 8px; font: 400 12px var(--font-mono); max-width: 180px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.file-path { margin-bottom: 6px; overflow-wrap: anywhere; }
+.editor-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; justify-content: space-between; margin-bottom: 6px; }
+.md-tools { display: inline-flex; gap: 2px; }
+.md-tools button { background: transparent; border: 1px solid var(--line); color: inherit; min-width: 28px; padding: 3px 6px; cursor: pointer; }
+.file-editor label.btn { cursor: pointer; }
+.file-row { flex-wrap: wrap; row-gap: 0; }
+.file-row .file-name { flex: 1 1 100%; }
+.file-row > .muted.tiny { flex: 1 1 auto; padding-left: 22px; }

@@ -269,6 +269,15 @@ CREATE TABLE IF NOT EXISTS voice_mode (       -- Telegram replies also as voice 
     until      TEXT,                          -- UTC ISO; NULL = until switched off
     updated_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS nas_recent (          -- recently viewed / edited files in the explorer
+    id      INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    scope   TEXT NOT NULL,
+    path    TEXT NOT NULL,
+    action  TEXT NOT NULL,                      -- viewed | edited
+    at      TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_nas_recent_user ON nas_recent(user_id, action);
 CREATE TABLE IF NOT EXISTS event_categories (   -- category of a Google Calendar event in the agenda
     user_id  INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     event_id TEXT NOT NULL,

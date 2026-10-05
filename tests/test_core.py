@@ -3298,3 +3298,79 @@ def test_agenda_links_reminders_to_calendar(monkeypatch):
         arch = c.get("/api/calls/scheduled", params={"archived": "true", "q": "boat"}).json()
         assert arch and all(x["status"] not in ("pending", "dialing") for x in arch) and "boat" in arch[0]["purpose"]
         assert c.get("/api/calls/scheduled", params={"archived": "true", "q": "zebra"}).json() == []
+
+
+
+def test_file_explorer(monkeypatch, tmp_path):
+    import dataclasses, os, time
+    from fastapi.testclient import TestClient
+    from orchestrator import nas
+    from orchestrator.config import settings
+    from orchestrator.main import app
+    fake = _FakeSMB(tmp_path)
+    monkeypatch.setattr(nas, "settings", dataclasses.replace(settings, nas_host="nas", nas_user="u", nas_password="p",
+                                                             nas_share_company="Company", nas_share_personal="Alfred_Personal"))
+    monkeypatch.setattr(nas, "_smb", lambda: fake)
+    import orchestrator.nas_files as nf
+    monkeypatch.setattr(nf, "_smb", lambda: fake)
+    (tmp_path / "Company" / "Clients").mkdir(parents=True)
+    (tmp_path / "Company" / "Clients" / "brief.md").write_text("# Brief\nold", encoding="utf-8")
+    (tmp_path / "Alfred_Personal" / "someone-else").mkdir(parents=True)
+    (tmp_path / "Alfred_Personal" / "someone-else" / "diary.md").write_text("private", encoding="utf-8")
+
+    with TestClient(app, base_url="http://testserver") as c:
+        c.post("/api/login", json={"username": "admin", "password": "correct horse battery"}, headers=CSRF)
+        st = c.get("/api/nas/status").json()
+        assert st["scopes"] == ["personal", "company", "people"]
+        # create, open, edit (with conflict detection)
+        r = c.put("/api/nas/file", json={"scope": "personal", "path": "Projects/plan.md", "text": "# Plan\n- one", "create": True}, headers=CSRF)
+        assert r.status_code == 200, r.text
+        f = c.get("/api/nas/file", params={"scope": "personal", "path": "Projects/plan.md"}).json()
+        assert f["text"].startswith("# Plan")
+        assert c.put("/api/nas/file", json={"scope": "personal", "path": "Projects/plan.md", "text": "x", "create": True},
+                     headers=CSRF).status_code == 400                          # no silent overwrite on create
+        ok = c.put("/api/nas/file", json={"scope": "personal", "path": "Projects/plan.md", "text": "# Plan\n- two",
+                                          "mtime": f["mtime"]}, headers=CSRF)
+        assert ok.status_code == 200
+        stale = c.put("/api/nas/file", json={"scope": "personal", "path": "Projects/plan.md", "text": "# Plan\n- stale",
+                                             "mtime": f["mtime"] - 100}, headers=CSRF)
+        assert stale.status_code == 400 and "changed this file" in stale.json()["detail"]
+        # folders, upload (never overwrites), move, browse
+        assert c.post("/api/nas/folder", json={"scope": "personal", "path": "Archive"}, headers=CSRF).status_code == 200
+        up = c.post("/api/nas/upload", data={"scope": "personal", "folder": "Projects"},
+                    files={"file": ("plan.md", b"uploaded", "text/markdown")}, headers=CSRF)
+        assert up.json()["saved"] == "Projects/plan (2).md"
+        mv = c.post("/api/nas/move", json={"scope": "personal", "path": "Projects", "new_path": "Archive/Projects"}, headers=CSRF)
+        assert mv.status_code == 200
+        assert c.post("/api/nas/move", json={"scope": "personal", "path": "Archive", "new_path": "Archive/x"},
+                      headers=CSRF).status_code == 400                         # into itself
+        items = c.get("/api/nas/browse", params={"scope": "personal", "path": "Archive/Projects"}).json()["items"]
+        assert [i["name"] for i in items] == ["plan (2).md", "plan.md"] and items[0]["editable"]
+        dl = c.get("/api/nas/download", params={"scope": "personal", "path": "Archive/Projects/plan (2).md"})
+        assert dl.content == b"uploaded" and "attachment" in dl.headers["content-disposition"]
+        # delete = trash
+        assert c.delete("/api/nas/path", params={"scope": "personal", "path": "Archive/Projects/plan (2).md"}, headers=CSRF).status_code == 200
+        folder = tmp_path / "Alfred_Personal" / nas.personal_folder(registry.lookup("telegram", "111"))
+        assert list((folder / ".trash").iterdir()) and not (folder / "Archive" / "Projects" / "plan (2).md").exists()
+        # admins: everyone's folders + Company (editable)
+        people = c.get("/api/nas/browse", params={"scope": "people"}).json()["items"]
+        assert "someone-else" in [i["name"] for i in people] and not any(i["name"].startswith(".") for i in people)
+        assert c.get("/api/nas/file", params={"scope": "people", "path": "someone-else/diary.md"}).json()["text"] == "private"
+        assert c.delete("/api/nas/path", params={"scope": "people", "path": "someone-else"}, headers=CSRF).status_code == 400
+        w = c.get("/api/nas/file", params={"scope": "company", "path": "Clients/brief.md"}).json()
+        assert c.put("/api/nas/file", json={"scope": "company", "path": "Clients/brief.md", "text": "# Brief\nnew",
+                                            "mtime": w["mtime"]}, headers=CSRF).status_code == 200
+        # escaping the scope is impossible
+        for bad in ("../someone-else/diary.md", ".trash", "C:/x.md"):
+            assert c.get("/api/nas/file", params={"scope": "personal", "path": bad}).status_code == 400, bad
+        rec = c.get("/api/nas/recent").json()
+        assert rec["edited"][0]["path"] == "Clients/brief.md" and any(r["path"] == "Archive/Projects/plan.md" for r in rec["edited"])
+
+    # Non-admins: no "people" scope; friends no Company (friend has no dashboard role in tests, so check the rules directly)
+    friend = registry.lookup("telegram", "22222222")
+    for scope in ("people", "company"):
+        try:
+            nf.browse(friend, scope, "")
+            raise AssertionError(f"friend opened {scope}")
+        except nas.NasError:
+            pass

@@ -5,16 +5,20 @@ from __future__ import annotations
 import asyncio
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from urllib.parse import quote
+
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
+from fastapi.responses import Response
 from pydantic import BaseModel, ConfigDict, Field
 
-from orchestrator import nas, company_todo
+from orchestrator import nas, nas_files, company_todo
 from orchestrator.identity.registry import Person
 
 from .routes import current_person
 
 router = APIRouter(prefix="/api/nas")
 Scope = Literal["personal", "company"]
+AnyScope = Literal["personal", "company", "people"]       # people = every personal folder (admins)
 
 
 class Strict(BaseModel):
@@ -62,8 +66,77 @@ async def _run(fn, *args):
 @router.get("/status")
 async def status(person: Person = Depends(current_person)) -> dict:
     return {"enabled": nas.enabled(),
-            "scopes": ["personal"] + (["company"] if person.role in nas.COMPANY_ROLES else []),
+            "scopes": ["personal"] + (["company"] if person.role in nas.COMPANY_ROLES else [])
+                      + (["people"] if person.is_admin else []),
             "company_todo": person.role in nas.COMPANY_ROLES}
+
+
+# --- explorer (orchestrator/nas_files.py) --------------------------------------------------------
+
+class FileSave(Strict):
+    scope: AnyScope
+    path: str = Field(min_length=1, max_length=400)
+    text: str = Field(max_length=nas_files.MAX_EDIT_BYTES)
+    mtime: float | None = None
+    create: bool = False
+
+
+class PathBody(Strict):
+    scope: AnyScope
+    path: str = Field(min_length=1, max_length=400)
+
+
+class MovePath(PathBody):
+    new_path: str = Field(min_length=1, max_length=400)
+
+
+@router.get("/browse")
+async def browse(scope: AnyScope, path: str = Query(default="", max_length=400), person: Person = Depends(current_person)) -> dict:
+    return await _run(nas_files.browse, person, scope, path)
+
+
+@router.get("/file")
+async def open_file(scope: AnyScope, path: str = Query(max_length=400), person: Person = Depends(current_person)) -> dict:
+    return await _run(nas_files.open_text, person, scope, path)
+
+
+@router.put("/file")
+async def save_file(body: FileSave, person: Person = Depends(current_person)) -> dict:
+    return await _run(nas_files.save_text, person, body.scope, body.path, body.text, body.mtime, body.create)
+
+
+@router.get("/download")
+async def download(scope: AnyScope, path: str = Query(max_length=400), person: Person = Depends(current_person)) -> Response:
+    name, data = await _run(nas_files.download, person, scope, path)
+    return Response(data, media_type="application/octet-stream", headers={
+        "Content-Disposition": f"attachment; filename*=UTF-8''{quote(name)}", "Cache-Control": "private, no-store"})
+
+
+@router.post("/upload")
+async def upload(scope: AnyScope = Form(...), folder: str = Form(default="", max_length=400), replace: bool = Form(default=False),
+                 file: UploadFile = File(...), person: Person = Depends(current_person)) -> dict:
+    data = await file.read(nas_files.MAX_UPLOAD_BYTES + 1)
+    return await _run(nas_files.upload, person, scope, folder, file.filename or "file", data, replace)
+
+
+@router.post("/folder")
+async def new_folder(body: PathBody, person: Person = Depends(current_person)) -> dict:
+    return await _run(nas_files.make_folder, person, body.scope, body.path)
+
+
+@router.post("/move")
+async def move_path(body: MovePath, person: Person = Depends(current_person)) -> dict:
+    return await _run(nas_files.move, person, body.scope, body.path, body.new_path)
+
+
+@router.delete("/path")
+async def delete_path(scope: AnyScope, path: str = Query(max_length=400), person: Person = Depends(current_person)) -> dict:
+    return await _run(nas_files.delete, person, scope, path)
+
+
+@router.get("/recent")
+async def recent(person: Person = Depends(current_person)) -> dict:
+    return nas_files.recent(person)
 
 
 @router.get("/notes")
