@@ -504,6 +504,7 @@ ADDED_COLUMNS = [
     ("reminders", "link_note", "TEXT"),
     ("reminders", "category", "TEXT NOT NULL DEFAULT 'reminder'"),
     ("tasks", "category", "TEXT NOT NULL DEFAULT 'task'"),
+    ("dashboard_sessions", "view_as", "TEXT"),   # admin previewing the dashboard as another role
 ]
 
 

@@ -19,11 +19,12 @@ only the assistant's persona and branding are "Alfred" (`ASSISTANT_NAME`). The d
 | Calls for you | "Call Max tomorrow at 9 and ask about the invoice": dials now or later, retries no-answer, leaves a short voicemail if a mailbox answers, summarises the call and reports back. Admins/cofounders can also have Alfred ring a business for one concrete task ("book a table for 4 on Friday"), only after a yes, Mon–Sat 08–19, as a declared AI assistant | any channel, Tasks tab |
 | Web search | Current information (news, opening hours, prices) with sources; links in chat, source named on calls | any channel |
 | Chat | Telegram (text + voice notes answered with voice; voice-note replies on request or in "voice mode"; files and photos, which Alfred can read and file on the NAS) and the dashboard Chat tab with live-streamed replies | Telegram, web |
-| Reminders | One-off or recurring (daily/weekdays/weekly/monthly), Telegram with Done/Snooze or a call, optional escalation to a call if ignored | any channel, Tasks tab |
+| Reminders | One-off or recurring (daily/weekdays/weekly/monthly), Telegram with Done/Snooze or a call, optional escalation to a call if ignored; can be tied to a calendar event (follows it, not sent if it's deleted; duplicates flagged) | any channel, Tasks tab |
+| Agenda | Month calendar of events, reminders, tasks and calls with categories (meeting, reminder, task, call, work, personal, other), editable from the calendar and the list | Tasks tab |
 | Daily briefing | Weather (Open-Meteo), today's calendar, reminders, planned calls, overnight call outcomes, tasks, the top Company to-dos (admins/cofounders; Monday nudge for items stuck in progress); by Telegram or call at a set time | Profile |
 | Tasks & follow-ups | Tasks with owner, due time and follow-up: Alfred checks in with the owner (Telegram buttons or a call), up to 3 times, and tells the requester | any channel, Tasks tab |
 | Memory | Short per-person notes ("prefers calls after 9") used in that person's conversations only; editable. Plus full-text search over all past conversations ("what did Max say about the invoice?") | any channel, Profile |
-| Notes & lists | Markdown notes (folders, append, move, trash) and checklists on the NAS: a personal space per person and a shared Company space (admins/cofounders) | any channel, Notes tab |
+| Notes & files | Markdown notes and checklists plus a full file explorer on the NAS (create, edit, upload, move, trash, download; tabs, Markdown preview, recent files): own space per person, Company for admins/cofounders, every folder for admins | any channel, Files tab |
 | Files & documents | Browse, search (by meaning, English + German) and read Word, Excel, PDF and text files on the NAS and answer from them with the file named; files and photos sent on Telegram are filed where you say (never overwritten) | any channel |
 | Receipts | Send a photo of a receipt: Alfred reads date, shop and amount, files the photo and adds a line to an Excel-ready CSV | Telegram |
 | Company to-do | The company Excel to-do list: show, add, change status/importance, move between sections; only the touched cells change, with a backup before each edit | any channel (admin/cofounder), Notes tab |
@@ -34,7 +35,7 @@ only the assistant's persona and branding are "Alfred" (`ASSISTANT_NAME`). The d
 | Homelab | Status of all Pis, the Jetson and their containers, logs, confirmed restarts (admin), Minecraft players; alerts when something breaks. An external watchdog on host-d alerts if Alfred himself is down | any channel (admin), Systems |
 | Backups | Nightly verified database snapshot + recordings + `.env` to the Jetson (no-delete key) and to the NAS (snapshot-protected); monthly automatic restore test (`infra/README-backup.md`) | automatic, Systems |
 | Safety & privacy | Registry-only access, roles, code verification of new connections, dashboard 2FA (authenticator app or Telegram code), call audio deleted after 90 days, "download / delete my data", monthly cost budgets with admin alerts, behaviour checks against the real model | everywhere |
-| Dashboard | Live sessions (terminate), archive with audio and search/filters, tasks/reminders/calls, notes & lists, event log (CSV export), health, people, API usage, budgets | `/app` |
+| Dashboard | Live sessions (terminate), archive with audio and search/filters, calendar + tasks/reminders/calls (archived calls searchable), notes & files, event log (CSV export), health, people, API usage, budgets; admins can view it as another role | `/app` |
 
 ```
 Phone ──► Twilio ──► /twilio/voice ─► identity ─┬─► <Stream> ─► /twilio/stream (WS), mu-law 8k

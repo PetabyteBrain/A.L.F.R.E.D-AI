@@ -117,7 +117,10 @@ export default function App() {
   }
 
   const isAdmin = me.role === "admin";
-  const tabs = TABS.filter((t) => !t.admin || isAdmin);
+  // Previewing a role without dashboard access: only the chat (to test what Alfred lets them do).
+  const tabs = TABS.filter((t) => (!t.admin || isAdmin) && (me.role_has_dashboard !== false || t.id === "chat"));
+  const refreshMe = () => api("/me").then(setMe).catch(() => {});
+  const stopViewAs = () => api("/view-as", { method: "DELETE" }).then(refreshMe).catch(() => {});
   const active = tabs.find((t) => t.id === tab) || tabs[0];
   const Page = active.Page;
   const skin = THEMES[theme];
@@ -175,11 +178,18 @@ export default function App() {
               <SystemStatus />
               <Clock />
             </div>
+            {me.viewing_as && (
+              <div className="view-as-banner" role="status">
+                <span>👁 Viewing as <b>{me.viewing_as}</b>: their permissions, applied to your own account
+                  {me.role_has_dashboard === false ? ". This role has no dashboard; test Alfred in the chat." : "."}</span>
+                <button className="btn primary small" onClick={stopViewAs}>Back to my view</button>
+              </div>
+            )}
           </header>
 
           <main key={active.id} className="page-enter">
             {active.id === "live" && <Stats />}
-            <Page me={me} isAdmin={isAdmin} assistant={assistant} refreshMe={() => api("/me").then(setMe).catch(() => {})} />
+            <Page me={me} isAdmin={isAdmin} assistant={assistant} refreshMe={refreshMe} />
           </main>
         </div>
       </div>

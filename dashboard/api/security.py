@@ -98,6 +98,21 @@ def session_user_id(request: Request) -> int | None:
     return row["user_id"]
 
 
+def session_view_as(request: Request) -> str | None:
+    """The role an admin is previewing the dashboard as in this session (None = their own)."""
+    token = request.cookies.get(COOKIE_NAME)
+    if not token or len(token) > 100:
+        return None
+    row = db.query_one("SELECT view_as FROM dashboard_sessions WHERE token_hash = ?", (_hash(token),))
+    return row["view_as"] if row else None
+
+
+def set_view_as(request: Request, role: str | None) -> None:
+    token = request.cookies.get(COOKIE_NAME)
+    if token:
+        db.execute("UPDATE dashboard_sessions SET view_as = ? WHERE token_hash = ?", (role, _hash(token)))
+
+
 def destroy_session(request: Request) -> None:
     token = request.cookies.get(COOKIE_NAME)
     if token:

@@ -44,6 +44,8 @@ the original spec is in `docs/archive/original-spec.md`. Keep the plan updated w
 ## Dashboard
 - React 19 + Vite in `dashboard/web` (no router; tabs in `App.jsx`), built to `dashboard/web/dist`,
   which FastAPI serves. Keep it CSP-clean: no inline scripts, no `dangerouslySetInnerHTML`.
+- Permissions: always use `routes.current_person` (respects an admin's "view as" role preview);
+  `routes.real_person` only for the preview switch itself (`dashboard/api/viewas.py`).
 - All API calls go through `src/api.js` (it adds the CSRF header). Security primitives live in
   `dashboard/api/security.py`; anything that changes a person's credentials, role or status must
   revoke their `dashboard_sessions`.
@@ -68,6 +70,8 @@ the original spec is in `docs/archive/original-spec.md`. Keep the plan updated w
 - Google Calendar: `orchestrator/google_calendar.py` + `dashboard/api/google.py`; tools marked
   `requires: google` in registry.yaml only appear for people with a linked calendar.
 - Usage metering: `orchestrator/usage.py`; record every new billable API call there.
+- Agenda (`orchestrator/agenda.py`): reminders tied to calendar events + categories; any code that
+  changes or deletes a calendar event should call `agenda.on_event_changed`.
 
 ## Verification, reminders, briefing, memory, voice
 - Phone/Telegram connections only count once `verified_at` is set (`identity/verification.py`);

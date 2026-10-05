@@ -5,6 +5,7 @@ recordings and activity.
 """
 from __future__ import annotations
 
+import dataclasses
 import logging
 from datetime import datetime, timedelta, timezone
 from typing import Literal
@@ -31,13 +32,31 @@ router = APIRouter(prefix="/api")
 _SETUP_PATHS = ("/api/me", "/api/profile")
 
 
-def current_person(request: Request) -> Person:
+def real_person(request: Request) -> Person:
+    """The signed-in person as they are (never the role an admin is previewing)."""
     uid = security.session_user_id(request)
     person = registry.get_person(uid) if uid else None
     if person is None or not registry.role_allows_channel(person.role, "dashboard"):
         raise HTTPException(status_code=401)
-    if mfa.required_for(person.role) and not request.url.path.startswith(_SETUP_PATHS)             and not mfa.enabled(person.id):
+    if mfa.required_for(person.role) and not request.url.path.startswith(_SETUP_PATHS) \
+            and not mfa.enabled(person.id):
         raise HTTPException(status_code=403, detail="Set up two-factor sign-in on your Profile first.")
+    return person
+
+
+# While an admin previews a role without dashboard access, only these stay reachable.
+_VIEW_AS_OPEN = ("/api/me", "/api/view-as", "/api/chat", "/api/session", "/api/logout")
+
+
+def current_person(request: Request) -> Person:
+    """Everyone's permissions come from here. An admin previewing a role ("view as") gets that
+    role's permissions on their own account: never more than they have, only less."""
+    person = real_person(request)
+    role = security.session_view_as(request) if person.is_admin else None
+    if role and role != person.role and registry.role_exists(role):
+        if not registry.role_allows_channel(role, "dashboard") and not request.url.path.startswith(_VIEW_AS_OPEN):
+            raise HTTPException(status_code=403, detail=f"The {role} role has no dashboard access.")
+        return dataclasses.replace(person, role=role)
     return person
 
 
@@ -104,8 +123,15 @@ async def session_state(request: Request) -> dict:
 
 
 @router.get("/me")
-async def me(person: Person = Depends(current_person)) -> dict:
-    return _me_view(person)
+async def me(request: Request, person: Person = Depends(current_person)) -> dict:
+    out = _me_view(person)
+    real = real_person(request)
+    if real.role != person.role:                 # an admin previewing another role
+        out.update(viewing_as=person.role, real_role=real.role,
+                   role_has_dashboard=registry.role_allows_channel(person.role, "dashboard"))
+    else:
+        out.update(viewing_as=None, real_role=real.role)
+    return out
 
 
 # --- helpers -----------------------------------------------------------------------------

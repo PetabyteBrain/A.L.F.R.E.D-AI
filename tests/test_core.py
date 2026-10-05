@@ -3374,3 +3374,43 @@ def test_file_explorer(monkeypatch, tmp_path):
             raise AssertionError(f"friend opened {scope}")
         except nas.NasError:
             pass
+
+
+def test_admin_can_view_dashboard_as_another_role():
+    from fastapi.testclient import TestClient
+    from orchestrator.main import app
+    with TestClient(app, base_url="http://testserver") as c:
+        c.post("/api/login", json={"username": "admin", "password": "correct horse battery"}, headers=CSRF)
+        roles = c.get("/api/view-as").json()
+        names = [r["name"] for r in roles["roles"]]
+        assert "admin" not in names and "cofounder" in names and "friend" in names
+        friend_tools = next(r for r in roles["roles"] if r["name"] == "friend")["tools"]
+        assert "place_call" not in friend_tools
+        assert c.post("/api/view-as", json={"role": "admin"}, headers=CSRF).status_code == 400
+
+        # as cofounder: admin-only pages are closed, the rest works with cofounder rules
+        assert c.post("/api/view-as", json={"role": "cofounder"}, headers=CSRF).status_code == 200
+        me = c.get("/api/me").json()
+        assert me["role"] == "cofounder" and me["viewing_as"] == "cofounder" and me["real_role"] == "admin"
+        assert c.get("/api/people").status_code == 403 and c.get("/api/usage").status_code == 403
+        assert c.get("/api/sessions").status_code == 200
+        assert "people" not in c.get("/api/nas/status").json()["scopes"]
+        # the switch back always works (real identity), even though admin pages are closed now
+        assert c.get("/api/view-as").status_code == 200
+
+        # as friend (no dashboard access): only the banner, chat and the switch
+        assert c.post("/api/view-as", json={"role": "friend"}, headers=CSRF).status_code == 200
+        assert c.get("/api/me").json()["role_has_dashboard"] is False
+        r = c.get("/api/overview")
+        assert r.status_code == 403 and "no dashboard access" in r.json()["detail"]
+        assert c.get("/api/chat/history").status_code == 200
+
+        assert c.delete("/api/view-as", headers=CSRF).status_code == 200
+        me = c.get("/api/me").json()
+        assert me["role"] == "admin" and me["viewing_as"] is None
+        assert c.get("/api/people").status_code == 200
+        # a fresh sign-in never starts in a preview
+        c.post("/api/view-as", json={"role": "cofounder"}, headers=CSRF)
+        c.post("/api/logout", headers=CSRF)
+        c.post("/api/login", json={"username": "admin", "password": "correct horse battery"}, headers=CSRF)
+        assert c.get("/api/me").json()["viewing_as"] is None
