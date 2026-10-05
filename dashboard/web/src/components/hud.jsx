@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useThemeName } from "../theme.js";
+import { RAIN_GLYPHS } from "../backdrops.js";
 
 // Generic bat silhouette (symmetric, 200x100 box, centred on x=100).
 const BAT = "M100 40 L94 24 L90 40 Q60 30 12 46 Q34 54 33 72 Q46 62 58 71 Q70 60 82 75 Q92 70 100 88 "
@@ -26,8 +27,6 @@ export function BatSignal({ size = "md", label }) {
   );
 }
 
-// Half-width katakana, digits and a few symbols, as in the digital rain.
-export const RAIN_GLYPHS = "ｱｲｳｴｵｶｷｸｹｺｻｼｽｾｿﾀﾁﾂﾃﾄﾅﾆﾇﾈﾉﾊﾋﾌﾍﾎﾏﾐﾑﾒﾓﾔﾕﾖﾗﾘﾙﾚﾛﾜﾝ0123456789:=*+<>¦";
 const RING_TEXT = Array.from({ length: 34 }, (_, i) => RAIN_GLYPHS[(i * 7) % RAIN_GLYPHS.length]).join(" ");
 
 /* Matrix: a ring of falling-code glyphs around a terminal cursor. */
@@ -53,11 +52,49 @@ export function CodeRing({ size = "md", label }) {
   );
 }
 
-/* The theme's emblem: arc reactor on the Stark HUD, bat-signal in the Batcave, code ring in the Matrix. */
+// Bow tie (centred on 100,0) and a small crown (centred on 100,0) for the butler's crest.
+const BOW = "M100 0 L84 -9 Q80 0 84 9 Z M100 0 L116 -9 Q120 0 116 9 Z";
+const CROWN = "M86 6 L84 -6 L92 0 L100 -9 L108 0 L116 -6 L114 6 Z";
+
+/* Alfred: a gilt monogram crest with a crown and a bow tie; light catches the rim now and then. */
+export function Crest({ size = "md", label }) {
+  const dots = Array.from({ length: 40 }, (_, i) => {
+    const a = (i * 9) * (Math.PI / 180);
+    return { x: 100 + 93 * Math.cos(a), y: 100 + 93 * Math.sin(a), big: i % 5 === 0 };
+  });
+  return (
+    <div className={`reactor emblem-crest reactor-${size}`} role={label ? "img" : undefined} aria-label={label} aria-hidden={label ? undefined : true}>
+      <svg viewBox="0 0 200 200">
+        <defs>
+          <linearGradient id="gilt" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" stopColor="#f3dca4" /><stop offset=".45" stopColor="#c9a25c" /><stop offset="1" stopColor="#8a6a32" />
+          </linearGradient>
+          <radialGradient id="crest-bg" cx=".5" cy=".4" r=".7">
+            <stop offset="0" stopColor="#3a2418" /><stop offset="1" stopColor="#140d0a" />
+          </radialGradient>
+        </defs>
+        <circle className="r-halo" cx="100" cy="100" r="80" />
+        <g className="spin spin-slow crest-dots">{dots.map((d, i) => <circle key={i} cx={d.x} cy={d.y} r={d.big ? 2 : 1} />)}</g>
+        <circle className="crest-ring" cx="100" cy="100" r="84" />
+        <circle className="crest-ring thin" cx="100" cy="100" r="79" />
+        <g className="spin spin-med crest-sheen-wrap"><circle className="crest-sheen" cx="100" cy="100" r="84" /></g>
+        <circle className="crest-disc" cx="100" cy="100" r="68" />
+        <circle className="crest-ring thin" cx="100" cy="100" r="63" />
+        <path className="crest-gilt" d={CROWN} transform="translate(0 56)" />
+        <text className="crest-a" x="100" y="124" textAnchor="middle">A</text>
+        <path className="crest-gilt" d={BOW} transform="translate(0 143)" />
+        <circle className="crest-gilt" cx="100" cy="143" r="3.2" />
+      </svg>
+    </div>
+  );
+}
+
+/* The theme's emblem: arc reactor (Stark), bat-signal (Batcave), code ring (Matrix), crest (Alfred). */
 export function Emblem(props) {
   const theme = useThemeName();
   if (theme === "batcave") return <BatSignal {...props} />;
   if (theme === "matrix") return <CodeRing {...props} />;
+  if (theme === "alfred") return <Crest {...props} />;
   return <ArcReactor {...props} />;
 }
 
@@ -176,8 +213,9 @@ const stillMotion = () => window.matchMedia("(prefers-reduced-motion: reduce)").
 /* Text that "decodes" from random glyphs whenever it changes (page titles, wordmarks). */
 export function DecodeText({ text, as: Tag = "span", className = "", duration = 700 }) {
   const [shown, setShown] = useState(text);
+  const calm = useThemeName() === "alfred";           // the butler doesn't scramble: a quiet fade instead
   useEffect(() => {
-    if (stillMotion()) { setShown(text); return undefined; }
+    if (stillMotion() || calm) { setShown(text); return undefined; }
     let raf = 0;
     const start = performance.now();
     const step = (now) => {
@@ -192,8 +230,12 @@ export function DecodeText({ text, as: Tag = "span", className = "", duration = 
     };
     raf = requestAnimationFrame(step);
     return () => cancelAnimationFrame(raf);
-  }, [text, duration]);
-  return <Tag className={className} aria-label={text}><span aria-hidden="true">{shown}</span></Tag>;
+  }, [text, duration, calm]);
+  return (
+    <Tag className={className} aria-label={text}>
+      <span aria-hidden="true" key={calm ? text : undefined} className={calm ? "fade-in" : undefined}>{shown}</span>
+    </Tag>
+  );
 }
 
 /* Animate a number from its previous value to the new one. */

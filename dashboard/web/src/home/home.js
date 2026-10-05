@@ -5,10 +5,44 @@ import "@fontsource/rajdhani/500.css";
 import "@fontsource/rajdhani/600.css";
 import "@fontsource/rajdhani/700.css";
 import "@fontsource/share-tech-mono/400.css";
+import "@fontsource/bebas-neue/400.css";
+import "@fontsource/cormorant-garamond/600.css";
+import "@fontsource/cormorant-garamond/600-italic.css";
+import "@fontsource/eb-garamond/400.css";
+import "@fontsource/eb-garamond/400-italic.css";
+import { THEME_KEY, THEMES, normalizeTheme } from "../themes.js";
+import { backdropFor } from "../backdrops.js";
 import "./home.css";
 
 document.documentElement.classList.add("js");
 const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+/* ---------- skins: same choice as the dashboard (public/theme-boot.js applied it before paint) ---------- */
+let theme = normalizeTheme(document.documentElement.dataset.theme);
+const listeners = [];
+function applyTheme(t) {
+  theme = normalizeTheme(t);
+  document.documentElement.dataset.theme = theme;
+  try { localStorage.setItem(THEME_KEY, theme); } catch { /* storage blocked: this page only */ }
+  const mark = document.getElementById("mark");
+  if (mark) mark.textContent = THEMES[theme].wordmark;
+  document.querySelectorAll("[data-theme-switch] button").forEach((b) => {
+    b.classList.toggle("active", b.dataset.theme === theme);
+    b.setAttribute("aria-pressed", String(b.dataset.theme === theme));
+  });
+  listeners.forEach((fn) => fn(theme));
+}
+for (const switcher of document.querySelectorAll("[data-theme-switch]")) {
+  for (const [id, cfg] of Object.entries(THEMES)) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.dataset.theme = id;
+    b.textContent = cfg.label;
+    b.addEventListener("click", () => applyTheme(id));
+    switcher.appendChild(b);
+  }
+}
+applyTheme(theme);
 
 /* ---------- signed in? swap "Sign in" for "Open Alfred" ---------- */
 fetch("/api/session", { credentials: "same-origin", cache: "no-store" })
@@ -30,7 +64,7 @@ setInterval(tick, 1000);
 
 /* ---------- headline decode effect ---------- */
 const headline = document.getElementById("headline");
-if (headline && !reduceMotion) {
+if (headline && !reduceMotion && theme !== "alfred") {   // the butler doesn't scramble
   const text = headline.dataset.text || headline.textContent;
   const glyphs = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789#%&*<>/\\";
   headline.setAttribute("aria-label", text);
@@ -74,61 +108,31 @@ if (visual && !reduceMotion && window.matchMedia("(pointer: fine)").matches) {
   }, { passive: true });
 }
 
-/* ---------- particle network background ---------- */
+/* ---------- animated background for the current skin (src/backdrops.js) ---------- */
 const canvas = document.getElementById("field");
 if (canvas && canvas.getContext) {
   const ctx = canvas.getContext("2d");
-  let w = 0, h = 0, dpr = 1, nodes = [], mouse = { x: -9999, y: -9999 };
-  const LINK = 140;
-
-  const resize = () => {
-    dpr = Math.min(window.devicePixelRatio || 1, 2);
-    w = window.innerWidth; h = window.innerHeight;
-    canvas.width = w * dpr; canvas.height = h * dpr;
+  const size = { w: 0, h: 0 };
+  const pointer = { x: -9999, y: -9999 };
+  let draw = () => {};
+  const setup = () => {
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    size.w = window.innerWidth; size.h = window.innerHeight;
+    canvas.width = size.w * dpr; canvas.height = size.h * dpr;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    const count = Math.min(90, Math.round((w * h) / 16000));
-    nodes = Array.from({ length: count }, () => ({
-      x: Math.random() * w, y: Math.random() * h,
-      vx: (Math.random() - 0.5) * 0.25, vy: (Math.random() - 0.5) * 0.25,
-      r: Math.random() * 1.4 + 0.6,
-    }));
+    draw = backdropFor(theme, ctx, size, pointer);
+    draw(false);
   };
-
-  const draw = () => {
-    ctx.clearRect(0, 0, w, h);
-    for (const n of nodes) {
-      if (!reduceMotion) {
-        n.x += n.vx; n.y += n.vy;
-        if (n.x < 0 || n.x > w) n.vx *= -1;
-        if (n.y < 0 || n.y > h) n.vy *= -1;
-      }
-    }
-    for (let i = 0; i < nodes.length; i++) {
-      const a = nodes[i];
-      for (let j = i + 1; j < nodes.length; j++) {
-        const b = nodes[j];
-        const d = Math.hypot(a.x - b.x, a.y - b.y);
-        if (d < LINK) {
-          ctx.strokeStyle = `rgba(88,214,255,${(1 - d / LINK) * 0.18})`;
-          ctx.lineWidth = 1;
-          ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
-        }
-      }
-      const md = Math.hypot(a.x - mouse.x, a.y - mouse.y);
-      if (md < LINK * 1.3) {
-        ctx.strokeStyle = `rgba(88,214,255,${(1 - md / (LINK * 1.3)) * 0.45})`;
-        ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(mouse.x, mouse.y); ctx.stroke();
-      }
-      ctx.fillStyle = "rgba(160,235,255,0.75)";
-      ctx.beginPath(); ctx.arc(a.x, a.y, a.r, 0, Math.PI * 2); ctx.fill();
-    }
+  setup();
+  listeners.push(setup);
+  window.addEventListener("resize", setup);
+  window.addEventListener("pointermove", (e) => { pointer.x = e.clientX; pointer.y = e.clientY; }, { passive: true });
+  let last = 0;
+  const loop = (t) => {
+    requestAnimationFrame(loop);
+    if (document.hidden || t - last < 33) return;        // ~30 fps is plenty for ambience
+    last = t;
+    draw(true);
   };
-
-  let running = true;
-  const loop = () => { if (running) draw(); if (!reduceMotion) requestAnimationFrame(loop); };
-  resize();
-  window.addEventListener("resize", resize);
-  window.addEventListener("pointermove", (e) => { mouse = { x: e.clientX, y: e.clientY }; }, { passive: true });
-  document.addEventListener("visibilitychange", () => { running = !document.hidden; });
-  loop();
+  if (!reduceMotion) requestAnimationFrame(loop);
 }

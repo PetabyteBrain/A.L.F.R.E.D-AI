@@ -30,7 +30,8 @@ async def list_tasks(ctx, include_finished: bool = False) -> dict:
         {k: t[k] for k in ("id", "title", "status", "owner_name", "requester_name", "due_local", "follow_up",
                            "follow_up_local", "follow_ups", "result", "schedule") if t[k] not in (None, "", "none")}
         for t in tasks.list_for(ctx.person, include_done=include_finished, limit=40)]}
-    if settings.n8n_enabled and ctx.person.is_admin:
+    from .. import permissions
+    if settings.n8n_enabled and permissions.allowed(ctx.person.role, "n8n_view"):
         from . import n8n_tool
         try:
             out["active_n8n_workflows"] = [

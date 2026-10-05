@@ -3,6 +3,7 @@
    data-theme="alfred"  : Stark holographic HUD (cyan)
    data-theme="batcave" : Batcave terminal (bat-signal yellow on gunmetal)
    data-theme="matrix"  : green-screen terminal (phosphor green on black, digital rain)
+   data-theme="alfred"  : the butler (brass and ivory on mahogany, serif type, candlelight)
    Everything reads the tokens below; theme-specific overrides live at the end.
    ========================================================================== */
 
@@ -34,6 +35,16 @@
   --ok-rgb: 150 255 180;         /* pale mint, distinct from the accent */
   --bg: #000300;
   --bg-deep: #000000;
+}
+
+:root[data-theme="alfred"] {
+  --accent-rgb: 201 162 92;      /* brass */
+  --accent2-rgb: 122 36 44;      /* oxblood */
+  --warn-rgb: 224 152 72;        /* amber */
+  --bad-rgb: 208 84 78;          /* claret */
+  --ok-rgb: 150 186 128;         /* sage */
+  --bg: #120c0a;                 /* mahogany */
+  --bg-deep: #090605;
 }
 
 :root {
@@ -282,7 +293,7 @@ input::placeholder { color: var(--faint); }
   background: rgb(var(--accent-rgb) / .06); border: 1px solid var(--line); color: var(--muted); transition: color .15s, border-color .15s; }
 .icon-btn:hover { color: var(--bad); border-color: rgb(var(--bad-rgb) / .6); }
 .icon-btn .nav-ico { width: 18px; height: 18px; }
-.theme-switch { display: flex; border: 1px solid var(--line); }
+.theme-switch { display: grid; grid-template-columns: repeat(2, 1fr); border: 1px solid var(--line); }
 .theme-switch button { flex: 1; font: 700 9px var(--font-display); letter-spacing: .22em; text-transform: uppercase; background: transparent;
   color: var(--muted); border: 0; padding: 8px 10px; cursor: pointer; }
 .theme-switch button.active { background: rgb(var(--accent-rgb) / .2); color: var(--text-strong); }
@@ -1012,3 +1023,155 @@ main[hidden], [hidden] { display: none !important; }
 .emblem-code .code-cursor { fill: var(--accent); animation: cursor 1.05s steps(1) infinite; }
 .reactor-sm.emblem-code :is(.code-text, .ring-dash-a) { display: none; }
 :root[data-theme="matrix"] .readout { background: rgb(0 6 1 / .94); }
+
+/* Settings tab (admin) */
+.settings-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; align-items: start; }
+@media (max-width: 900px) { .settings-grid { grid-template-columns: minmax(0, 1fr); } }
+.settings-block + .settings-block { margin-top: 8px; }
+.perm-role { margin: 8px 0 12px; }
+.perm-row { justify-content: flex-start; margin: 6px 0; }
+.perm-row .perm-label { flex: 1; }
+
+
+/* ==========================================================================
+   Alfred skin: the butler. Brass and ivory on mahogany, Cormorant Garamond headings and
+   EB Garamond text, double-ruled panels with fine brass corners, candlelight behind
+   (backdrops.js candlelight), a gilt crest (hud.jsx Crest) and a greeting card on Live.
+   ========================================================================== */
+:root[data-theme="alfred"] {
+  --text: rgb(234 222 198 / .92);
+  --text-strong: #f7eedb;
+  --muted: rgb(206 188 156 / .66);
+  --faint: rgb(206 188 156 / .32);
+  --line: rgb(201 162 92 / .2);
+  --line-strong: rgb(201 162 92 / .55);
+  --fill: rgb(201 162 92 / .045);
+  --glow: 0 0 14px rgb(232 190 110 / .25);
+  --font-display: "Cormorant Garamond", "EB Garamond", Georgia, serif;
+  --font-body: "EB Garamond", Georgia, "Times New Roman", serif;
+}
+:root[data-theme="alfred"] body {
+  background-color: var(--bg);
+  background-image:
+    radial-gradient(ellipse 70% 45% at 50% -10%, rgb(201 162 92 / .12), transparent 70%),
+    radial-gradient(ellipse 80% 60% at 50% 120%, rgb(122 36 44 / .22), transparent 70%),
+    radial-gradient(circle at 25% 25%, rgb(255 255 255 / .012) 0 1px, transparent 1.5px),
+    radial-gradient(circle at 75% 75%, rgb(255 255 255 / .012) 0 1px, transparent 1.5px);
+  background-size: auto, auto, 18px 18px, 18px 18px;
+  font-weight: 400; font-size: 17px; letter-spacing: .005em;
+}
+:root[data-theme="alfred"] body::before { background: none; }
+:root[data-theme="alfred"] body::after { background: radial-gradient(ellipse at center, transparent 55%, rgb(0 0 0 / .6) 100%); }
+:root[data-theme="alfred"] .backdrop .floor { display: none; }
+:root[data-theme="alfred"] ::selection { background: rgb(201 162 92 / .45); color: #fff8e8; }
+.fade-in { animation: fadeIn .9s ease both; }
+@keyframes fadeIn { from { opacity: 0; letter-spacing: .02em; } to { opacity: 1; } }
+
+/* panels: dark leather, a double brass rule and fine corners */
+:root[data-theme="alfred"] .hud {
+  background: linear-gradient(180deg, rgb(36 25 20 / .94), rgb(20 14 11 / .95));
+  border: 1px solid rgb(201 162 92 / .28);
+  box-shadow: inset 0 0 0 4px rgb(20 14 11 / .9), inset 0 0 0 5px rgb(201 162 92 / .14), 0 18px 40px -22px rgb(0 0 0 / .9);
+  backdrop-filter: none; border-radius: 2px;
+}
+:root[data-theme="alfred"] .hud::before { --l: 14px; --t: 1px; --c: rgb(232 196 120 / .85); }
+:root[data-theme="alfred"] .hud:not(.modal):hover { border-color: rgb(201 162 92 / .45); box-shadow: inset 0 0 0 4px rgb(20 14 11 / .9), inset 0 0 0 5px rgb(201 162 92 / .22), 0 20px 46px -22px rgb(201 162 92 / .25); }
+:root[data-theme="alfred"] .hud-head { border-bottom-color: rgb(201 162 92 / .22); }
+:root[data-theme="alfred"] .hud-code { background: transparent; color: var(--accent); border: 1px solid rgb(201 162 92 / .5); font-family: var(--font-display); font-style: italic; }
+:root[data-theme="alfred"] .modal.hud { background: linear-gradient(180deg, #2a1c16, #160f0c); }
+
+/* type: refined serif, sentence case, italics for flourish */
+:root[data-theme="alfred"] :is(.btn, .sub, .op-label, .theme-switch button, .sys-status, .rail-nav button, .g-label, .tag,
+  .seg button, .field > span, .kv > span, .st-label, .chip, .kicker, .hud h2, .hud-head h2, table.data th, .note-folder, .dow, .tg-day, .mode-pick legend) {
+  font-family: var(--font-display); font-weight: 600; text-transform: none; letter-spacing: .04em; }
+:root[data-theme="alfred"] .page-title h1 { font: 600 clamp(32px, 3.6vw, 46px)/1.05 var(--font-display); letter-spacing: .01em;
+  color: var(--text-strong); text-shadow: 0 1px 0 rgb(0 0 0 / .6), 0 0 24px rgb(232 190 110 / .15); }
+:root[data-theme="alfred"] .page-title h1::after { content: ""; display: block; width: 120px; height: 7px; margin-top: 8px;
+  background: linear-gradient(90deg, var(--accent), transparent) 0 3px / 100% 1px no-repeat,
+              linear-gradient(45deg, transparent 40%, var(--accent) 40% 60%, transparent 60%) 0 0 / 7px 7px no-repeat; }
+:root[data-theme="alfred"] .kicker { font-style: italic; font-size: 15px; color: var(--muted); }
+:root[data-theme="alfred"] .sub { font-size: 19px; color: var(--text-strong); letter-spacing: .02em; }
+:root[data-theme="alfred"] .sub::before { content: "✦"; color: var(--accent); font-size: 11px; }
+:root[data-theme="alfred"] :is(.hud h2, .hud-head h2) { font-size: 22px; text-shadow: none; }
+:root[data-theme="alfred"] .field > span, :root[data-theme="alfred"] .kv > span { font-size: 15px; color: var(--muted); }
+:root[data-theme="alfred"] b { color: var(--text-strong); font-weight: 500; }
+:root[data-theme="alfred"] .wordmark { font: 600 30px/1 var(--font-display); letter-spacing: .14em; color: var(--text-strong);
+  text-shadow: 0 0 18px rgb(232 190 110 / .25); }
+:root[data-theme="alfred"] .subtitle { font-family: var(--font-body); font-style: italic; letter-spacing: .02em; text-transform: none; font-size: 14px; }
+:root[data-theme="alfred"] .login-mark { font: 600 clamp(56px, 7vw, 92px)/1 var(--font-display); letter-spacing: .06em;
+  text-shadow: 0 0 34px rgb(232 190 110 / .25); }
+:root[data-theme="alfred"] :is(.clock-time, .g-value, .st-value) { font-family: var(--font-display); font-weight: 600; text-shadow: none; color: var(--text-strong); }
+:root[data-theme="alfred"] .clock-time { font-size: 28px; letter-spacing: .04em; }
+:root[data-theme="alfred"] .clock-date { font-family: var(--font-body); font-style: italic; letter-spacing: .04em; text-transform: none; }
+:root[data-theme="alfred"] .muted.tiny, :root[data-theme="alfred"] .tiny { font-size: 13px; }
+
+/* controls: brass-edged, filled brass when primary */
+:root[data-theme="alfred"] .btn { clip-path: none; border-radius: 2px; font-size: 15px; letter-spacing: .06em; padding: 9px 18px;
+  background: rgb(201 162 92 / .06); border-color: rgb(201 162 92 / .5); color: var(--text-strong); }
+:root[data-theme="alfred"] .btn.small { font-size: 14px; padding: 6px 12px; }
+:root[data-theme="alfred"] .btn:hover:not(:disabled) { background: rgb(201 162 92 / .16); }
+:root[data-theme="alfred"] .btn.primary { background: linear-gradient(180deg, #d9b56f, #b38a46); color: #1d130d; border-color: #e7c886;
+  box-shadow: inset 0 1px 0 rgb(255 240 200 / .5), 0 4px 14px -6px rgb(201 162 92 / .6); }
+:root[data-theme="alfred"] .btn.primary:hover:not(:disabled) { background: linear-gradient(180deg, #e7c886, #c49a52); color: #1d130d; }
+:root[data-theme="alfred"] .btn.danger { color: rgb(var(--bad-rgb)); background: transparent; }
+:root[data-theme="alfred"] .btn.danger:hover:not(:disabled) { background: rgb(var(--bad-rgb)); color: #fff; }
+:root[data-theme="alfred"] :is(.seg, .theme-switch) { border-radius: 2px; }
+:root[data-theme="alfred"] .seg button { font-size: 14px; }
+:root[data-theme="alfred"] :is(.seg button.active, .theme-switch button.active) { background: rgb(201 162 92 / .9); color: #1d130d; }
+:root[data-theme="alfred"] .theme-switch button { font-size: 13px; padding: 6px 8px; }
+:root[data-theme="alfred"] :is(input, select, textarea) { font-family: var(--font-body); font-size: 16px; background: rgb(0 0 0 / .22);
+  border-bottom-color: rgb(201 162 92 / .4); border-radius: 2px 2px 0 0; }
+:root[data-theme="alfred"] :is(input, select, textarea):focus { background: rgb(0 0 0 / .32); box-shadow: 0 6px 12px -8px rgb(201 162 92 / .7); }
+:root[data-theme="alfred"] select option { background: #1d130f; }
+:root[data-theme="alfred"] :is(input[type="date"], input[type="time"], input[type="datetime-local"])::-webkit-calendar-picker-indicator { filter: invert(75%) sepia(40%) saturate(500%) hue-rotate(5deg); }
+:root[data-theme="alfred"] :is(.chip, .tag) { border-radius: 10px; font-size: 13px; }
+:root[data-theme="alfred"] code { font-family: var(--font-mono); background: rgb(201 162 92 / .08); color: var(--text-strong); }
+
+/* shell */
+:root[data-theme="alfred"] .rail { background: linear-gradient(180deg, rgb(32 21 16 / .97), rgb(14 9 7 / .97)); border-right-color: rgb(201 162 92 / .2); }
+:root[data-theme="alfred"] .rail::after { box-shadow: 0 0 14px rgb(232 190 110 / .5); }
+:root[data-theme="alfred"] .rail-nav button { font-size: 17px; letter-spacing: .03em; }
+:root[data-theme="alfred"] .rail-nav button.active { background: linear-gradient(90deg, rgb(201 162 92 / .16), rgb(201 162 92 / .02)); color: #fff4dc; font-style: italic; }
+:root[data-theme="alfred"] .rail-nav button.active .nav-ico { filter: drop-shadow(0 0 5px rgb(232 190 110 / .7)); }
+:root[data-theme="alfred"] .nav-idx { font-family: var(--font-display); font-style: italic; }
+:root[data-theme="alfred"] .topline { border-bottom-color: rgb(201 162 92 / .22); background: linear-gradient(180deg, var(--bg) 70%, rgb(0 0 0 / 0)); }
+:root[data-theme="alfred"] .row { background: rgb(201 162 92 / .03); border-left-color: rgb(201 162 92 / .3); }
+:root[data-theme="alfred"] .blip { box-shadow: 0 0 10px rgb(232 190 110 / .6); }
+:root[data-theme="alfred"] .g-fill { filter: drop-shadow(0 0 4px rgb(232 190 110 / .5)); }
+:root[data-theme="alfred"] .g-track { stroke: rgb(201 162 92 / .12); }
+:root[data-theme="alfred"] .msg.theirs .bubble { background: linear-gradient(180deg, rgb(44 30 24 / .95), rgb(26 18 14 / .95)); border-color: rgb(201 162 92 / .2); border-left-color: var(--accent); }
+:root[data-theme="alfred"] .md :is(h1, h2, h3, h4) { font-family: var(--font-display); color: var(--text-strong); }
+:root[data-theme="alfred"] :is(.agenda-editor, .agenda-day) { background: #1a110d; box-shadow: 0 0 0 1px rgb(201 162 92 / .3), 0 14px 44px rgb(0 0 0 / .8); }
+:root[data-theme="alfred"] :is(.month .ev, .tg-ev, .tg-allday-cell .ev) { background: color-mix(in srgb, var(--cat) 16%, #1a110d); font-family: var(--font-body); }
+:root[data-theme="alfred"] .readout { background: rgb(26 17 13 / .92); font-family: var(--font-display); font-style: italic; letter-spacing: .04em; }
+:root[data-theme="alfred"] .bootlog { font-family: var(--font-body); font-style: italic; }
+:root[data-theme="alfred"] .reactor-sm.emblem-crest { width: 52px; height: 52px; }
+
+/* the crest */
+.emblem-crest .r-halo { fill: rgb(232 190 110 / .1); }
+.emblem-crest .crest-dots circle { fill: rgb(201 162 92 / .7); }
+.emblem-crest .crest-ring { fill: none; stroke: url(#gilt); stroke-width: 2.4; }
+.emblem-crest .crest-ring.thin { stroke-width: 1; opacity: .8; }
+.emblem-crest .crest-sheen { fill: none; stroke: #fff4d6; stroke-width: 2.6; stroke-dasharray: 26 502; opacity: .7; filter: blur(.6px); }
+.emblem-crest .crest-disc { fill: url(#crest-bg); stroke: rgb(201 162 92 / .5); stroke-width: 1; }
+.emblem-crest .crest-a { font: 600 74px "Cormorant Garamond", Georgia, serif; fill: url(#gilt); filter: drop-shadow(0 2px 2px rgb(0 0 0 / .6)); }
+.emblem-crest .crest-gilt { fill: url(#gilt); }
+.reactor-sm.emblem-crest :is(.crest-dots, .crest-sheen-wrap, .r-halo) { display: none; }
+
+/* greeting card on Live */
+.butler-card { display: flex; gap: 22px; align-items: center; padding: 20px 26px; }
+.butler-card .reactor { width: 108px; height: 108px; }
+.butler-text { display: grid; gap: 4px; min-width: 0; }
+.butler-date { margin: 0; font: italic 400 16px var(--font-body); color: var(--muted); letter-spacing: .03em; }
+.butler-hello { margin: 0; font: italic 600 clamp(28px, 3.2vw, 40px)/1.1 var(--font-display); color: var(--text-strong); }
+.butler-line { margin: 0; font: 400 18px/1.45 var(--font-body); color: var(--text); }
+.butler-sign { margin: 6px 0 0; font: italic 600 18px var(--font-display); color: var(--accent); }
+@media (max-width: 600px) {
+  .butler-card { flex-direction: column; align-items: flex-start; padding: 18px; }
+  .butler-card .reactor { width: 80px; height: 80px; }
+}
+:root[data-theme="alfred"] .butler-card .butler-hello { font: italic 600 clamp(28px, 3.2vw, 40px)/1.1 var(--font-display); letter-spacing: .01em; }
+:root[data-theme="alfred"] .uplinks li { font: 600 16px var(--font-display); letter-spacing: .04em; text-transform: none; }
+:root[data-theme="alfred"] :is(.login-card label span, .back, .legal-links) { font-family: var(--font-display); font-weight: 600; font-size: 15px; letter-spacing: .04em; text-transform: none; }
+:root[data-theme="alfred"] .op-label { font-size: 13px; }
+:root[data-theme="alfred"] .uplinks li em, :root[data-theme="alfred"] .live-meta .mono { font-family: var(--font-body); font-style: italic; }

@@ -7,7 +7,6 @@ import Connections from "../components/Connections.jsx";
 import CallDialog from "../components/CallDialog.jsx";
 import { ConfirmDialog, Panel } from "../components/hud.jsx";
 import { DataRequests, PersonData } from "../components/DataRequests.jsx";
-import ScreeningCard from "../components/ScreeningCard.jsx";
 
 /* ---------------------------------------------------------------- editor (admin) */
 function PersonEditor({ personId, roles, me, onClose, onChanged }) {
@@ -253,7 +252,6 @@ export default function People({ assistant, me }) {
         ))}
       </div>
 
-      <ScreeningCard assistant={assistant} />
       <h3 className="sub">Access attempts</h3>
       {attempts && attempts.length === 0 && <Empty>No attempts recorded.</Empty>}
       <div className="feed">

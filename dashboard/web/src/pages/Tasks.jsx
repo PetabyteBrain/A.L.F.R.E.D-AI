@@ -9,9 +9,10 @@ import Reminders from "../components/Reminders.jsx";
 import TaskList from "../components/TaskList.jsx";
 import Meetings from "../components/Meetings.jsx";
 
-export default function Tasks({ isAdmin, me, assistant }) {
+export default function Tasks({ me, assistant }) {
   const [view, setView] = useStoredState("alfred-tasks-view", "calendar");
-  const { data: t } = usePoll(() => (isAdmin ? api("/tasks") : Promise.resolve(null)), 60000);
+  // n8n block: admins, and cofounders while the admin allows it (Settings tab)
+  const { data: t } = usePoll(() => api("/tasks"), 60000);
 
   return (
     <Panel code="04" title="Tasks & calls" actions={
@@ -29,7 +30,7 @@ export default function Tasks({ isAdmin, me, assistant }) {
           <Reminders me={me} assistant={assistant} />
           <CallQueue me={me} assistant={assistant} />
           {(me.role === "admin" || me.role === "cofounder") && <OutsideCalls assistant={assistant} />}
-          {isAdmin && <N8nPanel t={t} />}
+          {t && "n8n_can_edit" in t && <N8nPanel t={t} assistant={assistant} />}
         </>
       )}
     </Panel>

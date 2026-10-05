@@ -3444,3 +3444,60 @@ def test_admin_can_view_dashboard_as_another_role():
         c.post("/api/logout", headers=CSRF)
         c.post("/api/login", json={"username": "admin", "password": "correct horse battery"}, headers=CSRF)
         assert c.get("/api/me").json()["viewing_as"] is None
+
+
+@pytest.mark.asyncio
+async def test_role_permission_switches(monkeypatch):
+    from fastapi.testclient import TestClient
+    from orchestrator import permissions
+    from orchestrator.main import app
+    from orchestrator.tools import registry as tools
+    tools.load()
+    monkeypatch.setattr(tools, "_available", lambda spec, person_id=None: True)
+    db.execute("DELETE FROM app_settings WHERE key = 'role_permissions'")
+    names = lambda role: {t["name"] for t in tools.tools_for(role)}  # noqa: E731
+    # default: cofounders may view, run and edit n8n workflows; deleting stays admin-only
+    co = names("cofounder")
+    assert {"n8n_list_workflows", "n8n_trigger_webhook", "n8n_update_workflow", "n8n_set_workflow_active"} <= co
+    assert "n8n_delete_workflow" not in co and "n8n_delete_workflow" in names("admin")
+    assert not any(n.startswith("n8n_") for n in names("friend"))
+
+    with TestClient(app, base_url="http://testserver") as c:
+        c.post("/api/login", json={"username": "admin", "password": "correct horse battery"}, headers=CSRF)
+        got = c.get("/api/settings/role-permissions").json()
+        assert got["roles"]["cofounder"] == {"n8n_view": True, "n8n_run": True, "n8n_edit": True}
+        assert c.put("/api/settings/role-permissions", json={"role": "cofounder", "permission": "n8n_edit", "allowed": False},
+                     headers=CSRF).json()["roles"]["cofounder"]["n8n_edit"] is False
+        assert c.put("/api/settings/role-permissions", json={"role": "friend", "permission": "n8n_view", "allowed": True},
+                     headers=CSRF).status_code == 400                      # no switches for friends
+        assert c.put("/api/settings/role-permissions", json={"role": "cofounder", "permission": "nope", "allowed": True},
+                     headers=CSRF).status_code == 400
+        # previewing as cofounder: the Settings endpoints are closed
+        c.post("/api/view-as", json={"role": "cofounder"}, headers=CSRF)
+        assert c.get("/api/settings/role-permissions").status_code == 403
+        c.delete("/api/view-as", headers=CSRF)
+
+    co = names("cofounder")
+    assert "n8n_update_workflow" not in co and "n8n_list_workflows" in co
+    assert "n8n_update_workflow" in names("admin")                          # admins always pass
+    cof = registry.get_person(registry.add_user("Perm Tester", "cofounder"))
+    out, err = await tools.execute("n8n_update_workflow", {"workflow_id": "1", "workflow": {}},
+                                   tools.ToolContext(cof, None, "telegram"))
+    assert err and "not available" in out
+    assert permissions.allowed("cofounder", "n8n_view") and not permissions.allowed("cofounder", "n8n_edit")
+    assert db.query_one("SELECT 1 FROM activity WHERE summary LIKE '%turned off%n8n%'")
+    db.execute("DELETE FROM app_settings WHERE key = 'role_permissions'")
+
+
+def test_not_found_page(tmp_path, monkeypatch):
+    from fastapi.testclient import TestClient
+    from orchestrator import main
+    (tmp_path / "not-found.html").write_text("<p>page not found</p>", encoding="utf-8")
+    monkeypatch.setattr(main, "WEB_DIR", tmp_path)
+    with TestClient(main.app, base_url="http://testserver") as c:
+        r = c.get("/no-such-page")
+        assert r.status_code == 404 and "page not found" in r.text and r.headers["content-type"].startswith("text/html")
+        assert c.get("/app/whatever").status_code == 404
+        r = c.get("/api/no-such-endpoint")                     # the API keeps answering JSON
+        assert r.status_code == 404 and r.json() == {"detail": "Not Found"}
+        assert c.post("/no-such-page").status_code in (404, 405)

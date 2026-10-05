@@ -1,7 +1,9 @@
 # Tool registry — the only place you edit to give Alfred a new capability.
 #
-# Roles: admin (everything) > cofounder (everything except managing n8n workflows)
+# Roles: admin (everything) > cofounder (everything except deleting n8n workflows)
 #        > friend (basic tools only).
+# `permission:` (optional) = a switch admins can turn off per role on the Settings tab
+#   (orchestrator/permissions.py); admins always pass.
 #
 # Each tool is exposed to Claude only for the roles listed under `roles`
 # ("*" = every role). Role checks happen twice: when the tool list is built
@@ -33,7 +35,7 @@ tools:
     roles: ["*"]
     description: >-
       List open tasks (with ids, owner, due time, follow-up state) the person owns or asked for, the
-      shared list, and (for admins) active n8n workflows.
+      shared list, and (for admins, and cofounders allowed to see n8n) active n8n workflows.
     input_schema:
       type: object
       properties:
@@ -297,7 +299,7 @@ tools:
     roles: ["*"]
     description: >-
       Today's facts for the person: weather (if a town is set), today's calendar, reminders, planned
-      calls, recent call outcomes, open tasks (and failed n8n runs for admins). Use it for "what's my
+      calls, recent call outcomes, open tasks (and failed n8n runs for people allowed to see n8n). Use it for "what's my
       day like", "give me my briefing", "anything I should know today".
     input_schema:
       type: object
@@ -769,11 +771,12 @@ tools:
         confirmed_by_user: {type: boolean, description: Must be true.}
       required: [event_id, confirmed_by_user]
 
-  # ---------------------------------------------------------------- n8n REST API (admin)
+  # ---------------------------------------------------------------- n8n REST API (admin; cofounders per switch)
   - name: n8n_list_workflows
     kind: n8n_api
     action: list_workflows
     roles: [admin, cofounder]
+    permission: n8n_view
     description: List n8n workflows (id, name, active, tags).
     input_schema:
       type: object
@@ -784,6 +787,7 @@ tools:
     kind: n8n_api
     action: get_workflow
     roles: [admin, cofounder]
+    permission: n8n_view
     description: Get one n8n workflow's full definition (nodes, connections, settings).
     input_schema:
       type: object
@@ -794,7 +798,8 @@ tools:
   - name: n8n_create_workflow
     kind: n8n_api
     action: create_workflow
-    roles: [admin]
+    roles: [admin, cofounder]
+    permission: n8n_edit
     description: >-
       Create a new n8n workflow. `workflow` must be an n8n workflow object with
       name, nodes, connections and settings. Created inactive.
@@ -807,7 +812,8 @@ tools:
   - name: n8n_update_workflow
     kind: n8n_api
     action: update_workflow
-    roles: [admin]
+    roles: [admin, cofounder]
+    permission: n8n_edit
     description: Replace an n8n workflow's definition (name, nodes, connections, settings).
     input_schema:
       type: object
@@ -819,7 +825,8 @@ tools:
   - name: n8n_set_workflow_active
     kind: n8n_api
     action: set_active
-    roles: [admin]
+    roles: [admin, cofounder]
+    permission: n8n_edit
     description: Activate or deactivate an n8n workflow.
     input_schema:
       type: object
@@ -847,6 +854,7 @@ tools:
     kind: n8n_api
     action: list_executions
     roles: [admin, cofounder]
+    permission: n8n_view
     description: List recent n8n executions, optionally for one workflow or status.
     input_schema:
       type: object
@@ -859,6 +867,7 @@ tools:
     kind: n8n_api
     action: get_execution
     roles: [admin, cofounder]
+    permission: n8n_view
     description: Get details of one n8n execution, including its data.
     input_schema:
       type: object
@@ -870,6 +879,7 @@ tools:
     kind: n8n_api
     action: trigger_webhook
     roles: [admin, cofounder]
+    permission: n8n_run
     description: >-
       Call any n8n Webhook-trigger path directly (POST {N8N_BASE_URL}/webhook/<path>).
       Use for ad-hoc testing of workflows that don't have their own tool entry yet.

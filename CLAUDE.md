@@ -2,8 +2,10 @@
 
 Personal AI butler "Alfred" (phone + Telegram + dashboard). Renamed from Alfred on 2026-09-28:
 user-facing name comes from `ASSISTANT_NAME`; infra names (folder, container, domain, cookie,
-CSRF value, localStorage keys) intentionally stay `alfred`. Dashboard skins: `alfred` (Stark HUD),
-`batcave` and `matrix` (see `dashboard/web/src/theme.js`). Full spec lives in the README; the
+CSRF value, localStorage keys) intentionally stay `alfred`. Skins: `alfred` (Stark HUD),
+`batcave`, `matrix` and `alfred`, listed in `dashboard/web/src/themes.js` (+ `public/theme-boot.js`,
+which applies the saved skin on every page); animated backgrounds in `src/backdrops.js` (shared with
+the homepage). Full spec lives in the README; the
 current plan is `docs/PROJECT_PLAN.md` (mirrored to `C:\Users\user\Downloads\alfred-agent-spec.md`);
 the original spec is in `docs/archive/original-spec.md`. Keep the plan updated when features land.
 
@@ -44,6 +46,10 @@ the original spec is in `docs/archive/original-spec.md`. Keep the plan updated w
 ## Dashboard
 - React 19 + Vite in `dashboard/web` (no router; tabs in `App.jsx`), built to `dashboard/web/dist`,
   which FastAPI serves. Keep it CSP-clean: no inline scripts, no `dangerouslySetInnerHTML`.
+- Admin Settings tab (`pages/Settings.jsx`) holds household-wide settings; Profile only personal ones.
+- Per-role switches: `orchestrator/permissions.py` (+ `permission:` on tools in registry.yaml). Check
+  `permissions.allowed(role, ...)` server-side for anything a switch covers; admins always pass.
+- Unknown non-API pages get `public/not-found.html` (`main._http_errors`); API paths keep JSON 404.
 - Permissions: always use `routes.current_person` (respects an admin's "view as" role preview);
   `routes.real_person` only for the preview switch itself (`dashboard/api/viewas.py`).
 - Tasks and Files stay mounted in the background (`App.jsx` KEEP_ALIVE) so state survives tab switches;

@@ -5,6 +5,7 @@ import { THEMES, ThemeContext, useTheme } from "./theme.js";
 import Login from "./components/Login.jsx";
 import TwoFactorCard from "./components/TwoFactorCard.jsx";
 import Stats from "./components/Stats.jsx";
+import ButlerGreeting from "./components/ButlerGreeting.jsx";
 import Backdrop from "./components/Backdrop.jsx";
 import { Icon } from "./components/icons.jsx";
 import { Clock, DecodeText, Emblem } from "./components/hud.jsx";
@@ -18,6 +19,7 @@ import Profile from "./pages/Profile.jsx";
 import Usage from "./pages/Usage.jsx";
 import Chat from "./pages/Chat.jsx";
 import Notes from "./pages/Notes.jsx";
+import Settings from "./pages/Settings.jsx";
 
 const TABS = [
   { id: "live", label: "Live", title: "Live operations", kicker: "Channels in progress", Page: Live },
@@ -29,6 +31,7 @@ const TABS = [
   { id: "health", label: "Systems", title: "Systems", kicker: "Diagnostics", Page: Health },
   { id: "people", label: "Personnel", title: "Personnel", kicker: "Registry & access", Page: People, admin: true },
   { id: "usage", label: "Usage", title: "API usage", kicker: "Tokens, minutes & cost", Page: Usage, admin: true },
+  { id: "settings", label: "Settings", title: "Settings", kicker: "Household & permissions", Page: Settings, admin: true },
   { id: "profile", label: "Profile", title: "My profile", kicker: "Identity & connections", Page: Profile },
 ];
 
@@ -134,7 +137,9 @@ export default function App() {
   const Page = active.Page;
   const skin = THEMES[theme];
   const assistant = me.assistant_name || "Alfred";
-  const wordmark = theme === "alfred" ? assistant.toUpperCase().split("").join(".") + "." : assistant.toUpperCase();  // matrix adds a cursor in CSS
+  // Stark: A.L.F.R.E.D.; Alfred skin: the name as written; others in capitals (matrix adds a cursor in CSS)
+  const wordmark = theme === "alfred" ? assistant.toUpperCase().split("").join(".") + "."
+    : theme === "alfred" ? assistant : assistant.toUpperCase();
   const index = String(tabs.indexOf(active) + 1).padStart(2, "0");
 
   return (
@@ -198,6 +203,7 @@ export default function App() {
 
           {!KEEP_ALIVE.has(active.id) && (
             <main key={active.id} className="page-enter">
+              {active.id === "live" && theme === "alfred" && <ButlerGreeting me={me} assistant={assistant} />}
               {active.id === "live" && <Stats />}
               <Page me={me} isAdmin={isAdmin} assistant={assistant} refreshMe={refreshMe} />
             </main>

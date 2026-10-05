@@ -38,3 +38,33 @@ footer { margin-top: 48px; padding-top: 16px; border-top: 1px solid var(--line);
   td { border-bottom: 0; padding: 2px 0; }
   tr { border-bottom: 1px solid var(--line); padding: 8px 0; }
 }
+
+/* Skins (data-theme on <html>, set by /theme-boot.js): same choice as the dashboard and homepage. */
+:root[data-theme="batcave"] { --bg: #050506; --panel: rgb(255 255 255 / .03); --line: rgb(255 255 255 / .1); --accent: #ffcc00;
+  --text: #d4d5db; --strong: #f5f2e8; --muted: #969aa4; }
+:root[data-theme="batcave"] body { background: radial-gradient(ellipse 50% 40% at 50% -8%, rgb(255 204 0 / .1), transparent 70%), var(--bg); }
+:root[data-theme="matrix"] { --bg: #000; --panel: rgb(0 255 65 / .04); --line: rgb(0 255 65 / .2); --accent: #00ff41;
+  --text: rgb(0 255 65 / .85); --strong: #d6ffdf; --muted: rgb(0 255 65 / .55); }
+:root[data-theme="matrix"] body { background: #000; font-family: "Share Tech Mono", ui-monospace, Consolas, monospace; font-size: 15px; }
+:root[data-theme="alfred"] { --bg: #120c0a; --panel: rgb(201 162 92 / .05); --line: rgb(201 162 92 / .25); --accent: #d9b56f;
+  --text: #eadec6; --strong: #f7eedb; --muted: #c4b08c; }
+:root[data-theme="alfred"] body { background: radial-gradient(ellipse 70% 40% at 50% -10%, rgb(201 162 92 / .12), transparent 70%), var(--bg);
+  font-family: "EB Garamond", Georgia, "Times New Roman", serif; font-size: 18px; }
+:root[data-theme="alfred"] :is(h1, h2, h3, header.top a) { font-family: "Cormorant Garamond", Georgia, serif; letter-spacing: .02em; }
+:root[data-theme="alfred"] header.top a { letter-spacing: .14em; font-size: 20px; }
+
+/* Not-found page */
+.nf { min-height: 70vh; display: grid; align-content: center; gap: 10px; text-align: center; }
+.nf .code { font: 700 clamp(88px, 18vw, 180px)/1 system-ui, sans-serif; color: var(--accent); letter-spacing: .04em; margin: 0;
+  text-shadow: 0 0 40px color-mix(in srgb, var(--accent) 40%, transparent); }
+.nf .line { font-size: 20px; color: var(--strong); margin: 0; }
+.nf .path { color: var(--muted); font-family: ui-monospace, Consolas, monospace; font-size: 14px; overflow-wrap: anywhere; margin: 0; }
+.nf .links { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; margin-top: 18px; }
+.nf .links a { border: 1px solid var(--line); padding: 10px 18px; text-decoration: none; color: var(--strong); background: var(--panel); }
+.nf .links a:hover { border-color: var(--accent); }
+.nf .say { display: none; }
+:root:not([data-theme]) .nf .say-alfred, :root[data-theme="alfred"] .nf .say-alfred, :root[data-theme="batcave"] .nf .say-batcave,
+:root[data-theme="matrix"] .nf .say-matrix, :root[data-theme="alfred"] .nf .say-alfred { display: block; }
+:root[data-theme="matrix"] .nf .code { font-family: "Share Tech Mono", ui-monospace, monospace; }
+:root[data-theme="alfred"] .nf .code { font-family: "Cormorant Garamond", Georgia, serif; font-style: italic; font-weight: 600; }
+:root[data-theme="alfred"] .nf .line { font-style: italic; font-size: 24px; }

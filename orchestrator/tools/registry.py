@@ -101,6 +101,15 @@ def _available(spec: ToolSpec, person_id: int | None = None) -> bool:
     return True
 
 
+def _permitted(spec: ToolSpec, role: str) -> bool:
+    """Per-role switches from the Settings tab (orchestrator/permissions.py)."""
+    perm = spec.config.get("permission")
+    if not perm:
+        return True
+    from .. import permissions
+    return permissions.allowed(role, perm)
+
+
 def tools_for(role: str, channel: str | None = None, person_id: int | None = None) -> list[dict]:
     """Tools this person may use on this channel.
 
@@ -109,8 +118,8 @@ def tools_for(role: str, channel: str | None = None, person_id: int | None = Non
     if not _TOOLS:
         load()
     return [s.api_definition() for s in sorted(_TOOLS.values(), key=lambda s: s.name)
-            if s.allowed_for(role) and (not s.channels or channel is None or channel in s.channels)
-            and _available(s, person_id)]
+            if s.allowed_for(role) and _permitted(s, role)
+            and (not s.channels or channel is None or channel in s.channels) and _available(s, person_id)]
 
 
 def _truncate(result: Any) -> str:
@@ -125,7 +134,8 @@ async def execute(name: str, args: dict, ctx: ToolContext) -> tuple[str, bool]:
     if not _TOOLS:
         load()
     spec = _TOOLS.get(name)
-    if spec is None or not spec.allowed_for(ctx.person.role) or (spec.channels and ctx.channel not in spec.channels):
+    if spec is None or not spec.allowed_for(ctx.person.role) or not _permitted(spec, ctx.person.role) \
+            or (spec.channels and ctx.channel not in spec.channels):
         # Defence in depth: the model only sees permitted tools, but re-check anyway.
         result, is_error = f"Tool '{name}' is not available to this user.", True
         db.log_tool_call(name, args, result, True, ctx.session_id, ctx.person.id)

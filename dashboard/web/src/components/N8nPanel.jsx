@@ -3,8 +3,8 @@ import { Empty, Tag } from "./common.jsx";
 
 const RUN_KIND = { success: "ok", error: "bad", running: "busy", waiting: "busy", crashed: "bad" };
 
-/* Admin: n8n workflows (active first) with their last run, and a button to open n8n. */
-export default function N8nPanel({ t }) {
+/* n8n workflows (active first) with their last run; "Open n8n" / "Edit" only with edit permission. */
+export default function N8nPanel({ t, assistant = "Alfred" }) {
   if (!t) return null;
   const wfs = [...(t.n8n || [])].sort((a, b) => (b.active - a.active) || (a.name || "").localeCompare(b.name || ""));
   return (
@@ -19,6 +19,7 @@ export default function N8nPanel({ t }) {
         <p className="muted small">
           {wfs.filter((w) => w.active).length} active of {wfs.length} workflows
           {t.n8n_failed_24h ? <> · <Tag kind="bad">{t.n8n_failed_24h} failed run{t.n8n_failed_24h > 1 ? "s" : ""} in 24 h</Tag></> : " · no failed runs in 24 h"}
+          {t.n8n_can_run && ` · ask ${assistant} in chat to run one`}
         </p>
       )}
       <div className="list">

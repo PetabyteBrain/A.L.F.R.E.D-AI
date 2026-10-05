@@ -8,9 +8,10 @@ the registry get answers; unknown callers can leave a message, everyone else is 
 
 Runs as one Docker container on **alfred-server** (`/home/user/alfred`). The project, service,
 container and hostname keep their original `alfred` names (alfred.example.com, `docker compose exec alfred`);
-only the assistant's persona and branding are "Alfred" (`ASSISTANT_NAME`). The dashboard has three skins:
-**Stark** (holographic HUD), **Batcave** (bat-signal yellow on gunmetal) and **Matrix** (green-screen
-terminal with digital rain).
+only the assistant's persona and branding are "Alfred" (`ASSISTANT_NAME`). The site has four skins, chosen on the
+homepage, the sign-in page or the dashboard and applied everywhere (homepage, dashboard, legal pages,
+404 page): **Stark** (holographic HUD), **Batcave** (bat-signal yellow on gunmetal), **Matrix**
+(green-screen terminal with digital rain) and **Alfred** (the butler: brass and ivory on mahogany).
 
 ## What Alfred can do
 
@@ -36,7 +37,7 @@ terminal with digital rain).
 | Homelab | Status of all Pis, the Jetson and their containers, logs, confirmed restarts (admin), Minecraft players; alerts when something breaks. An external watchdog on host-d alerts if Alfred himself is down | any channel (admin), Systems |
 | Backups | Nightly verified database snapshot + recordings + `.env` to the Jetson (no-delete key) and to the NAS (snapshot-protected); monthly automatic restore test (`infra/README-backup.md`) | automatic, Systems |
 | Safety & privacy | Registry-only access, roles, code verification of new connections, dashboard 2FA (authenticator app or Telegram code), call audio deleted after 90 days, "download / delete my data", monthly cost budgets with admin alerts, behaviour checks against the real model | everywhere |
-| Dashboard | Live sessions (terminate), archive with audio and search/filters, calendar + tasks/reminders/calls (archived calls searchable), notes & files, event log (CSV export), health, people, API usage, budgets; admins can view it as another role | `/app` |
+| Dashboard | Live sessions (terminate), archive with audio and search/filters, calendar + tasks/reminders/calls (archived calls searchable), notes & files, event log (CSV export), health, people, API usage, budgets; admin Settings tab (role permissions such as n8n for cofounders, household quiet hours, call screening, view as role) | `/app` |
 
 ```
 Phone ──► Twilio ──► /twilio/voice ─► identity ─┬─► <Stream> ─► /twilio/stream (WS), mu-law 8k

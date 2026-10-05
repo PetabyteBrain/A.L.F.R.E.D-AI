@@ -8,13 +8,12 @@ import MemoryCard from "../components/MemoryCard.jsx";
 import QuietHoursCard from "../components/QuietHoursCard.jsx";
 import GoogleCalendarCard from "../components/GoogleCalendarCard.jsx";
 import TwoFactorCard from "../components/TwoFactorCard.jsx";
-import ViewAsCard from "../components/ViewAsCard.jsx";
 import VoiceModeCard from "../components/VoiceModeCard.jsx";
 import MyDataCard from "../components/MyDataCard.jsx";
 import { Panel } from "../components/hud.jsx";
 
 /* Self-service for everyone with dashboard access: name, connections, password. */
-export default function Profile({ me: who, assistant, isAdmin, refreshMe }) {
+export default function Profile({ assistant, refreshMe }) {
   const { data: me, error, reload } = usePoll(() => api("/profile"));
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
@@ -96,9 +95,8 @@ export default function Profile({ me: who, assistant, isAdmin, refreshMe }) {
             <button className="btn primary" type="submit" disabled={busy}>Update password</button>
           </form>
           <TwoFactorCard assistant={assistant} />
-          {who && <ViewAsCard me={who} onChanged={refreshMe} />}
           <GoogleCalendarCard assistant={assistant} />
-          <QuietHoursCard assistant={assistant} isAdmin={isAdmin} />
+          <QuietHoursCard assistant={assistant} />
           <VoiceModeCard assistant={assistant} />
           <BriefingCard assistant={assistant} />
           <MemoryCard assistant={assistant} />

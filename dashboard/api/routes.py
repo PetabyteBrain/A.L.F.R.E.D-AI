@@ -404,9 +404,13 @@ class TaskDone(Strict):
 async def tasks(person: Person = Depends(current_person), include_done: bool = Query(default=False)) -> dict:
     from orchestrator import tasks as task_mod
     out: dict = {"local": task_mod.list_for(person, include_done=include_done)}
-    if person.is_admin and settings.n8n_enabled:
+    from orchestrator import permissions
+    if settings.n8n_enabled and permissions.allowed(person.role, "n8n_view"):
         from orchestrator.tools import n8n_tool
-        out["n8n_url"] = settings.n8n_base_url.rstrip("/")
+        out["n8n_can_edit"] = permissions.allowed(person.role, "n8n_edit")
+        out["n8n_can_run"] = permissions.allowed(person.role, "n8n_run")
+        if out["n8n_can_edit"]:
+            out["n8n_url"] = settings.n8n_base_url.rstrip("/")
         try:
             wfs = (await n8n_tool._api("GET", "/workflows", params={"limit": 100})).get("data", [])  # incl. nodes
             runs = await n8n_tool.run_action("list_executions", {"limit": 50})

@@ -1,6 +1,8 @@
-/* Public homepage — Stark HUD styling, same tokens as the dashboard's "alfred" skin. */
+/* Public homepage in the dashboard's four skins (data-theme on <html>, set by public/theme-boot.js).
+   Stark is the base; the other skins override tokens and a few shapes at the end. */
 :root {
   --bg: #01050b;
+  --bg-rgb: 1 5 11;
   --a: 88 214 255;
   --a2: 10 140 255;
   --ok: 90 255 196;
@@ -55,11 +57,11 @@ strong { color: var(--strong); font-weight: 700; }
 /* ---------- top bar ---------- */
 .bar {
   position: sticky; top: 0; display: flex; align-items: center; gap: 28px; padding: 14px clamp(16px, 4vw, 48px);
-  background: rgb(1 5 11 / .7); backdrop-filter: blur(10px); border-bottom: 1px solid var(--line);
+  background: rgb(var(--bg-rgb) / .7); backdrop-filter: blur(10px); border-bottom: 1px solid var(--line);
 }
 .bar::after { content: ""; position: absolute; left: 0; bottom: -1px; height: 2px; width: 220px; background: var(--accent); box-shadow: var(--glow); }
 .brand { display: flex; align-items: center; gap: 12px; text-decoration: none; }
-.mark { font: 900 18px var(--display); letter-spacing: .34em; color: var(--strong); text-shadow: var(--glow); }
+.mark { font: 900 18px var(--display); white-space: nowrap; letter-spacing: .34em; color: var(--strong); text-shadow: var(--glow); }
 .links { display: flex; gap: 24px; }
 .links a { color: var(--muted); text-decoration: none; font: 600 11px var(--display); letter-spacing: .22em; text-transform: uppercase; }
 .links a:hover { color: var(--strong); }
@@ -142,7 +144,7 @@ h1::after { color: var(--accent); transform: translateX(2px); animation: glitch 
 
 .readout {
   position: absolute; display: grid; gap: 2px; padding: 8px 12px; font: 400 11px var(--mono); letter-spacing: .14em;
-  background: rgb(1 5 11 / .75); border: 1px solid var(--line2); opacity: 0; animation: bootIn .6s ease-out forwards;
+  background: rgb(var(--bg-rgb) / .75); border: 1px solid var(--line2); opacity: 0; animation: bootIn .6s ease-out forwards;
 }
 .readout span { color: var(--muted); }
 .readout b { color: var(--strong); font-weight: 400; }
@@ -211,7 +213,7 @@ h3 { font: 700 15px var(--display); letter-spacing: .1em; text-transform: upperc
 .final h2 { margin: 0; font-size: clamp(30px, 4.6vw, 54px); }
 
 .foot { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; padding: 22px clamp(16px, 4vw, 48px);
-  border-top: 1px solid var(--line); color: var(--muted); font: 400 13px var(--mono); background: rgb(1 5 11 / .6); }
+  border-top: 1px solid var(--line); color: var(--muted); font: 400 13px var(--mono); background: rgb(var(--bg-rgb) / .6); }
 .foot nav { display: flex; gap: 20px; flex-wrap: wrap; }
 .foot a { color: var(--muted); text-decoration: none; }
 .foot a:hover { color: var(--accent); }
@@ -251,3 +253,120 @@ html.js .reveal.in { opacity: 1; transform: none; }
   .boot li, .readout { opacity: 1; }
   html.js .reveal { opacity: 1; transform: none; }
 }
+
+
+/* ---------- skin switch (top bar) ---------- */
+.theme-switch { display: flex; border: 1px solid var(--line); }
+.theme-switch button { font: 600 10px var(--display); letter-spacing: .14em; text-transform: uppercase; background: transparent;
+  color: var(--muted); border: 0; padding: 7px 9px; cursor: pointer; }
+.theme-switch button.active { background: rgb(var(--a) / .22); color: var(--strong); }
+.theme-switch button:focus-visible { outline: 1px solid var(--accent); outline-offset: 2px; }
+
+/* ---------- one emblem per skin ---------- */
+.emblem { display: none; }
+:root:not([data-theme]) .emblem-alfred, :root[data-theme="alfred"] .emblem-alfred,
+:root[data-theme="batcave"] .emblem-batcave, :root[data-theme="matrix"] .emblem-matrix, :root[data-theme="alfred"] .emblem-alfred { display: block; }
+.hero-visual > .emblem:not(.reactor-xl) { width: min(520px, 100%); height: auto; overflow: visible; }
+.emblem .halo { opacity: .9; }
+/* bat-signal */
+.e-bat .halo { fill: rgb(255 204 0 / .1); }
+.e-bat .ring { stroke: rgb(255 204 0 / .7); }
+.e-bat .disc { fill: rgb(255 214 64); filter: drop-shadow(0 0 12px rgb(255 204 0 / .9)) drop-shadow(0 0 40px rgb(255 190 0 / .45)); }
+.e-bat .rim { fill: none; stroke: rgb(120 96 0); stroke-width: 3; }
+.e-bat .bat { fill: #0b0b0d; }
+/* code ring */
+.e-code .halo { fill: rgb(0 255 65 / .1); }
+.e-code .ring { stroke: rgb(0 255 65 / .75); }
+.e-code .code-text { font: 400 15px "Share Tech Mono", monospace; fill: rgb(0 255 65 / .85); letter-spacing: 2px; }
+.e-code .code-core { fill: rgb(0 20 5 / .9); stroke: #00ff41; stroke-width: 1.5; filter: drop-shadow(0 0 8px rgb(0 255 65 / .6)); }
+.e-code .code-a { font: 400 48px "Share Tech Mono", monospace; fill: #d6ffdf; filter: drop-shadow(0 0 6px rgb(0 255 65 / .9)); }
+.e-code .code-a.sm { font-size: 96px; }
+.e-code .code-cursor { fill: #00ff41; animation: cursor 1.05s steps(1) infinite; }
+@keyframes cursor { 50% { opacity: 0; } }
+/* crest */
+.e-crest .halo { fill: rgb(232 190 110 / .1); }
+.e-crest .dots circle { fill: rgb(201 162 92 / .7); }
+.e-crest .crest-ring { fill: none; stroke: url(#home-gilt); stroke-width: 2.4; }
+.e-crest .crest-ring.thin { stroke-width: 1; opacity: .8; }
+.e-crest .sheen { fill: none; stroke: #fff4d6; stroke-width: 2.6; stroke-dasharray: 26 502; opacity: .7; }
+.e-crest .crest-disc { fill: url(#home-crest-bg); stroke: rgb(201 162 92 / .5); stroke-width: 1; }
+.e-crest .crest-a { font: 600 74px "Cormorant Garamond", Georgia, serif; fill: url(#home-gilt); }
+.e-crest .crest-a.sm { font-size: 110px; }
+.e-crest .gilt { fill: url(#home-gilt); }
+.reactor-sm.e-crest { width: 42px; height: 42px; }
+
+/* ---------- Batcave ---------- */
+:root[data-theme="batcave"] {
+  --bg: #050506; --bg-rgb: 5 5 6; --a: 255 204 0; --a2: 92 98 112; --ok: 176 222 104;
+  --text: rgb(212 213 219 / .92); --strong: #f5f2e8; --muted: rgb(150 152 162 / .8); --faint: rgb(150 152 162 / .35);
+  --line: rgb(255 255 255 / .09); --line2: rgb(255 204 0 / .45); --glow: 0 0 12px rgb(255 204 0 / .35);
+  --display: "Bebas Neue", "Rajdhani", system-ui, sans-serif;
+}
+:root[data-theme="batcave"] body.home { background: radial-gradient(ellipse 45% 38% at 50% -8%, rgb(255 204 0 / .12), transparent 70%),
+  radial-gradient(ellipse 90% 60% at 50% 115%, rgb(92 98 112 / .18), transparent 70%), var(--bg); }
+:root[data-theme="batcave"] :is(.mark, h1, h2, h3, .btn, .links a, .status, .strip .v, .num, .theme-switch button) { font-weight: 400; letter-spacing: .08em; }
+:root[data-theme="batcave"] h1 { font-size: clamp(54px, 8vw, 104px); }
+:root[data-theme="batcave"] h2 { font-size: clamp(34px, 4.4vw, 52px); }
+:root[data-theme="batcave"] :is(.btn, .links a, .theme-switch button) { font-size: 15px; }
+:root[data-theme="batcave"] h3 { font-size: 20px; }
+:root[data-theme="batcave"] :is(.card, .panel) { background: linear-gradient(180deg, rgb(34 35 41 / .92), rgb(15 15 18 / .94)); }
+
+/* ---------- Matrix ---------- */
+:root[data-theme="matrix"] {
+  --bg: #000; --bg-rgb: 0 0 0; --a: 0 255 65; --a2: 0 120 30; --ok: 150 255 180;
+  --text: rgb(0 255 65 / .86); --strong: #d6ffdf; --muted: rgb(0 255 65 / .55); --faint: rgb(0 255 65 / .28);
+  --line: rgb(0 255 65 / .2); --line2: rgb(0 255 65 / .55); --glow: 0 0 10px rgb(0 255 65 / .6);
+  --display: "Share Tech Mono", ui-monospace, monospace; --body: "Share Tech Mono", ui-monospace, monospace;
+}
+:root[data-theme="matrix"] body.home { background: #000; font-weight: 400; font-size: 16px; }
+:root[data-theme="matrix"] #field { opacity: .32; }
+:root[data-theme="matrix"] body.home::before { background: repeating-linear-gradient(0deg, rgb(0 0 0 / .28) 0 1px, transparent 1px 3px); }
+:root[data-theme="matrix"] :is(.mark, h1, h2, h3, .btn, .links a, .status, .strip .v, .num) { font-weight: 400; }
+:root[data-theme="matrix"] h1 { text-transform: uppercase; letter-spacing: .06em; }
+:root[data-theme="matrix"] h1::before { color: #b6ff00; }
+:root[data-theme="matrix"] .mark::after { content: "_"; animation: cursor 1.05s steps(1) infinite; }
+:root[data-theme="matrix"] .btn { clip-path: none; background: transparent; }
+:root[data-theme="matrix"] .btn.primary:hover { background: var(--accent); color: #000; }
+:root[data-theme="matrix"] .theme-switch button.active { background: var(--accent); color: #000; }
+:root[data-theme="matrix"] :is(.card, .panel) { background: rgb(0 10 2 / .9); }
+:root[data-theme="matrix"] h2::before { content: "> "; color: var(--accent); }
+
+/* ---------- Alfred ---------- */
+:root[data-theme="alfred"] {
+  --bg: #120c0a; --bg-rgb: 18 12 10; --a: 201 162 92; --a2: 122 36 44; --ok: 150 186 128;
+  --text: rgb(234 222 198 / .92); --strong: #f7eedb; --muted: rgb(206 188 156 / .7); --faint: rgb(206 188 156 / .32);
+  --line: rgb(201 162 92 / .22); --line2: rgb(201 162 92 / .55); --glow: 0 0 16px rgb(232 190 110 / .25);
+  --display: "Cormorant Garamond", Georgia, serif; --body: "EB Garamond", Georgia, serif;
+}
+:root[data-theme="alfred"] body.home { background:
+    radial-gradient(ellipse 70% 45% at 60% -10%, rgb(201 162 92 / .12), transparent 70%),
+    radial-gradient(ellipse 80% 60% at 30% 120%, rgb(122 36 44 / .25), transparent 70%), var(--bg);
+  font-weight: 400; font-size: 18px; }
+:root[data-theme="alfred"] body.home::before { background: none; }
+:root[data-theme="alfred"] :is(.mark, h1, h2, h3, .btn, .links a, .status, .strip .v, .num, .theme-switch button, .kicker, .strip .k, .idx, .readout) {
+  font-weight: 600; text-transform: none; letter-spacing: .03em; }
+:root[data-theme="alfred"] .mark { font-size: 26px; letter-spacing: .1em; text-shadow: none; }
+:root[data-theme="alfred"] h1 { font-size: clamp(48px, 7vw, 92px); font-style: italic; text-shadow: 0 0 30px rgb(232 190 110 / .2); }
+:root[data-theme="alfred"] h1::before, :root[data-theme="alfred"] h1::after { display: none; }
+:root[data-theme="alfred"] h2 { font-size: clamp(32px, 4vw, 50px); text-shadow: none; }
+:root[data-theme="alfred"] h3 { font-size: 22px; }
+:root[data-theme="alfred"] :is(.kicker, .strip .k, .readout span) { font-family: var(--body); font-style: italic; font-weight: 400; font-size: 16px; }
+:root[data-theme="alfred"] :is(.btn, .links a, .theme-switch button) { font-size: 16px; }
+:root[data-theme="alfred"] .btn { clip-path: none; border-radius: 2px; color: var(--strong); }
+:root[data-theme="alfred"] .btn.primary { background: linear-gradient(180deg, #d9b56f, #b38a46); color: #1d130d; border-color: #e7c886; box-shadow: none; }
+:root[data-theme="alfred"] .btn.primary:hover { background: linear-gradient(180deg, #e7c886, #c49a52); }
+:root[data-theme="alfred"] .theme-switch button.active { background: rgb(201 162 92 / .9); color: #1d130d; }
+:root[data-theme="alfred"] :is(.card, .panel) { background: linear-gradient(180deg, rgb(36 25 20 / .94), rgb(20 14 11 / .95));
+  box-shadow: inset 0 0 0 4px rgb(20 14 11 / .9), inset 0 0 0 5px rgb(201 162 92 / .14); }
+:root[data-theme="alfred"] :is(.card, .panel)::before { --l: 14px; --t: 1px; }
+:root[data-theme="alfred"] .card::after { display: none; }
+:root[data-theme="alfred"] .boot { font-family: var(--body); font-style: italic; }
+:root[data-theme="alfred"] .boot li::before { content: "✦"; }
+:root[data-theme="alfred"] .num { clip-path: circle(50%); color: #1d130d; background: linear-gradient(180deg, #e7c886, #b38a46); font-style: italic; }
+:root[data-theme="alfred"] .clock { font-family: var(--display); font-size: 18px; }
+
+/* the Tron floor belongs to Stark only */
+:root:is([data-theme="batcave"], [data-theme="matrix"], [data-theme="alfred"]) .grid-bg { display: none; }
+@media (max-width: 1100px) { .links { display: none; } }
+@media (max-width: 760px) { .theme-switch button { padding: 6px 6px; font-size: 9px; letter-spacing: .08em; } }
+@media (max-width: 520px) { .bar .theme-switch { display: none; } }

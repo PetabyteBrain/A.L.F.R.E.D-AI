@@ -13,7 +13,9 @@ from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, PlainTextResponse, Response
+from fastapi.exception_handlers import http_exception_handler
 from fastapi.staticfiles import StaticFiles
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from dashboard.api.chat import router as chat_router
 from dashboard.api.reminders import router as reminders_router
@@ -32,6 +34,7 @@ from dashboard.api.screening import router as screening_router
 from dashboard.api.notes import router as notes_router
 from dashboard.api.agenda import router as agenda_router
 from dashboard.api.viewas import router as viewas_router
+from dashboard.api.settings_admin import router as settings_router
 from dashboard.api.routes import router as dashboard_router
 from dashboard.api.security import SecurityMiddleware
 
@@ -86,6 +89,19 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Alfred", lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
 
+# Machine endpoints keep JSON errors; any other unknown address gets the styled "page not found" page.
+_MACHINE_PATHS = ("/api/", "/twilio/", "/n8n/", "/internal/", "/healthz")
+
+
+@app.exception_handler(StarletteHTTPException)
+async def _http_errors(request: Request, exc: StarletteHTTPException) -> Response:
+    path = request.url.path
+    if exc.status_code == 404 and request.method in ("GET", "HEAD") and not path.startswith(_MACHINE_PATHS):
+        page = WEB_DIR / "not-found.html"
+        if page.is_file():
+            return FileResponse(page, status_code=404, media_type="text/html", headers={"Cache-Control": "no-cache"})
+    return await http_exception_handler(request, exc)
+
 app.add_middleware(SecurityMiddleware)
 
 
@@ -129,6 +145,7 @@ app.include_router(outside_router)
 app.include_router(notes_router)
 app.include_router(agenda_router)
 app.include_router(viewas_router)
+app.include_router(settings_router)
 app.include_router(google_router)
 app.include_router(chat_router)
 app.include_router(reminders_router)

@@ -208,7 +208,8 @@ async def gather(person: Person) -> dict:
     if company:
         out["company_todo"] = company
 
-    if person.is_admin and settings.n8n_enabled:
+    from . import permissions
+    if settings.n8n_enabled and permissions.allowed(person.role, "n8n_view"):
         try:
             from .tools import n8n_tool
             runs = await n8n_tool.run_action("list_executions", {"status": "error", "limit": 20})
