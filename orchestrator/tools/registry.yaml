@@ -248,7 +248,10 @@ tools:
       take my pills". Delivered on Telegram with Done/Snooze buttons (or by phone with
       channel=call). escalate=true phones them if the Telegram reminder isn't acknowledged within
       10 minutes. Resolve relative times against the current local time and pass ISO local time.
-      Admins and cofounders can also set reminders for other registered people.
+      Admins and cofounders can also set reminders for other registered people. For a calendar
+      event ("remind me 15 minutes before the dentist") pass its event_id + minutes_before instead
+      of text/when: the reminder then follows the event if it moves and isn't sent if it's deleted.
+      Before adding a reminder for something already in the calendar, prefer the event_id form.
     input_schema:
       type: object
       properties:
@@ -258,7 +261,10 @@ tools:
         channel: {type: string, enum: [telegram, call], description: Default telegram.}
         escalate: {type: boolean, description: Phone them if the Telegram reminder isn't acknowledged in 10 minutes.}
         person: {type: string, description: "Someone else's name or id; omit for the requester."}
-      required: [text, when]
+        event_id: {type: string, description: Google Calendar event id to tie the reminder to.}
+        minutes_before: {type: integer, minimum: 0, description: "With event_id; default 15."}
+        category: {type: string, enum: [meeting, reminder, task, call, work, personal, other]}
+      required: []
 
   - name: list_reminders
     kind: builtin

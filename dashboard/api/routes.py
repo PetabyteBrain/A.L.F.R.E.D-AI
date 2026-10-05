@@ -295,9 +295,11 @@ async def call_targets(person: Person = Depends(current_person)) -> list[dict]:
 
 
 @router.get("/calls/scheduled")
-async def scheduled_calls(person: Person = Depends(current_person), include_done: bool = True) -> list[dict]:
+async def scheduled_calls(person: Person = Depends(current_person), include_done: bool = True,
+                          archived: bool = False, q: str = Query(default="", max_length=100)) -> list[dict]:
+    """Upcoming calls (include_done=false), or the archive of finished ones with a search."""
     from orchestrator import scheduler
-    return scheduler.list_for(person, include_done=include_done, limit=100)
+    return scheduler.list_for(person, include_done=include_done, limit=200 if archived else 100, archived=archived, q=q)
 
 
 @router.delete("/calls/scheduled/{request_id}")
@@ -378,13 +380,26 @@ async def tasks(person: Person = Depends(current_person), include_done: bool = Q
     out: dict = {"local": task_mod.list_for(person, include_done=include_done)}
     if person.is_admin and settings.n8n_enabled:
         from orchestrator.tools import n8n_tool
+        out["n8n_url"] = settings.n8n_base_url.rstrip("/")
         try:
-            wfs = await n8n_tool.list_active_workflows()
-            out["n8n"] = [{"id": w.get("id"), "name": w.get("name"), "updatedAt": w.get("updatedAt"),
-                           "triggers": _trigger_summary(w)} for w in wfs]
+            wfs = (await n8n_tool._api("GET", "/workflows", params={"limit": 100})).get("data", [])  # incl. nodes
+            runs = await n8n_tool.run_action("list_executions", {"limit": 50})
+            last: dict = {}
+            for r in runs:                              # newest first: keep each workflow's latest run
+                last.setdefault(r.get("workflowId"), r)
+            out["n8n"] = [{"id": w.get("id"), "name": w.get("name"), "active": bool(w.get("active")),
+                           "updatedAt": w.get("updatedAt"), "triggers": _trigger_summary(w),
+                           "last_run": last.get(w.get("id"))} for w in wfs]
+            out["n8n_failed_24h"] = sum(1 for r in runs if r.get("status") == "error"
+                                        and (r.get("startedAt") or "") >= _hours_ago(24))
         except Exception as e:  # noqa: BLE001
             out["n8n_error"] = str(e)[:200]
     return out
+
+
+def _hours_ago(h: int) -> str:
+    from datetime import timedelta
+    return (datetime.now(timezone.utc) - timedelta(hours=h)).isoformat()[:19]
 
 
 def _trigger_summary(workflow: dict) -> list[str]:

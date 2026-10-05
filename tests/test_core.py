@@ -3203,3 +3203,98 @@ def test_nas_find_by_meaning(monkeypatch, tmp_path):
         raise AssertionError("friend searched Company")
     except nas.NasError:
         pass
+
+
+
+def test_agenda_links_reminders_to_calendar(monkeypatch):
+    import asyncio
+    from datetime import datetime, timedelta, timezone
+    from fastapi.testclient import TestClient
+    from orchestrator import agenda, google_calendar, reminders, scheduler
+    from orchestrator.main import app
+    admin = registry.lookup("telegram", "111")
+    db.execute("DELETE FROM reminders")
+    t0 = (datetime.now(timezone.utc) + timedelta(days=2)).replace(minute=0, second=0, microsecond=0)
+    events = {"ev1": {"id": "ev1", "summary": "Dentist", "start": {"dateTime": t0.isoformat()},
+                      "end": {"dateTime": (t0 + timedelta(hours=1)).isoformat()}, "status": "confirmed"},
+              "ev2": {"id": "ev2", "summary": "Team sync", "start": {"dateTime": (t0 + timedelta(hours=3)).isoformat()},
+                      "end": {"dateTime": (t0 + timedelta(hours=4)).isoformat()}, "attendees": [{"email": "j@x.ch"}],
+                      "status": "confirmed"}}
+
+    async def fake_api(user_id, method, path, **kw):
+        eid = path.rsplit("/", 1)[-1]
+        if eid not in events:
+            raise google_calendar.GoogleError("That event wasn't found.")
+        return events[eid]
+
+    async def fake_list(user_id, start, end, query="", max_results=25):
+        return [google_calendar._compact(e) for e in events.values()]
+
+    async def fake_update(user_id, event_id, **fields):
+        if fields.get("start"):
+            events[event_id]["start"] = {"dateTime": fields["start"]}
+            events[event_id]["end"] = {"dateTime": fields["end"]}
+        return google_calendar._compact(events[event_id])
+    monkeypatch.setattr(google_calendar, "_api", fake_api)
+    monkeypatch.setattr(google_calendar, "list_events", fake_list)
+    monkeypatch.setattr(google_calendar, "update_event", fake_update)
+    monkeypatch.setattr(google_calendar, "is_linked", lambda uid: True)
+
+    # A reminder tied to the event fires 15 min before it, and follows it when it moves.
+    r = asyncio.run(agenda.remind_for_event(admin, "ev1", 15))
+    assert r["link_state"] == "linked" and datetime.fromisoformat(r["due_at"]) == t0 - timedelta(minutes=15)
+    events["ev1"]["start"] = {"dateTime": (t0 + timedelta(hours=2)).isoformat()}
+    out = asyncio.run(agenda.sync_person(admin.id))
+    assert out["moved"] == 1
+    assert datetime.fromisoformat(reminders.get(r["id"])["due_at"]) == t0 + timedelta(hours=2) - timedelta(minutes=15)
+    assert "Moved with the event" in reminders.get(r["id"])["link_note"]
+
+    # A loose reminder at the same time as an event is flagged as a probable duplicate.
+    loose = reminders.create(created_by=admin, text="team sync call",
+                             when=(t0 + timedelta(hours=3, minutes=10)).astimezone().isoformat(timespec="minutes"))
+    asyncio.run(agenda.sync_person(admin.id))
+    dup = reminders.get(loose["id"])
+    assert dup["link_state"] == "duplicate" and dup["event_id"] == "ev2" and "Team sync" in dup["link_note"]
+    linked = asyncio.run(agenda.link(admin, loose["id"], "ev2", 5))
+    assert linked["link_state"] == "linked"
+
+    # Event deleted: the reminder is "not needed" and never sent.
+    del events["ev1"]
+    asyncio.run(agenda.sync_person(admin.id))
+    gone = reminders.get(r["id"])
+    assert gone["link_state"] == "event_deleted"
+    db.execute("UPDATE reminders SET due_at = ? WHERE id = ?", ((datetime.now(timezone.utc) - timedelta(minutes=1)).isoformat(), r["id"]))
+    asyncio.run(reminders.deliver(r["id"]))
+    assert reminders.get(r["id"])["status"] == "cancelled" and "deleted" in reminders.get(r["id"])["error"]
+
+    # Agenda: events + reminders (repeats expanded) + categories, editable from the dashboard.
+    rep = reminders.create(created_by=admin, text="Water plants", when=(t0 - timedelta(days=1)).astimezone().isoformat(timespec="minutes"),
+                           recurrence="daily", category="personal")
+    with TestClient(app, base_url="http://testserver") as c:
+        c.post("/api/login", json={"username": "admin", "password": "correct horse battery"}, headers=CSRF)
+        rng = {"start": (t0 - timedelta(days=1, hours=1)).isoformat(), "end": (t0 + timedelta(days=3)).isoformat()}
+        a = c.get("/api/agenda", params=rng).json()
+        kinds = {i["kind"] for i in a["items"]}
+        assert {"event", "reminder"} <= kinds and a["calendar"]["linked"]
+        plants = [i for i in a["items"] if i["kind"] == "reminder" and i["id"] == rep["id"]]
+        assert len(plants) >= 4 and plants[0]["recurrence"] == "daily" and plants[0]["category"] == "personal"
+        team = next(i for i in a["items"] if i["kind"] == "event" and i["id"] == "ev2")
+        assert team["category"] == "meeting"                                   # has attendees
+        assert c.patch("/api/agenda", json={"kind": "event", "id": "ev2", "category": "work"}, headers=CSRF).status_code == 200
+        assert c.patch("/api/agenda", json={"kind": "event", "id": "ev2", "category": "nonsense"}, headers=CSRF).status_code == 400
+        a = c.get("/api/agenda", params=rng).json()
+        assert next(i for i in a["items"] if i["id"] == "ev2")["category"] == "work"
+        # moving the event from the calendar moves its linked reminder too
+        new_start = (t0 + timedelta(hours=5)).isoformat()
+        assert c.patch("/api/agenda", json={"kind": "event", "id": "ev2", "start": new_start}, headers=CSRF).status_code == 200
+        assert datetime.fromisoformat(reminders.get(loose["id"])["due_at"]) == t0 + timedelta(hours=5) - timedelta(minutes=5)
+        # "not needed" from the list
+        assert c.post(f"/api/reminders/{rep['id']}/dismiss", headers=CSRF).json()["status"] == "cancelled"
+
+        # Calls: archive with search
+        db.execute("INSERT INTO scheduled_calls(target_user_id, requested_by, run_at, purpose, status, result, created_at, updated_at) "
+                   "VALUES (?,?,?,?,?,?,?,?)", (admin.id, admin.id, db.now_iso(), "ask about the boat", "done",
+                                                "He will bring the boat", db.now_iso(), db.now_iso()))
+        arch = c.get("/api/calls/scheduled", params={"archived": "true", "q": "boat"}).json()
+        assert arch and all(x["status"] not in ("pending", "dialing") for x in arch) and "boat" in arch[0]["purpose"]
+        assert c.get("/api/calls/scheduled", params={"archived": "true", "q": "zebra"}).json() == []

@@ -122,6 +122,8 @@ async def background_loop() -> None:
             from . import budgets, recording_archive, retention
             retention.daily()
             await asyncio.to_thread(recording_archive.daily)
+            from . import agenda
+            await agenda.sync_all()             # reminders follow their calendar events
             await budgets.check()
         except Exception:
             log.exception("Health loop iteration failed")

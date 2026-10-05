@@ -176,16 +176,23 @@ def get(request_id: int) -> dict:
     return row
 
 
-def list_for(person: Person, *, include_done: bool = True, limit: int = 50) -> list[dict]:
-    """Admins see all; everyone else sees calls they requested or that target them."""
+def list_for(person: Person, *, include_done: bool = True, limit: int = 50, archived: bool = False,
+             q: str = "") -> list[dict]:
+    """Admins see all; everyone else sees calls they requested or that target them.
+    archived=True: only finished calls, optionally filtered by words in name/purpose/result."""
     where = "" if person.is_admin else " AND (c.requested_by = ? OR c.target_user_id = ?)"
     params: list = [] if person.is_admin else [person.id, person.id]
     status = "" if include_done else " AND c.status IN ('pending', 'dialing')"
+    if archived:
+        status = " AND c.status NOT IN ('pending', 'dialing', 'finishing')"
+        for word in str(q or "").split()[:6]:
+            status += " AND (t.display_name LIKE ? OR c.purpose LIKE ? OR c.result LIKE ? OR r.display_name LIKE ?)"
+            params += [f"%{word}%"] * 4
     rows = db.query(
         "SELECT c.*, t.display_name AS target_name, r.display_name AS requester_name FROM scheduled_calls c "
         "JOIN users t ON t.id = c.target_user_id LEFT JOIN users r ON r.id = c.requested_by WHERE 1=1"
         + where + status + " ORDER BY CASE WHEN c.status IN ('pending','dialing') THEN 0 ELSE 1 END, "
-        "c.run_at DESC LIMIT ?", (*params, limit))
+        + ("c.run_at DESC" if archived or include_done else "c.run_at ASC") + " LIMIT ?", (*params, limit))
     for r in rows:
         r["run_at_local"] = _local(datetime.fromisoformat(r["run_at"]))
     return rows

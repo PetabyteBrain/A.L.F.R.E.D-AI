@@ -269,6 +269,12 @@ CREATE TABLE IF NOT EXISTS voice_mode (       -- Telegram replies also as voice 
     until      TEXT,                          -- UTC ISO; NULL = until switched off
     updated_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS event_categories (   -- category of a Google Calendar event in the agenda
+    user_id  INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    event_id TEXT NOT NULL,
+    category TEXT NOT NULL,
+    PRIMARY KEY (user_id, event_id)
+);
 CREATE TABLE IF NOT EXISTS nas_folders (       -- each person's folder in the personal NAS share (nas.py)
     user_id    INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
     folder     TEXT NOT NULL UNIQUE,
@@ -482,6 +488,13 @@ ADDED_COLUMNS = [
     ("tasks", "completed_by", "INTEGER REFERENCES users(id) ON DELETE SET NULL"),
     ("tasks", "result", "TEXT"),
     ("recordings", "deleted_at", "TEXT"),        # audio removed by the retention policy (transcript kept)
+    # Reminders tied to Google Calendar events + categories (agenda.py)
+    ("reminders", "event_id", "TEXT"),
+    ("reminders", "event_offset_min", "INTEGER"),
+    ("reminders", "link_state", "TEXT NOT NULL DEFAULT 'none'"),   # none | linked | event_deleted | duplicate
+    ("reminders", "link_note", "TEXT"),
+    ("reminders", "category", "TEXT NOT NULL DEFAULT 'reminder'"),
+    ("tasks", "category", "TEXT NOT NULL DEFAULT 'task'"),
 ]
 
 

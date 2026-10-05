@@ -99,7 +99,7 @@ def _may_remind_others(person: Person) -> bool:
 
 
 def create(*, created_by: Person, text: str, when: str, target_ref=None, recurrence: str | None = None,
-           channel: str = "telegram", escalate: bool = False) -> dict:
+           channel: str = "telegram", escalate: bool = False, category: str = "reminder") -> dict:
     text = " ".join(str(text or "").split())[:500]
     if not text:
         raise ReminderError("What should the reminder say?")
@@ -123,10 +123,15 @@ def create(*, created_by: Person, text: str, when: str, target_ref=None, recurre
                      (target.id,))["n"]
     if n >= MAX_OPEN_PER_PERSON:
         raise ReminderError("That person already has too many open reminders.")
+    from .agenda import AgendaError, check_category
+    try:
+        category = check_category(category or "reminder")
+    except AgendaError as e:
+        raise ReminderError(str(e))
     rid = db.execute(
-        "INSERT INTO reminders(user_id, created_by, text, due_at, recurrence, channel, escalate, status, created_at) "
-        "VALUES (?,?,?,?,?,?,?, 'pending', ?)",
-        (target.id, created_by.id, text, _iso(due), recurrence, channel, int(bool(escalate)), db.now_iso()))
+        "INSERT INTO reminders(user_id, created_by, text, due_at, recurrence, channel, escalate, status, created_at, "
+        "category) VALUES (?,?,?,?,?,?,?, 'pending', ?, ?)",
+        (target.id, created_by.id, text, _iso(due), recurrence, channel, int(bool(escalate)), db.now_iso(), category))
     who = "themselves" if target.id == created_by.id else target.display_name
     db.log_activity("task", f"{created_by.display_name} set a reminder for {who} at {_local(due)}"
                     f"{f' ({recurrence})' if recurrence else ''}: {text[:80]}", user_id=target.id)
@@ -238,6 +243,16 @@ async def deliver(reminder_id: int) -> None:
                             (reminder_id,)):
         return
     row = get(reminder_id)
+    from . import agenda
+    verdict = await agenda.check_before_delivery(row)       # tied to a calendar event: still there? moved?
+    if verdict == "skip":
+        db.execute("UPDATE reminders SET status = 'cancelled', error = 'Not sent: its calendar event was deleted.' "
+                   "WHERE id = ?", (reminder_id,))
+        db.log_activity("task", f"Reminder #{reminder_id} not sent: its calendar event was deleted", user_id=row["user_id"])
+        return
+    if verdict == "later":
+        db.execute("UPDATE reminders SET status = 'pending' WHERE id = ?", (reminder_id,))
+        return
     order = ("telegram", "call") if row["channel"] == "telegram" else ("call", "telegram")
     used, error = None, ""
     for ch in order:
@@ -266,10 +281,10 @@ async def deliver(reminder_id: int) -> None:
         while nxt <= _now():  # after downtime, skip missed occurrences instead of firing them all
             nxt = next_occurrence(nxt, row["recurrence"])
         db.execute(
-            "INSERT INTO reminders(user_id, created_by, text, due_at, recurrence, channel, escalate, status, created_at) "
-            "VALUES (?,?,?,?,?,?,?, 'pending', ?)",
+            "INSERT INTO reminders(user_id, created_by, text, due_at, recurrence, channel, escalate, status, created_at, "
+            "category) VALUES (?,?,?,?,?,?,?, 'pending', ?, ?)",
             (row["user_id"], row["created_by"], row["text"], _iso(nxt), row["recurrence"], row["channel"],
-             int(row["escalate"]), db.now_iso()))
+             int(row["escalate"]), db.now_iso(), row.get("category") or "reminder"))
 
 
 async def _escalate(row: dict) -> None:

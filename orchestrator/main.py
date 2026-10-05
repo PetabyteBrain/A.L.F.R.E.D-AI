@@ -30,6 +30,7 @@ from dashboard.api.audit import router as audit_router
 from dashboard.api.screening import outside as outside_router
 from dashboard.api.screening import router as screening_router
 from dashboard.api.notes import router as notes_router
+from dashboard.api.agenda import router as agenda_router
 from dashboard.api.routes import router as dashboard_router
 from dashboard.api.security import SecurityMiddleware
 
@@ -125,6 +126,7 @@ app.include_router(audit_router)
 app.include_router(screening_router)
 app.include_router(outside_router)
 app.include_router(notes_router)
+app.include_router(agenda_router)
 app.include_router(google_router)
 app.include_router(chat_router)
 app.include_router(reminders_router)

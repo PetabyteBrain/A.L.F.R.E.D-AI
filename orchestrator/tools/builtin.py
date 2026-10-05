@@ -119,13 +119,17 @@ async def send_telegram_message(ctx, user_id: int, text: str) -> str:
 
 
 @handler
-async def set_reminder(ctx, text: str, when: str, recurrence: str = "none", channel: str = "telegram",
-                       escalate: bool = False, person: str = "") -> dict:
-    from .. import reminders
+async def set_reminder(ctx, text: str = "", when: str = "", recurrence: str = "none", channel: str = "telegram",
+                       escalate: bool = False, person: str = "", event_id: str = "", minutes_before: int = 15,
+                       category: str = "reminder") -> dict:
+    from .. import agenda, reminders
     try:
-        r = reminders.create(created_by=ctx.person, text=text, when=when, target_ref=person or None,
-                             recurrence=recurrence, channel=channel, escalate=escalate)
-    except reminders.ReminderError as e:
+        if event_id:                                  # tied to a calendar event: follows it if it moves
+            r = await agenda.remind_for_event(ctx.person, event_id, minutes_before, channel)
+        else:
+            r = reminders.create(created_by=ctx.person, text=text, when=when, target_ref=person or None,
+                                 recurrence=recurrence, channel=channel, escalate=escalate, category=category)
+    except (reminders.ReminderError, agenda.AgendaError) as e:
         return {"error": str(e)}
     return {"reminder_id": r["id"], "for": r["person_name"], "at_local_time": r["due_local"],
             "recurrence": r["recurrence"] or "once", "channel": r["channel"], "escalate": r["escalate"]}
@@ -562,8 +566,11 @@ async def calendar_create_event(ctx, summary: str, start: str, end: str, descrip
 async def calendar_update_event(ctx, event_id: str, summary: str | None = None, start: str | None = None,
                                 end: str | None = None, description: str | None = None, location: str | None = None):
     from .. import google_calendar
-    return await _cal(google_calendar.update_event, ctx.person.id, event_id, summary=summary, start=start, end=end,
-                      description=description, location=location)
+    result = await _cal(google_calendar.update_event, ctx.person.id, event_id, summary=summary, start=start, end=end,
+                        description=description, location=location)
+    from .. import agenda
+    await agenda.on_event_changed(ctx.person.id, event_id)      # its reminders move along
+    return result
 
 
 @handler
@@ -572,4 +579,6 @@ async def calendar_delete_event(ctx, event_id: str, confirmed_by_user: bool = Fa
     if not confirmed_by_user:
         return {"error": "Ask the person to confirm deleting this specific event first."}
     result = await _cal(google_calendar.delete_event, ctx.person.id, event_id)
+    from .. import agenda
+    await agenda.on_event_changed(ctx.person.id, event_id)      # its reminders become "not needed"
     return result or {"deleted": event_id}

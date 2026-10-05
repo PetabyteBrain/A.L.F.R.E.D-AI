@@ -25,6 +25,7 @@ class ReminderCreate(BaseModel):
     channel: Literal["telegram", "call"] = "telegram"
     escalate: bool = False
     person_id: int | None = Field(default=None, ge=1)
+    category: str = Field(default="reminder", max_length=20)
 
 
 @router.get("")
@@ -37,7 +38,8 @@ async def list_reminders(include_done: bool = Query(default=False),
 async def create_reminder(body: ReminderCreate, person: Person = Depends(current_person)) -> dict:
     try:
         return reminders.create(created_by=person, text=body.text, when=body.when, target_ref=body.person_id,
-                                recurrence=body.recurrence, channel=body.channel, escalate=body.escalate)
+                                recurrence=body.recurrence, channel=body.channel, escalate=body.escalate,
+                                category=body.category)
     except reminders.ReminderError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
