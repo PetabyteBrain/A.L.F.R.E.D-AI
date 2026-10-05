@@ -1,6 +1,6 @@
 # Alfred (repo/service name: alfred) — notes for Claude
 
-Personal AI butler "Alfred" (phone + Telegram + dashboard). Renamed from Alfred on 2026-09-28:
+Personal AI butler "Alfred" ("A Loyal Family Retainer, Exceedingly Discreet"; phone + Telegram + dashboard). Renamed from Alfred on 2026-09-28:
 user-facing name comes from `ASSISTANT_NAME`; infra names (folder, container, domain, cookie,
 CSRF value, localStorage keys) intentionally stay `alfred`. Skins: `alfred` (Stark HUD),
 `batcave`, `matrix` and `alfred`, listed in `dashboard/web/src/themes.js` (+ `public/theme-boot.js`,

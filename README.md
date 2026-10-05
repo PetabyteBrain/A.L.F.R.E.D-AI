@@ -1,5 +1,7 @@
 # Alfred
 
+*A.L.F.R.E.D.: A Loyal Family Retainer, Exceedingly Discreet.*
+
 Personal AI butler (persona modelled on Alfred Pennyworth) reachable by **phone** (Twilio, Swiss
 number), **Telegram** (text, voice notes, files and photos) and a **web chat**, backed by
 **Claude Haiku 4.5**, with self-hosted speech on a **Jetson Orin**, notes/lists/files on a

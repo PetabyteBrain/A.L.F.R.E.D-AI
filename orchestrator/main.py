@@ -157,7 +157,7 @@ def _legal(name: str) -> FileResponse:
     path = WEB_DIR / "legal" / f"{name}.html"
     if not path.is_file():
         raise HTTPException(status_code=404)
-    return FileResponse(path, media_type="text/html", headers={"Cache-Control": "public, max-age=3600"})
+    return FileResponse(path, media_type="text/html", headers={"Cache-Control": "no-cache"})  # revalidate: small, changes with the site
 
 
 # Public pages: "/" explains the app without a login (required by Google's OAuth review);

@@ -10,7 +10,7 @@ import "@fontsource/cormorant-garamond/600.css";
 import "@fontsource/cormorant-garamond/600-italic.css";
 import "@fontsource/eb-garamond/400.css";
 import "@fontsource/eb-garamond/400-italic.css";
-import { THEME_KEY, THEMES, normalizeTheme } from "../themes.js";
+import { THEME_KEY, THEMES, normalizeTheme, setFavicon } from "../themes.js";
 import { backdropFor } from "../backdrops.js";
 import "./home.css";
 
@@ -23,6 +23,7 @@ const listeners = [];
 function applyTheme(t) {
   theme = normalizeTheme(t);
   document.documentElement.dataset.theme = theme;
+  setFavicon(theme);
   try { localStorage.setItem(THEME_KEY, theme); } catch { /* storage blocked: this page only */ }
   const mark = document.getElementById("mark");
   if (mark) mark.textContent = THEMES[theme].wordmark;

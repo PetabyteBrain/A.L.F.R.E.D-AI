@@ -18,6 +18,9 @@ body {
 main { max-width: 820px; margin: 0 auto; padding: 32px 16px 64px; }
 header.top { display: flex; align-items: center; gap: 12px; padding-bottom: 16px; margin-bottom: 28px; border-bottom: 1px solid var(--line); }
 header.top img { width: 36px; height: 36px; }
+header.top .logo { display: none; }
+:root:not([data-theme]) .logo-alfred, :root[data-theme="alfred"] .logo-alfred, :root[data-theme="batcave"] .logo-batcave,
+:root[data-theme="matrix"] .logo-matrix, :root[data-theme="alfred"] .logo-alfred { display: block; }
 header.top a { color: var(--strong); text-decoration: none; font-weight: 700; letter-spacing: .28em; }
 h1 { color: var(--strong); font-size: 30px; line-height: 1.2; margin: 0 0 6px; }
 h2 { color: var(--strong); font-size: 19px; margin: 34px 0 8px; padding-top: 8px; border-top: 1px solid var(--line); }
