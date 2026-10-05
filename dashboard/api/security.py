@@ -254,4 +254,8 @@ class SecurityMiddleware(BaseHTTPMiddleware):
             h.setdefault("Cache-Control", "no-store")
         elif path in ("/app", "/app/", "/index.html"):
             h["Cache-Control"] = "no-cache"
+        elif path.startswith("/assets/"):                       # Vite output: names carry a content hash
+            h.setdefault("Cache-Control", "public, max-age=31536000, immutable")
+        elif path.endswith((".css", ".js", ".svg", ".txt", ".html")):  # fixed-name public files: revalidate
+            h.setdefault("Cache-Control", "no-cache")
         return response

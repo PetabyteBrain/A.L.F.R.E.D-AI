@@ -6,13 +6,14 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import hashlib
 import logging
 import re
 from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse, HTMLResponse, PlainTextResponse, Response
+from fastapi.responses import HTMLResponse, PlainTextResponse, Response
 from fastapi.exception_handlers import http_exception_handler
 from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
@@ -89,6 +90,38 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Alfred", lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
 
+# Files in public/ keep a fixed name (no build hash), so pages link them with ?v=<content hash>:
+# a changed file gets a new URL and no browser or Cloudflare copy can be stale.
+_FIXED_NAME_ASSETS = ("/legal/legal.css", "/theme-boot.js")
+_asset_versions: dict[str, tuple[float, str]] = {}
+
+
+def _asset_version(url: str) -> str:
+    f = WEB_DIR / url.lstrip("/")
+    try:
+        mtime = f.stat().st_mtime
+    except OSError:
+        return ""
+    cached = _asset_versions.get(url)
+    if not cached or cached[0] != mtime:
+        cached = (mtime, hashlib.sha256(f.read_bytes()).hexdigest()[:10])
+        _asset_versions[url] = cached
+    return cached[1]
+
+
+def _versioned(html: str) -> str:
+    for url in _FIXED_NAME_ASSETS:
+        v = _asset_version(url)
+        if v:
+            html = html.replace(f'"{url}"', f'"{url}?v={v}"')
+    return html
+
+
+def _page(path: Path, status_code: int = 200) -> HTMLResponse:
+    return HTMLResponse(_versioned(path.read_text(encoding="utf-8")), status_code=status_code,
+                        headers={"Cache-Control": "no-cache"})
+
+
 # Machine endpoints keep JSON errors; any other unknown address gets the styled "page not found" page.
 _MACHINE_PATHS = ("/api/", "/twilio/", "/n8n/", "/internal/", "/healthz")
 
@@ -99,7 +132,7 @@ async def _http_errors(request: Request, exc: StarletteHTTPException) -> Respons
     if exc.status_code == 404 and request.method in ("GET", "HEAD") and not path.startswith(_MACHINE_PATHS):
         page = WEB_DIR / "not-found.html"
         if page.is_file():
-            return FileResponse(page, status_code=404, media_type="text/html", headers={"Cache-Control": "no-cache"})
+            return _page(page, status_code=404)
     return await http_exception_handler(request, exc)
 
 app.add_middleware(SecurityMiddleware)
@@ -153,11 +186,11 @@ app.include_router(briefing_router)
 app.include_router(memory_router)
 app.include_router(quiet_router)
 app.include_router(meetings_router)
-def _legal(name: str) -> FileResponse:
+def _legal(name: str) -> Response:
     path = WEB_DIR / "legal" / f"{name}.html"
     if not path.is_file():
         raise HTTPException(status_code=404)
-    return FileResponse(path, media_type="text/html", headers={"Cache-Control": "no-cache"})  # revalidate: small, changes with the site
+    return _page(path)
 
 
 # Public pages: "/" explains the app without a login (required by Google's OAuth review);
@@ -172,7 +205,7 @@ async def home() -> Response:
     if token and re.fullmatch(r"[A-Za-z0-9_-]{10,100}", token):
         # Search Console "HTML tag" ownership proof.
         html = html.replace("</head>", f'  <meta name="google-site-verification" content="{token}">\n</head>', 1)
-    return HTMLResponse(html, headers={"Cache-Control": "no-cache"})  # new builds rename assets
+    return HTMLResponse(_versioned(html), headers={"Cache-Control": "no-cache"})  # new builds rename assets
 
 
 @app.get("/google{code}.html", include_in_schema=False)
@@ -187,21 +220,21 @@ async def google_site_verification_file(code: str) -> Response:
 
 @app.get("/app", include_in_schema=False)
 @app.get("/app/", include_in_schema=False)
-async def dashboard_app() -> FileResponse:
+async def dashboard_app() -> Response:
     path = WEB_DIR / "index.html"
     if not path.is_file():
         raise HTTPException(status_code=503, detail="Dashboard not built: run `npm run build` in dashboard/web.")
-    return FileResponse(path, media_type="text/html", headers={"Cache-Control": "no-cache"})
+    return _page(path)
 
 
 # Public legal pages at clean URLs (also linked from Google's OAuth consent screen).
 @app.get("/privacy-policy", include_in_schema=False)
-async def privacy_policy() -> FileResponse:
+async def privacy_policy() -> Response:
     return _legal("privacy-policy")
 
 
 @app.get("/terms-of-service", include_in_schema=False)
-async def terms_of_service() -> FileResponse:
+async def terms_of_service() -> Response:
     return _legal("terms-of-service")
 
 

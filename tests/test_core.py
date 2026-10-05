@@ -3501,3 +3501,28 @@ def test_not_found_page(tmp_path, monkeypatch):
         r = c.get("/api/no-such-endpoint")                     # the API keeps answering JSON
         assert r.status_code == 404 and r.json() == {"detail": "Not Found"}
         assert c.post("/no-such-page").status_code in (404, 405)
+
+
+def test_fixed_name_assets_are_versioned(tmp_path, monkeypatch):
+    from fastapi.testclient import TestClient
+    from orchestrator import main
+    (tmp_path / "legal").mkdir()
+    (tmp_path / "legal" / "legal.css").write_text("a{}", encoding="utf-8")
+    (tmp_path / "theme-boot.js").write_text("1", encoding="utf-8")
+    page = '<script src="/theme-boot.js"></script><link rel="stylesheet" href="/legal/legal.css">'
+    (tmp_path / "legal" / "privacy-policy.html").write_text(page, encoding="utf-8")
+    (tmp_path / "not-found.html").write_text(page, encoding="utf-8")
+    monkeypatch.setattr(main, "WEB_DIR", tmp_path)
+    with TestClient(main.app, base_url="http://testserver") as c:
+        r = c.get("/privacy-policy")
+        assert r.headers["cache-control"] == "no-cache"
+        first = r.text
+        assert "/legal/legal.css?v=" in first and "/theme-boot.js?v=" in first
+        assert "/legal/legal.css?v=" in c.get("/missing-page").text
+        import os
+        css = tmp_path / "legal" / "legal.css"
+        css.write_text("a{color:red}", encoding="utf-8")
+        os.utime(css, (css.stat().st_atime, css.stat().st_mtime + 5))
+        assert c.get("/privacy-policy").text != first                 # changed file -> new URL
+        # static files: hashed build output may be cached for good, fixed names must revalidate
+        assert c.get("/legal/legal.css").headers.get("cache-control") in (None, "no-cache")
