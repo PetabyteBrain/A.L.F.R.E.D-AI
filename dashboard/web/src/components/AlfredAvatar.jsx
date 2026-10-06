@@ -18,7 +18,14 @@ const ALT = {
 };
 const TIPS_KEY = "alfred-avatar-tips";
 const GREETED_KEY = "alfred-avatar-greeted";
-const IDLE_TEA_MS = 90000;
+// Idle life: after a quiet spell he does something (tea, a look to the side, his tablet), holds it a
+// while, returns to his resting pose, and after another while does something else. Never the same twice.
+const IDLE_FIRST_MS = 90000;
+const IDLE_GAP_MS = [60000, 150000];
+const IDLE_HOLD_MS = [10000, 18000];
+const IDLE_MOMENTS = ["tea", "lookout", "reading"];
+const RESTING = new Set(["attentive", "idle", "neutral", "pleased", "greeting", "bow"]);
+const between = ([a, b]) => a + Math.random() * (b - a);
 
 const SUGGEST = {
   live: ["What's happening right now?", "How do I end a call?"],
@@ -71,12 +78,28 @@ export default function AlfredAvatar({ me, assistant, page, pageLabel, onNavigat
     clearTimeout(settle.current);
     settle.current = setTimeout(() => setState(to), ms);
   }, []);
-  // After a while with nothing to do, he has his tea.
-  const nudgeIdle = useCallback(() => {
+  const openRef = useRef(false);
+  const busyRef = useRef(false);
+  const lastMoment = useRef("");
+  openRef.current = open;
+  busyRef.current = busy;
+  const scheduleIdle = useCallback(function schedule(delay) {
     clearTimeout(idleTimer.current);
-    idleTimer.current = setTimeout(() => setState((s) => (["attentive", "idle", "pleased", "greeting"].includes(s) ? "tea" : s)), IDLE_TEA_MS);
+    idleTimer.current = setTimeout(() => {
+      if (busyRef.current) { schedule(IDLE_FIRST_MS); return; }
+      const choices = IDLE_MOMENTS.filter((m) => m !== lastMoment.current);
+      const moment = choices[Math.floor(Math.random() * choices.length)];
+      lastMoment.current = moment;
+      setState((s) => (RESTING.has(s) ? moment : s));
+      idleTimer.current = setTimeout(() => {
+        setState((s) => (s === moment ? (openRef.current ? "attentive" : "idle") : s));
+        schedule(between(IDLE_GAP_MS));
+      }, between(IDLE_HOLD_MS));
+    }, delay);
   }, []);
-  useEffect(() => () => { clearTimeout(idleTimer.current); clearTimeout(settle.current); }, []);
+  // Any activity restarts the quiet-spell countdown.
+  const nudgeIdle = useCallback(() => scheduleIdle(IDLE_FIRST_MS), [scheduleIdle]);
+  useEffect(() => { nudgeIdle(); return () => { clearTimeout(idleTimer.current); clearTimeout(settle.current); }; }, [nudgeIdle]);
 
   // Greeting once per browser session (a toast that fades on its own).
   useEffect(() => {
@@ -118,6 +141,7 @@ export default function AlfredAvatar({ me, assistant, page, pageLabel, onNavigat
     setOpen(false);
     setState("bow");
     restIn(1600, "idle");
+    nudgeIdle();
   }
   useEffect(() => {
     if (!open) return undefined;
@@ -203,7 +227,7 @@ export default function AlfredAvatar({ me, assistant, page, pageLabel, onNavigat
 
       <button className={`avatar-launcher${open ? " is-open" : ""}`} onClick={open ? closePanel : openPanel}
               aria-label={open ? `Close ${assistant}` : `Ask ${assistant}`} aria-expanded={open} title={`Ask ${assistant}`}>
-        <Portrait state={open ? state : (["bow", "concerned", "pointing"].includes(state) ? state : toast ? toast.state : "idle")} className="launcher-img" />
+        <Portrait state={open ? state : toast ? toast.state : (["bow", "concerned", ...IDLE_MOMENTS].includes(state) ? state : "idle")} className="launcher-img" />
       </button>
     </>
   );
