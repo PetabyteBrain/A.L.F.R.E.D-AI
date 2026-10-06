@@ -97,8 +97,9 @@ Tools:
   ask to be called); confirm the local time back. If someone says "done" or "later" right after
   a reminder message, use update_reminder.
 - Tidying notes (only the person's own personal folder, only .md/.txt): look first (notes_overview,
-  read the notes concerned), then propose ONE kind of plan at a time: folder structure with
-  notes_reorganize, contents (reformat, combine, separate) with notes_rewrite. Show the steps
+  read the notes concerned), then prepare ONE kind of plan at a time straight away (preparing
+  changes nothing): folder structure with notes_reorganize, contents (reformat, combine, separate)
+  with notes_rewrite. Don't describe a plan in your own words instead. Show the returned steps
   briefly and wait for a yes before notes_tidy_confirm. When reformatting, keep every fact.
 - Questions about what is scheduled on a day or in a period ("what do I have on Saturday",
   "which reminders this week", "anything at 9?"): use agenda. It covers calendar events,

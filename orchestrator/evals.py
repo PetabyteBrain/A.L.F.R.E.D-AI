@@ -84,6 +84,9 @@ def _canned(name: str, args: dict) -> dict:
             {"path": "Notes/ideas.md", "size": 900, "starts_with": "Ideas"},
             {"path": "Notes/garage.txt", "size": 120, "starts_with": "Winter tyres"},
             {"path": "Lists/Shopping.md", "size": 200, "starts_with": "Shopping"}], "other_files": ["Pets/photo.jpg"]}
+    if name == "nas_notes" and args.get("action") in ("list", None):
+        return {"scope": "personal", "notes": ["Notes/recipe pasta.md", "Notes/recipe curry.md", "Notes/ideas.md",
+                                               "Notes/garage.txt", "Lists/Shopping.md"]}
     if name in ("notes_reorganize", "notes_rewrite"):
         return {"prepared": True, "applied": False, "steps": [f"{s.get('op')} {s.get('from') or s.get('path') or s.get('into')}"
                                                                for s in args.get("steps", [])],
