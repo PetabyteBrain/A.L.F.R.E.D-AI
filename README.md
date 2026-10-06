@@ -22,9 +22,9 @@ homepage, the sign-in page or the dashboard and applied everywhere (homepage, da
 | Phone | Answers registered callers, speaks sentence by sentence as the reply streams in, says "one moment" while a tool runs, announces that calls are recorded, hangs up by itself when done. Unknown numbers: Alfred takes a message without naming anyone and relays it to the right admin/cofounder (block button); withheld/blocked numbers get "busy" | call |
 | Calls for you | "Call Max tomorrow at 9 and ask about the invoice": dials now or later, retries no-answer, leaves a short voicemail if a mailbox answers, summarises the call and reports back. Admins/cofounders can also have Alfred ring a business for one concrete task ("book a table for 4 on Friday"), only after a yes, Mon–Sat 08–19, as a declared AI assistant | any channel, Tasks tab |
 | Web search | Current information (news, opening hours, prices) with sources; links in chat, source named on calls | any channel |
-| Chat | Telegram (text + voice notes answered with voice; voice-note replies on request or in "voice mode"; files and photos, which Alfred can read and file on the NAS) and the dashboard Chat tab with live-streamed replies | Telegram, web |
+| Chat | Telegram (text + voice notes answered with voice; voice-note replies on request or in "voice mode"; files and photos, which Alfred can read and file on the NAS) and the dashboard Chat tab with live-streamed replies and Alfred's portrait | Telegram, web |
 | Reminders | One-off or recurring (daily/weekdays/weekly/monthly), Telegram with Done/Snooze or a call, optional escalation to a call if ignored; can be tied to a calendar event (follows it, not sent if it's deleted; duplicates flagged) | any channel, Tasks tab |
-| Agenda | Month / week / day calendar (jump to any date) of events, reminders, tasks and calls with categories (meeting, reminder, task, call, work, personal, other), editable from the calendar and the list; create reminders, tasks or calendar-only entries straight from a day or time slot | Tasks tab |
+| Agenda | Month / week / day calendar (jump to any date) of events, reminders, tasks and calls with categories (meeting, reminder, task, call, work, personal, other), editable from the calendar and the list; create reminders, tasks or calendar-only entries straight from a day or time slot; Alfred sees the same merged view (`agenda` tool), so \"what do I have on Saturday?\" includes reminders and repeats | Tasks tab |
 | Daily briefing | Weather (Open-Meteo), today's calendar, reminders, planned calls, overnight call outcomes, tasks, the top Company to-dos (admins/cofounders; Monday nudge for items stuck in progress); by Telegram or call at a set time | Profile |
 | Tasks & follow-ups | Tasks with owner, due time and follow-up: Alfred checks in with the owner (Telegram buttons or a call), up to 3 times, and tells the requester | any channel, Tasks tab |
 | Memory | Short per-person notes ("prefers calls after 9") used in that person's conversations only; editable. Plus full-text search over all past conversations ("what did Max say about the invoice?") | any channel, Profile |
@@ -38,7 +38,7 @@ homepage, the sign-in page or the dashboard and applied everywhere (homepage, da
 | Quiet hours | Household default (22:00-07:00) + per person; calls others asked for wait, messages go silent, "urgent" overrides | Profile |
 | Homelab | Status of all Pis, the Jetson and their containers, logs, confirmed restarts (admin), Minecraft players; alerts when something breaks. An external watchdog on host-d alerts if Alfred himself is down | any channel (admin), Systems |
 | Backups | Nightly verified database snapshot + recordings + `.env` to the Jetson (no-delete key) and to the NAS (snapshot-protected); monthly automatic restore test (`infra/README-backup.md`) | automatic, Systems |
-| Safety & privacy | Registry-only access, roles, code verification of new connections, dashboard 2FA (authenticator app or Telegram code), call audio deleted after 90 days, "download / delete my data", monthly cost budgets with admin alerts, behaviour checks against the real model | everywhere |
+| Safety & privacy | Weekday/date check before Alfred acts on anything, registry-only access, roles, code verification of new connections, dashboard 2FA (authenticator app or Telegram code), call audio deleted after 90 days, "download / delete my data", monthly cost budgets with admin alerts, behaviour checks against the real model | everywhere |
 | Continuity | Optional: Alfred sees your last few messages from your other channels (12 h), so a call can pick up a Telegram thread | Profile |
 | Dashboard | Alfred's avatar helper on every tab (portrait that reacts to what he's doing, speech bubble, knows the page you're on); live sessions (terminate), archive with audio and search/filters, calendar + tasks/reminders/calls (archived calls searchable), notes & files, event log (CSV export), health, people, API usage, budgets; admin Settings tab (role permissions such as n8n for cofounders, household quiet hours, call screening, view as role) | `/app` |
 
@@ -196,8 +196,8 @@ Schema changes migrate themselves on start (`db.init_db`); take a DB snapshot in
 ## Open questions
 
 - First real n8n workflow beyond the echo test and the daily weather alert.
-- Whether phone, Telegram and web context should merge per person (today: separate threads;
-  memory notes and conversation search work across all of them).
+- Decided 2026-10-07: threads stay per channel, plus an optional excerpt of the person's recent turns on
+  their other channels (#30, Profile switch "Continue across channels").
 - Alfred's own email address (#7): which address and provider.
 
 The feature roadmap is in [docs/PROJECT_PLAN.md](docs/PROJECT_PLAN.md#10-roadmap--feature-expansions).
