@@ -546,6 +546,66 @@ tools:
         end: {type: string, description: "HH:MM local, for custom"}
 
   # --- NAS: notes, lists, files (scope personal = the person's own folder; company = admins/cofounders) ---
+  - name: notes_overview
+    kind: builtin
+    handler: notes_overview
+    roles: ["*"]
+    requires: nas
+    description: >-
+      The person's whole personal NAS folder at a glance: folders (with note counts), every .md/.txt note
+      with its size and first line, and other files. Use before proposing a tidy-up.
+    input_schema:
+      type: object
+      properties: {}
+
+  - name: notes_reorganize
+    kind: builtin
+    handler: notes_reorganize
+    roles: ["*"]
+    requires: nas
+    description: >-
+      Propose a FOLDER STRUCTURE tidy-up of the person's own notes (personal folder, .md/.txt only).
+      Nothing changes yet: returns the steps to show; carry them out with notes_tidy_confirm(kind=structure)
+      only after the person says yes. Steps: {"op":"folder","path"}, {"op":"move","from","to"} (rename or
+      move a note), {"op":"remove_empty","path"}. Keep file contents as they are (that's notes_rewrite).
+    input_schema:
+      type: object
+      properties:
+        steps: {type: array, items: {type: object}, description: "Ordered steps, at most 60."}
+      required: [steps]
+
+  - name: notes_rewrite
+    kind: builtin
+    handler: notes_rewrite
+    roles: ["*"]
+    requires: nas
+    description: >-
+      Propose CONTENT changes to the person's own notes (personal folder, .md/.txt only): reformat,
+      combine or separate notes. Nothing changes yet: returns the steps to show; carry them out with
+      notes_tidy_confirm(kind=content) only after the person says yes. Steps: {"op":"write","path","text"}
+      (reformat a note you read first, or create one: keep every fact, only improve layout/headings/lists),
+      {"op":"merge","into","sources":[...]} (combines notes word for word), {"op":"split","path","level":1|2,
+      "folder"?} (one note per heading, word for word), {"op":"trash","path"}. Old versions go to the trash.
+    input_schema:
+      type: object
+      properties:
+        steps: {type: array, items: {type: object}, description: "Ordered steps, at most 60."}
+      required: [steps]
+
+  - name: notes_tidy_confirm
+    kind: builtin
+    handler: notes_tidy_confirm
+    roles: ["*"]
+    requires: nas
+    description: >-
+      Carry out the tidy-up plan prepared with notes_reorganize (kind=structure) or notes_rewrite
+      (kind=content), only after the person has said yes to the steps in their own message.
+    input_schema:
+      type: object
+      properties:
+        kind: {type: string, enum: [structure, content]}
+      required: [kind]
+
   - name: nas_notes
     kind: builtin
     handler: nas_notes

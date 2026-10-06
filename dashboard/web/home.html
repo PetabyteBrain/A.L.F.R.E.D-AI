@@ -101,17 +101,19 @@
       <svg class="emblem emblem-batcave e-bat e-bat-scene" viewBox="0 0 200 200" aria-hidden="true">
         <defs>
           <radialGradient id="h-sig-light" cx=".5" cy=".45" r=".6"><stop offset="0" stop-color="#fff6c8"/><stop offset=".55" stop-color="#ffd84a"/><stop offset="1" stop-color="#e6a800"/></radialGradient>
-          <linearGradient id="h-sig-beam" x1="0" y1="1" x2="0" y2="0"><stop offset="0" stop-color="#ffe27a" stop-opacity=".55"/><stop offset="1" stop-color="#ffe27a" stop-opacity="0"/></linearGradient>
+          <linearGradient id="h-sig-beam" x1="0" y1="1" x2="1" y2="0"><stop offset="0" stop-color="#ffe27a" stop-opacity=".55"/><stop offset="1" stop-color="#ffe27a" stop-opacity="0"/></linearGradient>
           <filter id="h-sig-shadow" x="-10%" y="-10%" width="120%" height="120%"><feGaussianBlur stdDeviation="1.1"/></filter>
           <filter id="h-sig-cloud" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="7"/></filter>
           <clipPath id="h-sig-clip"><ellipse cx="100" cy="86" rx="70" ry="54"/></clipPath>
         </defs>
-        <path class="sig-beam" d="M93 214 L107 214 L168 96 L32 96 Z" fill="url(#h-sig-beam)"/>
+        <path class="sig-beam" d="M2 212 L22 220 L150 118 L44 90 Z" fill="url(#h-sig-beam)"/>
+        <g transform="rotate(-14 100 86)">
         <ellipse class="sig-halo" cx="100" cy="86" rx="92" ry="74"/>
         <ellipse class="sig-disc" cx="100" cy="86" rx="70" ry="54" fill="url(#h-sig-light)"/>
         <g clip-path="url(#h-sig-clip)">
           <path class="sig-bat" d="M100 27 L103 27 L106 12 L109.5 29 Q117 31 124 26 Q152 19 194 44 Q177 46 169 63 Q158 51 145 66 Q134 56 122 73 Q110 70 100 90 Q90 70 78 73 Q66 56 55 66 Q42 51 31 63 Q23 46 6 44 Q48 19 76 26 Q83 31 90.5 29 L94 12 L97 27 Z" filter="url(#h-sig-shadow)" transform="translate(100 90) scale(0.62 0.56) skewX(-3) translate(-100 -56)"/>
           <g class="sig-clouds" filter="url(#h-sig-cloud)"><ellipse cx="40" cy="60" rx="46" ry="12"/><ellipse cx="150" cy="118" rx="54" ry="13"/><ellipse cx="96" cy="40" rx="30" ry="8"/></g>
+        </g>
         </g>
         <g class="sig-clouds outer" filter="url(#h-sig-cloud)"><ellipse cx="20" cy="30" rx="50" ry="14"/><ellipse cx="185" cy="70" rx="40" ry="12"/><ellipse cx="60" cy="150" rx="60" ry="14"/></g>
       </svg>

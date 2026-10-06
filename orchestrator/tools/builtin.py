@@ -551,6 +551,38 @@ async def _cal(fn, *args, **kwargs):
         return {"error": str(e)}
 
 
+def _tidy_call(fn, *a):
+    from .. import nas, notes_tidy
+    try:
+        return fn(*a)
+    except (notes_tidy.TidyError, nas.NasError) as e:
+        return {"error": str(e)}
+
+
+@handler
+async def notes_overview(ctx) -> dict:
+    from .. import notes_tidy
+    return _tidy_call(notes_tidy.overview, ctx.person)
+
+
+@handler
+async def notes_reorganize(ctx, steps: list) -> dict:
+    from .. import notes_tidy
+    return _tidy_call(notes_tidy.preview, ctx.person, ctx.session_id, "structure", steps)
+
+
+@handler
+async def notes_rewrite(ctx, steps: list) -> dict:
+    from .. import notes_tidy
+    return _tidy_call(notes_tidy.preview, ctx.person, ctx.session_id, "content", steps)
+
+
+@handler
+async def notes_tidy_confirm(ctx, kind: str) -> dict:
+    from .. import notes_tidy
+    return _tidy_call(notes_tidy.apply, ctx.person, ctx.session_id, kind)
+
+
 @handler
 async def agenda(ctx, start: str = "", end: str = "") -> dict:
     """Everything scheduled in a period, as on the dashboard calendar: Google events, reminders

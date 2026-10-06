@@ -3605,3 +3605,64 @@ def test_cross_channel_continuity():
         assert c.put("/api/continuity", json={"on": False}, headers=CSRF).json()["on"] is False
         assert "winter tyres" not in agent_core._dynamic_system(admin, "web", None)
         c.put("/api/continuity", json={"on": True}, headers=CSRF)
+
+
+def test_notes_tidy(monkeypatch, tmp_path):
+    import dataclasses
+    from orchestrator import nas, notes_tidy, sessions
+    from orchestrator.config import settings
+    import orchestrator.nas_files as nf
+    fake = _FakeSMB(tmp_path)
+    monkeypatch.setattr(nas, "settings", dataclasses.replace(settings, nas_host="nas", nas_user="u", nas_password="p",
+                                                             nas_share_company="Company", nas_share_personal="Alfred_Personal"))
+    monkeypatch.setattr(nas, "_smb", lambda: fake)
+    monkeypatch.setattr(nf, "_smb", lambda: fake)
+    admin = registry.lookup("telegram", "111")
+    for path, text in (("pasta.md", "# Pasta\nboil water"), ("curry.md", "# Curry\ncoconut milk"),
+                       ("Misc/garage.txt", "winter tyres"), ("ideas.md", "# Ideas\n## Garden\nroses\n## Trip\nAlps\n")):
+        nf.save_text(admin, "personal", path, text, None, create=True)
+    nf.upload(admin, "personal", "", "photo.jpg", b"\xff\xd8")
+    ov = notes_tidy.overview(admin)
+    assert {n["path"] for n in ov["notes"]} >= {"pasta.md", "curry.md", "Misc/garage.txt"} and "photo.jpg" in ov["other_files"]
+
+    sid = sessions.start_session(admin.id, "web")
+    sessions.add_turn(sid, "user", "tidy my folders")
+    # structure plan: content steps and non-notes are refused
+    for bad in ([{"op": "write", "path": "x.md", "text": "y"}], [{"op": "move", "from": "photo.jpg", "to": "Pics/photo.jpg"}],
+                [{"op": "move", "from": "pasta.md", "to": "curry.md"}]):
+        try:
+            notes_tidy.preview(admin, sid, "structure", bad)
+            raise AssertionError(f"accepted {bad}")
+        except notes_tidy.TidyError:
+            pass
+    plan = notes_tidy.preview(admin, sid, "structure", [{"op": "folder", "path": "Recipes"},
+        {"op": "move", "from": "pasta.md", "to": "Recipes/Pasta.md"}, {"op": "move", "from": "curry.md", "to": "Recipes/Curry.md"},
+        {"op": "move", "from": "Misc/garage.txt", "to": "Car/garage.txt"}, {"op": "remove_empty", "path": "Misc"}])
+    assert plan["applied"] is False and len(plan["steps"]) == 5
+    assert notes_tidy.apply(admin, sid, "structure")["applied"] is False             # no yes yet
+    sessions.add_turn(sid, "user", "yes please")
+    out = notes_tidy.apply(admin, sid, "structure")
+    assert out["applied"] is True
+    assert nf.open_text(admin, "personal", "Recipes/Pasta.md")["text"] == "# Pasta\nboil water"
+    assert "Misc" not in [i["name"] for i in nf.browse(admin, "personal", "")["items"]]
+
+    # content plan: merge word for word, split by headings, reformat with the old version kept
+    notes_tidy.preview(admin, sid, "content", [
+        {"op": "merge", "into": "Recipes/All recipes.md", "sources": ["Recipes/Pasta.md", "Recipes/Curry.md"]},
+        {"op": "split", "path": "ideas.md", "level": 2, "folder": "Ideas"},
+        {"op": "write", "path": "Car/garage.txt", "text": "Garage\n- winter tyres"}])
+    sessions.add_turn(sid, "user", "go ahead")
+    out = notes_tidy.apply(admin, sid, "content")
+    assert out["applied"] is True, out
+    merged = nf.open_text(admin, "personal", "Recipes/All recipes.md")["text"]
+    assert "boil water" in merged and "coconut milk" in merged and merged.index("Pasta") < merged.index("Curry")
+    assert nf.open_text(admin, "personal", "Ideas/Garden.md")["text"].strip() == "## Garden\nroses"
+    assert nf.open_text(admin, "personal", "Ideas/Trip.md")["text"].strip() == "## Trip\nAlps"
+    assert nf.open_text(admin, "personal", "ideas.md")["text"].strip() == "# Ideas"          # the intro stays
+    trash = [p.name for p in (tmp_path / "Alfred_Personal").rglob("*") if ".trash" in p.parts]
+    assert any("Pasta.md" in t for t in trash) and any("garage.txt" in t for t in trash)       # nothing lost
+    try:
+        notes_tidy.apply(admin, sid, "content")                                              # used up
+        raise AssertionError("applied twice")
+    except notes_tidy.TidyError:
+        pass

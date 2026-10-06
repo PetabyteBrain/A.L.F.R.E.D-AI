@@ -1306,3 +1306,32 @@ main[hidden], [hidden] { display: none !important; }
 :root[data-theme="alfred"] .person-row > div:first-child > div:first-child { font-family: var(--font-display); font-variant: small-caps; letter-spacing: .06em; font-size: 19px; }
 :root[data-theme="alfred"] .conn-item { border-bottom: 1px solid rgb(255 255 255 / .08); }
 :root[data-theme="alfred"] :is(.msg.theirs .bubble, .speech) :is(th, h3, h4, blockquote) { color: #3c3c42; }
+
+/* Profile as a settings page: section menu + one section of cards at a time */
+.settings-shell { display: grid; grid-template-columns: minmax(200px, 250px) minmax(0, 1fr); gap: 28px; align-items: start; }
+.settings-nav { display: grid; gap: 4px; position: sticky; top: 120px; }
+.settings-nav button { display: grid; gap: 2px; text-align: left; padding: 10px 12px; background: transparent; cursor: pointer;
+  border: 1px solid transparent; border-left: 2px solid transparent; color: var(--muted); }
+.settings-nav button b { font: 600 14px var(--font-body); color: var(--text-strong); }
+.settings-nav button span { font-size: 12px; }
+.settings-nav button:hover { background: var(--fill); }
+.settings-nav button.active { background: rgb(var(--accent-rgb) / .1); border-color: var(--line); border-left-color: var(--accent); }
+.settings-title { margin: 0; font: 700 22px var(--font-display); color: var(--text-strong); letter-spacing: .02em; }
+.settings-intro { margin: 4px 0 16px; max-width: 70ch; }
+.setting-cards { display: grid; gap: 16px; max-width: 760px; }
+.setting-card { padding: 16px 18px; border: 1px solid var(--line); background: var(--fill); }
+.setting-card > :first-child, .setting-card > div > :first-child { margin-top: 0; }
+.setting-card .sub:first-child { margin-top: 0; }
+@media (max-width: 900px) {
+  .settings-shell { grid-template-columns: minmax(0, 1fr); gap: 16px; }
+  .settings-nav { position: static; display: flex; overflow-x: auto; gap: 6px; padding-bottom: 4px; scrollbar-width: thin; }
+  .settings-nav button { flex: none; border-left-width: 1px; border-bottom: 2px solid transparent; }
+  .settings-nav button.active { border-left-color: var(--line); border-bottom-color: var(--accent); }
+  .settings-nav button span { display: none; }
+}
+:root[data-theme="alfred"] .settings-nav button b { font-family: var(--font-display); font-size: 17px; }
+:root[data-theme="alfred"] .settings-nav button.active { background: rgb(255 255 255 / .05); border-left-color: #f4f2ec; }
+:root[data-theme="alfred"] .settings-title { font: 600 30px var(--font-display); }
+:root[data-theme="alfred"] .setting-card { background: rgb(255 255 255 / .025); border-color: rgb(255 255 255 / .1); }
+:root[data-theme="batcave"] .settings-title { font-weight: 400; font-size: 28px; letter-spacing: .08em; }
+:root[data-theme="matrix"] .settings-nav button.active { background: rgb(0 255 65 / .1); }

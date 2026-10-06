@@ -32,14 +32,16 @@ export function BatSignal({ size = "md", label }) {
           <radialGradient id="sig-light" cx=".5" cy=".45" r=".6">
             <stop offset="0" stopColor="#fff6c8" /><stop offset=".55" stopColor="#ffd84a" /><stop offset="1" stopColor="#e6a800" />
           </radialGradient>
-          <linearGradient id="sig-beam" x1="0" y1="1" x2="0" y2="0">
+          <linearGradient id="sig-beam" x1="0" y1="1" x2="1" y2="0">
             <stop offset="0" stopColor="#ffe27a" stopOpacity=".55" /><stop offset="1" stopColor="#ffe27a" stopOpacity="0" />
           </linearGradient>
           <filter id="sig-shadow" x="-10%" y="-10%" width="120%" height="120%"><feGaussianBlur stdDeviation="1.1" /></filter>
           <filter id="sig-cloud" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="7" /></filter>
           <clipPath id="sig-clip"><ellipse cx="100" cy="86" rx="70" ry="54" /></clipPath>
         </defs>
-        <path className="sig-beam" d="M93 214 L107 214 L168 96 L32 96 Z" fill="url(#sig-beam)" />
+        {/* the searchlight stands off to the bottom left: an angled beam and a tilted oval */}
+        <path className="sig-beam" d="M2 212 L22 220 L150 118 L44 90 Z" fill="url(#sig-beam)" />
+        <g transform="rotate(-14 100 86)">
         <ellipse className="sig-halo" cx="100" cy="86" rx="92" ry="74" />
         <ellipse className="sig-disc" cx="100" cy="86" rx="70" ry="54" fill="url(#sig-light)" />
         <g clipPath="url(#sig-clip)">
@@ -48,6 +50,7 @@ export function BatSignal({ size = "md", label }) {
           <g className="sig-clouds" filter="url(#sig-cloud)">
             <ellipse cx="40" cy="60" rx="46" ry="12" /><ellipse cx="150" cy="118" rx="54" ry="13" /><ellipse cx="96" cy="40" rx="30" ry="8" />
           </g>
+        </g>
         </g>
         <g className="sig-clouds outer" filter="url(#sig-cloud)">
           <ellipse cx="20" cy="30" rx="50" ry="14" /><ellipse cx="185" cy="70" rx="40" ry="12" /><ellipse cx="60" cy="150" rx="60" ry="14" />
