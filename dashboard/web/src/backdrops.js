@@ -111,36 +111,36 @@ export function digitalRain(ctx, size) {
   };
 }
 
-/* Alfred: candlelight. Two warm pools of light that gently flicker, and dust motes drifting up
-   through them. */
-export function candlelight(ctx, size) {
-  const motes = Array.from({ length: Math.min(70, Math.round(size.w / 18)) }, () => ({
-    x: Math.random() * size.w, y: Math.random() * size.h, r: 0.6 + Math.random() * 1.6,
-    vy: 0.08 + Math.random() * 0.22, sway: Math.random() * Math.PI * 2, a: 0.15 + Math.random() * 0.4,
+/* Alfred: a quiet drawing room in the evening. Two soft pools of lamplight that breathe very slowly,
+   and a little silver dust drifting through them. Neutral, so the black-and-white outfit leads. */
+export function parlour(ctx, size) {
+  const motes = Array.from({ length: Math.min(55, Math.round(size.w / 24)) }, () => ({
+    x: Math.random() * size.w, y: Math.random() * size.h, r: 0.5 + Math.random() * 1.3,
+    vy: 0.05 + Math.random() * 0.16, sway: Math.random() * Math.PI * 2, a: 0.1 + Math.random() * 0.3,
   }));
-  const candles = [{ x: 0.12, y: 0.92 }, { x: 0.9, y: 0.12 }];
+  const lamps = [{ x: 0.15, y: 0.95 }, { x: 0.88, y: 0.08 }];
   let t = 0;
   return (move) => {
     if (move) t += 1;
     ctx.clearRect(0, 0, size.w, size.h);
-    for (const [i, c] of candles.entries()) {
-      const flicker = 1 + Math.sin(t * 0.05 + i * 2) * 0.04 + Math.sin(t * 0.13 + i) * 0.03;
-      const r = Math.max(size.w, size.h) * 0.55 * flicker;
+    for (const [i, c] of lamps.entries()) {
+      const breathe = 1 + Math.sin(t * 0.012 + i * 2) * 0.04;
+      const r = Math.max(size.w, size.h) * 0.55 * breathe;
       const x = c.x * size.w, y = c.y * size.h;
       const g = ctx.createRadialGradient(x, y, 0, x, y, r);
-      g.addColorStop(0, "rgba(232,176,96,0.13)");
-      g.addColorStop(0.45, "rgba(196,140,70,0.05)");
-      g.addColorStop(1, "rgba(196,140,70,0)");
+      g.addColorStop(0, "rgba(236,232,224,0.07)");
+      g.addColorStop(0.45, "rgba(200,200,206,0.025)");
+      g.addColorStop(1, "rgba(200,200,206,0)");
       ctx.fillStyle = g;
       ctx.fillRect(0, 0, size.w, size.h);
     }
     for (const m of motes) {
       if (move) {
-        m.y -= m.vy; m.sway += 0.01; m.x += Math.sin(m.sway) * 0.15;
+        m.y -= m.vy; m.sway += 0.008; m.x += Math.sin(m.sway) * 0.12;
         if (m.y < -4) { m.y = size.h + 4; m.x = Math.random() * size.w; }
       }
-      const twinkle = 0.65 + Math.sin(m.sway * 3) * 0.35;
-      ctx.fillStyle = `rgba(240,205,140,${m.a * twinkle})`;
+      const twinkle = 0.6 + Math.sin(m.sway * 3) * 0.4;
+      ctx.fillStyle = `rgba(230,230,236,${m.a * twinkle})`;
       ctx.beginPath(); ctx.arc(m.x, m.y, m.r, 0, Math.PI * 2); ctx.fill();
     }
   };
@@ -149,6 +149,6 @@ export function candlelight(ctx, size) {
 export function backdropFor(theme, ctx, size, pointer) {
   if (theme === "batcave") return rain(ctx, size);
   if (theme === "matrix") return digitalRain(ctx, size);
-  if (theme === "alfred") return candlelight(ctx, size);
+  if (theme === "alfred") return parlour(ctx, size);
   return particles(ctx, size, pointer);
 }

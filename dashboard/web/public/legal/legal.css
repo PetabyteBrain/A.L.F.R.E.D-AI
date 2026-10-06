@@ -49,9 +49,9 @@ footer { margin-top: 48px; padding-top: 16px; border-top: 1px solid var(--line);
 :root[data-theme="matrix"] { --bg: #000; --panel: rgb(0 255 65 / .04); --line: rgb(0 255 65 / .2); --accent: #00ff41;
   --text: rgb(0 255 65 / .85); --strong: #d6ffdf; --muted: rgb(0 255 65 / .55); }
 :root[data-theme="matrix"] body { background: #000; font-family: "Share Tech Mono", ui-monospace, Consolas, monospace; font-size: 15px; }
-:root[data-theme="alfred"] { --bg: #120c0a; --panel: rgb(201 162 92 / .05); --line: rgb(201 162 92 / .25); --accent: #d9b56f;
-  --text: #eadec6; --strong: #f7eedb; --muted: #c4b08c; }
-:root[data-theme="alfred"] body { background: radial-gradient(ellipse 70% 40% at 50% -10%, rgb(201 162 92 / .12), transparent 70%), var(--bg);
+:root[data-theme="alfred"] { --bg: #0c0c0e; --panel: rgb(255 255 255 / .04); --line: rgb(255 255 255 / .14); --accent: #e8e6e0;
+  --text: #e8e6e0; --strong: #fbfaf6; --muted: #aeaeb4; }
+:root[data-theme="alfred"] body { background: radial-gradient(ellipse 70% 40% at 50% -10%, rgb(255 255 255 / .06), transparent 70%), var(--bg);
   font-family: "EB Garamond", Georgia, "Times New Roman", serif; font-size: 18px; }
 :root[data-theme="alfred"] :is(h1, h2, h3, header.top a) { font-family: "Cormorant Garamond", Georgia, serif; letter-spacing: .02em; }
 :root[data-theme="alfred"] header.top a { letter-spacing: .14em; font-size: 20px; }

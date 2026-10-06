@@ -268,12 +268,20 @@ html.js .reveal.in { opacity: 1; transform: none; }
 :root[data-theme="batcave"] .emblem-batcave, :root[data-theme="matrix"] .emblem-matrix, :root[data-theme="alfred"] .emblem-alfred { display: block; }
 .hero-visual > .emblem:not(.reactor-xl) { width: min(520px, 100%); height: auto; overflow: visible; }
 .emblem .halo { opacity: .9; }
-/* bat-signal */
-.e-bat .halo { fill: rgb(255 204 0 / .1); }
-.e-bat .ring { stroke: rgb(255 204 0 / .7); }
-.e-bat .disc { fill: rgb(255 214 64); filter: drop-shadow(0 0 12px rgb(255 204 0 / .9)) drop-shadow(0 0 40px rgb(255 190 0 / .45)); }
-.e-bat .rim { fill: none; stroke: rgb(120 96 0); stroke-width: 3; }
+/* bat-signal: small disc, large projected scene */
+.e-bat .disc { fill: #ffd640; filter: drop-shadow(0 0 6px rgb(255 204 0 / .8)); }
 .e-bat .bat { fill: #0b0b0d; }
+.e-bat-scene .sig-beam { opacity: .75; mix-blend-mode: screen; animation: beam 6s ease-in-out infinite; }
+.e-bat-scene .sig-halo { fill: rgb(255 214 64 / .16); filter: blur(10px); }
+.e-bat-scene .sig-disc { filter: drop-shadow(0 0 14px rgb(255 204 0 / .9)) drop-shadow(0 0 46px rgb(255 190 0 / .45)); }
+.e-bat-scene .sig-bat { fill: rgb(12 12 14 / .9); }
+.e-bat-scene .sig-clouds ellipse { fill: rgb(46 48 58 / .55); }
+.e-bat-scene .sig-clouds.outer ellipse { fill: rgb(70 74 88 / .28); }
+.e-bat-scene .sig-clouds { animation: clouds 26s linear infinite; }
+.e-bat-scene .sig-clouds.outer { animation-duration: 40s; animation-direction: reverse; }
+@keyframes clouds { from { transform: translateX(-30px); } 50% { transform: translateX(30px); } to { transform: translateX(-30px); } }
+@keyframes beam { 0%, 100% { opacity: .75; } 50% { opacity: .55; } }
+.hero-visual > .e-bat-scene { overflow: visible; }
 /* code ring */
 .e-code .halo { fill: rgb(0 255 65 / .1); }
 .e-code .ring { stroke: rgb(0 255 65 / .75); }
@@ -283,17 +291,17 @@ html.js .reveal.in { opacity: 1; transform: none; }
 .e-code .code-a.sm { font-size: 96px; }
 .e-code .code-cursor { fill: #00ff41; animation: cursor 1.05s steps(1) infinite; }
 @keyframes cursor { 50% { opacity: 0; } }
-/* crest */
-.e-crest .halo { fill: rgb(232 190 110 / .1); }
-.e-crest .dots circle { fill: rgb(201 162 92 / .7); }
-.e-crest .crest-ring { fill: none; stroke: url(#home-gilt); stroke-width: 2.4; }
-.e-crest .crest-ring.thin { stroke-width: 1; opacity: .8; }
-.e-crest .sheen { fill: none; stroke: #fff4d6; stroke-width: 2.6; stroke-dasharray: 26 502; opacity: .7; }
-.e-crest .crest-disc { fill: url(#home-crest-bg); stroke: rgb(201 162 92 / .5); stroke-width: 1; }
-.e-crest .crest-a { font: 600 74px "Cormorant Garamond", Georgia, serif; fill: url(#home-gilt); }
-.e-crest .crest-a.sm { font-size: 110px; }
-.e-crest .gilt { fill: url(#home-gilt); }
-.reactor-sm.e-crest { width: 42px; height: 42px; }
+/* bow-tie mark */
+.e-butler .bm-halo { fill: rgb(255 255 255 / .05); filter: blur(10px); }
+.e-butler .bm-ring { fill: none; stroke: rgb(226 228 234 / .75); stroke-width: 1.4; }
+.e-butler .bm-ring.thin { stroke-width: .7; opacity: .55; }
+.e-butler .bm-ring.sm { stroke-width: 7; }
+.e-butler .bm-sheen { fill: none; stroke: #fff; stroke-width: 1.8; stroke-dasharray: 22 506; opacity: .55; }
+.e-butler .bm-ticks { stroke: rgb(226 228 234 / .6); stroke-width: 1.2; }
+.e-butler .bm-tie { fill: #f4f2ec; filter: drop-shadow(0 3px 4px rgb(0 0 0 / .6)); }
+.e-butler .bm-fold { fill: none; stroke: rgb(12 12 14 / .1); stroke-width: .8; }
+.e-butler .bm-knot { fill: #e6e4de; stroke: rgb(12 12 14 / .25); stroke-width: 1; }
+.reactor-sm.e-butler { width: 38px; height: 38px; }
 
 /* ---------- Batcave ---------- */
 :root[data-theme="batcave"] {
@@ -333,40 +341,52 @@ html.js .reveal.in { opacity: 1; transform: none; }
 
 /* ---------- Alfred ---------- */
 :root[data-theme="alfred"] {
-  --bg: #120c0a; --bg-rgb: 18 12 10; --a: 201 162 92; --a2: 122 36 44; --ok: 150 186 128;
-  --text: rgb(234 222 198 / .92); --strong: #f7eedb; --muted: rgb(206 188 156 / .7); --faint: rgb(206 188 156 / .32);
-  --line: rgb(201 162 92 / .22); --line2: rgb(201 162 92 / .55); --glow: 0 0 16px rgb(232 190 110 / .25);
+  --bg: #0c0c0e; --bg-rgb: 12 12 14; --a: 214 216 222; --a2: 74 76 84; --ok: 150 180 152;
+  --text: rgb(232 230 224 / .9); --strong: #fbfaf6; --muted: rgb(172 172 178 / .8); --faint: rgb(172 172 178 / .34);
+  --line: rgb(255 255 255 / .1); --line2: rgb(255 255 255 / .3); --glow: 0 0 14px rgb(255 255 255 / .12);
   --display: "Cormorant Garamond", Georgia, serif; --body: "EB Garamond", Georgia, serif;
 }
 :root[data-theme="alfred"] body.home { background:
-    radial-gradient(ellipse 70% 45% at 60% -10%, rgb(201 162 92 / .12), transparent 70%),
-    radial-gradient(ellipse 80% 60% at 30% 120%, rgb(122 36 44 / .25), transparent 70%), var(--bg);
+    radial-gradient(ellipse 60% 40% at 60% -10%, rgb(255 255 255 / .07), transparent 70%),
+    radial-gradient(ellipse 80% 60% at 30% 120%, rgb(74 76 84 / .25), transparent 70%),
+    repeating-linear-gradient(90deg, rgb(255 255 255 / .016) 0 1px, transparent 1px 10px), var(--bg);
   font-weight: 400; font-size: 18px; }
 :root[data-theme="alfred"] body.home::before { background: none; }
+:root[data-theme="alfred"] .bar::after { background: #f4f2ec; box-shadow: none; height: 1px; }
 :root[data-theme="alfred"] :is(.mark, h1, h2, h3, .btn, .links a, .status, .strip .v, .num, .theme-switch button, .kicker, .strip .k, .idx, .readout) {
   font-weight: 600; text-transform: none; letter-spacing: .03em; }
 :root[data-theme="alfred"] .mark { font-size: 26px; letter-spacing: .1em; text-shadow: none; }
-:root[data-theme="alfred"] h1 { font-size: clamp(48px, 7vw, 92px); font-style: italic; text-shadow: 0 0 30px rgb(232 190 110 / .2); }
+:root[data-theme="alfred"] h1 { font-size: clamp(48px, 7vw, 92px); font-style: italic; text-shadow: none; }
 :root[data-theme="alfred"] h1::before, :root[data-theme="alfred"] h1::after { display: none; }
 :root[data-theme="alfred"] h2 { font-size: clamp(32px, 4vw, 50px); text-shadow: none; }
 :root[data-theme="alfred"] h3 { font-size: 22px; }
 :root[data-theme="alfred"] :is(.kicker, .strip .k, .readout span) { font-family: var(--body); font-style: italic; font-weight: 400; font-size: 16px; }
+:root[data-theme="alfred"] .blip { background: #f4f2ec; box-shadow: none; }
 :root[data-theme="alfred"] :is(.btn, .links a, .theme-switch button) { font-size: 16px; }
-:root[data-theme="alfred"] .btn { clip-path: none; border-radius: 2px; color: var(--strong); }
-:root[data-theme="alfred"] .btn.primary { background: linear-gradient(180deg, #d9b56f, #b38a46); color: #1d130d; border-color: #e7c886; box-shadow: none; }
-:root[data-theme="alfred"] .btn.primary:hover { background: linear-gradient(180deg, #e7c886, #c49a52); }
-:root[data-theme="alfred"] .theme-switch button.active { background: rgb(201 162 92 / .9); color: #1d130d; }
-:root[data-theme="alfred"] :is(.card, .panel) { background: linear-gradient(180deg, rgb(36 25 20 / .94), rgb(20 14 11 / .95));
-  box-shadow: inset 0 0 0 4px rgb(20 14 11 / .9), inset 0 0 0 5px rgb(201 162 92 / .14); }
-:root[data-theme="alfred"] :is(.card, .panel)::before { --l: 14px; --t: 1px; }
+:root[data-theme="alfred"] .btn { clip-path: none; border-radius: 2px; color: var(--strong); background: transparent; border-color: rgb(255 255 255 / .28); }
+:root[data-theme="alfred"] .btn:hover { background: rgb(255 255 255 / .07); }
+:root[data-theme="alfred"] .btn.primary { background: #f4f2ec; color: #111113; border-color: #f4f2ec; box-shadow: none; }
+:root[data-theme="alfred"] .btn.primary:hover { background: #fff; color: #000; }
+:root[data-theme="alfred"] .theme-switch button.active { background: #f4f2ec; color: #111113; }
+:root[data-theme="alfred"] :is(.card, .panel) { background: linear-gradient(180deg, rgb(26 26 30 / .95), rgb(15 15 17 / .96));
+  box-shadow: inset 0 0 0 4px rgb(14 14 16 / .9), inset 0 0 0 5px rgb(255 255 255 / .06); }
+:root[data-theme="alfred"] :is(.card, .panel)::before { --l: 12px; --t: 1px; --c: rgb(230 232 238 / .7); }
 :root[data-theme="alfred"] .card::after { display: none; }
-:root[data-theme="alfred"] .boot { font-family: var(--body); font-style: italic; }
-:root[data-theme="alfred"] .boot li::before { content: "✦"; }
-:root[data-theme="alfred"] .num { clip-path: circle(50%); color: #1d130d; background: linear-gradient(180deg, #e7c886, #b38a46); font-style: italic; }
+:root[data-theme="alfred"] .ico { color: #e8e6e0; filter: none; }
+:root[data-theme="alfred"] .boot { font-family: var(--body); font-style: italic; border-left-color: #e8e6e0; }
+:root[data-theme="alfred"] .boot li::before { content: "·"; color: var(--strong); }
+:root[data-theme="alfred"] .boot li b { color: var(--strong); }
+:root[data-theme="alfred"] .num { clip-path: circle(50%); color: #111113; background: #f4f2ec; box-shadow: none; font-style: italic; }
+:root[data-theme="alfred"] .steps::before { background: linear-gradient(90deg, transparent, #f4f2ec, transparent) 0 0 / 40% 100% no-repeat, var(--line); }
 :root[data-theme="alfred"] .clock { font-family: var(--display); font-size: 18px; }
+:root[data-theme="alfred"] .status { color: var(--muted); }
 
 /* the Tron floor belongs to Stark only */
-:root:is([data-theme="batcave"], [data-theme="matrix"], [data-theme="alfred"]) .grid-bg { display: none; }
+:root:is([data-theme="matrix"], [data-theme="alfred"]) .grid-bg { display: none; }
+:root[data-theme="batcave"] .grid-bg { left: 0; right: 0; bottom: 0; height: 26vh; transform: none; animation: none; mask-image: none; opacity: .95;
+  background: url("data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 1200 220%22 preserveAspectRatio=%22none%22%3E%3Cpath d=%22M0 220 L0 165 L8 165 L8 151 L38 151 L38 165 L46 165 L46 96 L66.0 78 L69.0 56 L72.0 78 L92 96 L92 117 L116.0 99 L119.0 77 L122.0 99 L146 117 L146 116 L175.0 98 L178.0 76 L181.0 98 L210 116 L210 90 L248 90 L248 152 L302 152 L302 103 L310 103 L310 89 L358 89 L358 103 L366 103 L366 163 L430 163 L430 139 L476 139 L476 103 L522 103 L522 74 L560 74 L560 127 L606 127 L606 81 L686 81 L686 125 L710.0 107 L713.0 85 L716.0 107 L740 125 L740 163 L794 163 L794 160 L818.0 142 L821.0 120 L824.0 142 L848 160 L848 135 L912 135 L912 141 L949.0 123 L952.0 101 L955.0 123 L992 141 L992 152 L1022 152 L1022 68 L1102 68 L1102 114 L1118.0 96 L1121.0 74 L1124.0 96 L1140 114 L1140 151 L1204 151 L1200 220 Z%22 fill=%22%2307070a%22/%3E%3Cg fill=%22%23ffcc00%22 fill-opacity=%22.35%22%3E%3Crect x=%2252%22 y=%22117%22 width=%223%22 height=%224%22/%3E%3Crect x=%22215%22 y=%22128%22 width=%223%22 height=%224%22/%3E%3Crect x=%22215%22 y=%22171%22 width=%223%22 height=%224%22/%3E%3Crect x=%22218%22 y=%22137%22 width=%223%22 height=%224%22/%3E%3Crect x=%22258%22 y=%22199%22 width=%223%22 height=%224%22/%3E%3Crect x=%22419%22 y=%22183%22 width=%223%22 height=%224%22/%3E%3Crect x=%22399%22 y=%22191%22 width=%223%22 height=%224%22/%3E%3Crect x=%22399%22 y=%22184%22 width=%223%22 height=%224%22/%3E%3Crect x=%22439%22 y=%22185%22 width=%223%22 height=%224%22/%3E%3Crect x=%22498%22 y=%22190%22 width=%223%22 height=%224%22/%3E%3Crect x=%22484%22 y=%22128%22 width=%223%22 height=%224%22/%3E%3Crect x=%22512%22 y=%22166%22 width=%223%22 height=%224%22/%3E%3Crect x=%22527%22 y=%22169%22 width=%223%22 height=%224%22/%3E%3Crect x=%22528%22 y=%22181%22 width=%223%22 height=%224%22/%3E%3Crect x=%22543%22 y=%22157%22 width=%223%22 height=%224%22/%3E%3Crect x=%22568%22 y=%22148%22 width=%223%22 height=%224%22/%3E%3Crect x=%22581%22 y=%22197%22 width=%223%22 height=%224%22/%3E%3Crect x=%22568%22 y=%22144%22 width=%223%22 height=%224%22/%3E%3Crect x=%22646%22 y=%22182%22 width=%223%22 height=%224%22/%3E%3Crect x=%22659%22 y=%22176%22 width=%223%22 height=%224%22/%3E%3Crect x=%22654%22 y=%2293%22 width=%223%22 height=%224%22/%3E%3Crect x=%22769%22 y=%22185%22 width=%223%22 height=%224%22/%3E%3Crect x=%22833%22 y=%22178%22 width=%223%22 height=%224%22/%3E%3Crect x=%22806%22 y=%22196%22 width=%223%22 height=%224%22/%3E%3Crect x=%22825%22 y=%22197%22 width=%223%22 height=%224%22/%3E%3Crect x=%22866%22 y=%22154%22 width=%223%22 height=%224%22/%3E%3Crect x=%22857%22 y=%22156%22 width=%223%22 height=%224%22/%3E%3Crect x=%22861%22 y=%22159%22 width=%223%22 height=%224%22/%3E%3Crect x=%22949%22 y=%22169%22 width=%223%22 height=%224%22/%3E%3Crect x=%221000%22 y=%22194%22 width=%223%22 height=%224%22/%3E%3Crect x=%22997%22 y=%22191%22 width=%223%22 height=%224%22/%3E%3Crect x=%221039%22 y=%22139%22 width=%223%22 height=%224%22/%3E%3Crect x=%221077%22 y=%2285%22 width=%223%22 height=%224%22/%3E%3Crect x=%221050%22 y=%2286%22 width=%223%22 height=%224%22/%3E%3Crect x=%221125%22 y=%22130%22 width=%223%22 height=%224%22/%3E%3Crect x=%221109%22 y=%22124%22 width=%223%22 height=%224%22/%3E%3C/g%3E%3C/svg%3E") bottom left / 1200px 100% repeat-x; }
+:root[data-theme="batcave"] .btn.primary { background: linear-gradient(180deg, #ffd640, #e6b400); color: #0b0b0d; border-color: #ffdd55; box-shadow: 0 0 16px -4px rgb(255 204 0 / .7); }
+:root[data-theme="batcave"] .btn.primary:hover { background: linear-gradient(180deg, #ffe066, #f0c000); color: #000; }
 @media (max-width: 1100px) { .links { display: none; } }
 @media (max-width: 760px) { .theme-switch button { padding: 6px 6px; font-size: 9px; letter-spacing: .08em; } }
 @media (max-width: 520px) { .bar .theme-switch { display: none; } }

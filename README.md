@@ -12,8 +12,8 @@ Runs as one Docker container on **alfred-server** (`/home/user/alfred`). The pro
 container and hostname keep their original `alfred` names (alfred.example.com, `docker compose exec alfred`);
 only the assistant's persona and branding are "Alfred" (`ASSISTANT_NAME`). The site has four skins, chosen on the
 homepage, the sign-in page or the dashboard and applied everywhere (homepage, dashboard, legal pages,
-404 page): **Stark** (holographic HUD), **Batcave** (bat-signal yellow on gunmetal), **Matrix**
-(green-screen terminal with digital rain) and **Alfred** (the butler: brass and ivory on mahogany).
+404 page): **Stark** (holographic HUD), **Batcave** (bat-signal yellow on gunmetal, Gotham skyline), **Matrix**
+(green-screen terminal with digital rain) and **Alfred** (the butler's outfit: black, white and silver).
 
 ## What Alfred can do
 

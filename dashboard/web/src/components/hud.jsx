@@ -2,26 +2,56 @@ import { useEffect, useRef, useState } from "react";
 import { useThemeName } from "../theme.js";
 import { RAIN_GLYPHS } from "../backdrops.js";
 
-// Generic bat silhouette (symmetric, 200x100 box, centred on x=100).
-const BAT = "M100 40 L94 24 L90 40 Q60 30 12 46 Q34 54 33 72 Q46 62 58 71 Q70 60 82 75 Q92 70 100 88 "
-  + "Q108 70 118 75 Q130 60 142 71 Q154 62 167 72 Q166 54 188 46 Q140 30 110 40 L106 24 Z";
+// Bat symbol (classic shape: pointed ears, wide wings, three scallops a side, pointed tail),
+// symmetric in a 200x100 box, centred on x=100. Shared with the homepage (home.html) and favicons.
+export const BAT = "M100 27 L103 27 L106 12 L109.5 29 Q117 31 124 26 Q152 19 194 44 Q177 46 169 63 Q158 51 145 66 "
+  + "Q134 56 122 73 Q110 70 100 90 Q90 70 78 73 Q66 56 55 66 Q42 51 31 63 Q23 46 6 44 Q48 19 76 26 Q83 31 90.5 29 "
+  + "L94 12 L97 27 Z";
 
-/* Bat-signal: a searchlight disc with the bat cut out, sweeping rings, cloud haze. */
+/* Bat-signal. Large (sign-in, loading): a searchlight beam rising to a lit oval on the clouds, the bat
+   as a soft shadow in it and cloud banks drifting across. Small: the disc with the bat, crisp. */
 export function BatSignal({ size = "md", label }) {
-  const ticks = Array.from({ length: 48 }, (_, i) => {
-    const a = (i * 7.5) * (Math.PI / 180);
-    const r0 = i % 4 === 0 ? 82 : 86;
-    return `M ${100 + r0 * Math.cos(a)} ${100 + r0 * Math.sin(a)} L ${100 + 90 * Math.cos(a)} ${100 + 90 * Math.sin(a)}`;
-  });
+  const big = size === "xl";
+  const a11y = { role: label ? "img" : undefined, "aria-label": label, "aria-hidden": label ? undefined : true };
+  if (!big) {
+    return (
+      <div className={`reactor emblem-bat reactor-${size}`} {...a11y}>
+        <svg viewBox="0 0 200 200">
+          <circle className="bat-glow" cx="100" cy="100" r="86" />
+          <ellipse className="bat-disc" cx="100" cy="100" rx="78" ry="70" />
+          <ellipse className="bat-rim" cx="100" cy="100" rx="78" ry="70" />
+          <path className="bat" d={BAT} transform="translate(100 104) scale(0.74) translate(-100 -56)" />
+        </svg>
+      </div>
+    );
+  }
   return (
-    <div className={`reactor emblem-bat reactor-${size}`} role={label ? "img" : undefined} aria-label={label} aria-hidden={label ? undefined : true}>
+    <div className={`reactor emblem-bat emblem-bat-scene reactor-${size}`} {...a11y}>
       <svg viewBox="0 0 200 200">
-        <circle className="r-halo" cx="100" cy="100" r="78" />
-        <g className="spin spin-slow"><circle className="ring ring-dash-a" cx="100" cy="100" r="96" /></g>
-        <g className="spin spin-rev"><path className="ring ring-ticks" d={ticks.join(" ")} /></g>
-        <circle className="bat-disc" cx="100" cy="100" r="62" />
-        <circle className="bat-rim" cx="100" cy="100" r="62" />
-        <path className="bat" d={BAT} transform="translate(100 102) scale(0.56) translate(-100 -56)" />
+        <defs>
+          <radialGradient id="sig-light" cx=".5" cy=".45" r=".6">
+            <stop offset="0" stopColor="#fff6c8" /><stop offset=".55" stopColor="#ffd84a" /><stop offset="1" stopColor="#e6a800" />
+          </radialGradient>
+          <linearGradient id="sig-beam" x1="0" y1="1" x2="0" y2="0">
+            <stop offset="0" stopColor="#ffe27a" stopOpacity=".55" /><stop offset="1" stopColor="#ffe27a" stopOpacity="0" />
+          </linearGradient>
+          <filter id="sig-shadow" x="-10%" y="-10%" width="120%" height="120%"><feGaussianBlur stdDeviation="1.1" /></filter>
+          <filter id="sig-cloud" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="7" /></filter>
+          <clipPath id="sig-clip"><ellipse cx="100" cy="86" rx="70" ry="54" /></clipPath>
+        </defs>
+        <path className="sig-beam" d="M93 214 L107 214 L168 96 L32 96 Z" fill="url(#sig-beam)" />
+        <ellipse className="sig-halo" cx="100" cy="86" rx="92" ry="74" />
+        <ellipse className="sig-disc" cx="100" cy="86" rx="70" ry="54" fill="url(#sig-light)" />
+        <g clipPath="url(#sig-clip)">
+          <path className="sig-bat" d={BAT} filter="url(#sig-shadow)"
+                transform="translate(100 90) scale(0.62 0.56) skewX(-3) translate(-100 -56)" />
+          <g className="sig-clouds" filter="url(#sig-cloud)">
+            <ellipse cx="40" cy="60" rx="46" ry="12" /><ellipse cx="150" cy="118" rx="54" ry="13" /><ellipse cx="96" cy="40" rx="30" ry="8" />
+          </g>
+        </g>
+        <g className="sig-clouds outer" filter="url(#sig-cloud)">
+          <ellipse cx="20" cy="30" rx="50" ry="14" /><ellipse cx="185" cy="70" rx="40" ry="12" /><ellipse cx="60" cy="150" rx="60" ry="14" />
+        </g>
       </svg>
     </div>
   );
@@ -52,49 +82,34 @@ export function CodeRing({ size = "md", label }) {
   );
 }
 
-// Bow tie (centred on 100,0) and a small crown (centred on 100,0) for the butler's crest.
-const BOW = "M100 0 L84 -9 Q80 0 84 9 Z M100 0 L116 -9 Q120 0 116 9 Z";
-const CROWN = "M86 6 L84 -6 L92 0 L100 -9 L108 0 L116 -6 L114 6 Z";
+// A bow tie centred on (100,100), about 76 wide: two wings with a fold line each, and the knot.
+export const BOW_TIE = "M100 100 C92 91 80 85 66 87 C61 95 61 105 66 113 C80 115 92 109 100 100 Z "
+  + "M100 100 C108 91 120 85 134 87 C139 95 139 105 134 113 C120 115 108 109 100 100 Z";
 
-/* Alfred: a gilt monogram crest with a crown and a bow tie; light catches the rim now and then. */
-export function Crest({ size = "md", label }) {
-  const dots = Array.from({ length: 40 }, (_, i) => {
-    const a = (i * 9) * (Math.PI / 180);
-    return { x: 100 + 93 * Math.cos(a), y: 100 + 93 * Math.sin(a), big: i % 5 === 0 };
-  });
+/* Alfred: a discreet mark, a bow tie in a fine silver ring (think of a pressed white tie). */
+export function ButlerMark({ size = "md", label }) {
   return (
-    <div className={`reactor emblem-crest reactor-${size}`} role={label ? "img" : undefined} aria-label={label} aria-hidden={label ? undefined : true}>
+    <div className={`reactor emblem-butler reactor-${size}`} role={label ? "img" : undefined} aria-label={label} aria-hidden={label ? undefined : true}>
       <svg viewBox="0 0 200 200">
-        <defs>
-          <linearGradient id="gilt" x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0" stopColor="#f3dca4" /><stop offset=".45" stopColor="#c9a25c" /><stop offset="1" stopColor="#8a6a32" />
-          </linearGradient>
-          <radialGradient id="crest-bg" cx=".5" cy=".4" r=".7">
-            <stop offset="0" stopColor="#3a2418" /><stop offset="1" stopColor="#140d0a" />
-          </radialGradient>
-        </defs>
-        <circle className="r-halo" cx="100" cy="100" r="80" />
-        <g className="spin spin-slow crest-dots">{dots.map((d, i) => <circle key={i} cx={d.x} cy={d.y} r={d.big ? 2 : 1} />)}</g>
-        <circle className="crest-ring" cx="100" cy="100" r="84" />
-        <circle className="crest-ring thin" cx="100" cy="100" r="79" />
-        <g className="spin spin-med crest-sheen-wrap"><circle className="crest-sheen" cx="100" cy="100" r="84" /></g>
-        <circle className="crest-disc" cx="100" cy="100" r="68" />
-        <circle className="crest-ring thin" cx="100" cy="100" r="63" />
-        <path className="crest-gilt" d={CROWN} transform="translate(0 56)" />
-        <text className="crest-a" x="100" y="124" textAnchor="middle">A</text>
-        <path className="crest-gilt" d={BOW} transform="translate(0 143)" />
-        <circle className="crest-gilt" cx="100" cy="143" r="3.2" />
+        <circle className="bm-halo" cx="100" cy="100" r="82" />
+        <circle className="bm-ring" cx="100" cy="100" r="84" />
+        <circle className="bm-ring thin" cx="100" cy="100" r="77" />
+        <g className="spin spin-slow bm-sheen-wrap"><circle className="bm-sheen" cx="100" cy="100" r="84" /></g>
+        <path className="bm-ticks" d="M100 18 V24 M182 100 H176 M100 182 V176 M18 100 H24" />
+        <path className="bm-tie" d={BOW_TIE} />
+        <path className="bm-fold" d="M80 93 Q86 100 80 107 M120 93 Q114 100 120 107" />
+        <rect className="bm-knot" x="93.5" y="92.5" width="13" height="15" rx="3.5" />
       </svg>
     </div>
   );
 }
 
-/* The theme's emblem: arc reactor (Stark), bat-signal (Batcave), code ring (Matrix), crest (Alfred). */
+/* The theme's emblem: arc reactor (Stark), bat-signal (Batcave), code ring (Matrix), bow tie (Alfred). */
 export function Emblem(props) {
   const theme = useThemeName();
   if (theme === "batcave") return <BatSignal {...props} />;
   if (theme === "matrix") return <CodeRing {...props} />;
-  if (theme === "alfred") return <Crest {...props} />;
+  if (theme === "alfred") return <ButlerMark {...props} />;
   return <ArcReactor {...props} />;
 }
 

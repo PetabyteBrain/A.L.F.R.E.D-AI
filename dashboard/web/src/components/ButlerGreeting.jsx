@@ -1,7 +1,7 @@
 import { api } from "../api.js";
 import { firstName } from "../format.js";
 import { usePoll } from "../hooks.js";
-import { Crest } from "./hud.jsx";
+import { ButlerMark } from "./hud.jsx";
 
 const ordinal = (n) => n + (n % 10 === 1 && n !== 11 ? "st" : n % 10 === 2 && n !== 12 ? "nd" : n % 10 === 3 && n !== 13 ? "rd" : "th");
 const hhmm = (iso) => new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
@@ -33,7 +33,7 @@ export default function ButlerGreeting({ me, assistant }) {
 
   return (
     <section className="hud butler-card" aria-label="Today at a glance">
-      <Crest size="md" />
+      <ButlerMark size="md" />
       <div className="butler-text">
         <p className="butler-date">{date}</p>
         <h2 className="butler-hello">{greeting(now.getHours())}, {firstName(me.display_name)}.</h2>
