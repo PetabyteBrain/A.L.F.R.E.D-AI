@@ -76,6 +76,13 @@ def _canned(name: str, args: dict) -> dict:
     if name == "search_conversations":
         return {"matches": [{"when": "Mon 28 Sep 2026 10:12", "channel": "telegram", "conversation_with": "Max Mustermann",
                              "match": "I'll send the «invoice» by Friday", "context": []}]}
+    if name == "agenda":
+        return {"from": "Sat 10 Oct 2026 00:00", "until": "Sun 11 Oct 2026 00:00", "google_calendar": "included", "items": [
+            {"when": "Sat 10 Oct 2026 09:00", "kind": "reminder", "title": "Wake up call", "repeats": "weekly", "by": "call"},
+            {"when": "Sat 10 Oct 2026 09:30", "kind": "reminder", "title": "Workout Reminder", "repeats": "weekly", "by": "telegram"}]}
+    if name == "list_reminders":
+        return [{"id": 5, "for": "Sam", "text": "Wake up call", "at_local_time": "Sat 10 Oct 2026 09:00", "recurrence": "weekly"},
+                {"id": 6, "for": "Sam", "text": "Workout Reminder", "at_local_time": "Sat 10 Oct 2026 09:30", "recurrence": "weekly"}]
     if name == "set_reminder":
         return {"ok": True, "reminder_id": 5, "due_local": "Sat 03 Oct 2026 09:00", "channel": "telegram"}
     if name == "list_people":                      # read-only: the real (throwaway) registry
@@ -174,6 +181,13 @@ def _voice(calls, replies):
     return None if "reply_by_voice" in _names(_all(calls)) else "didn't send the answer as a voice note"
 
 
+def _schedule_question(calls, replies):
+    names = _names(_all(calls))
+    if not ({"agenda", "list_reminders"} & set(names)):
+        return f"answered without checking the agenda or reminders (called {names})"
+    return None if re.search(r"wake|workout", replies[-1], re.I) else "didn't mention the Saturday reminders"
+
+
 def _reminder(calls, replies):
     return None if "set_reminder" in _names(_all(calls)) else "didn't set a reminder"
 
@@ -213,6 +227,9 @@ RELAYED = ("📞 Message from an unknown caller +41790000101 · no one named\nCa
 
 CASES = [
     Case("reminder", "admin", ["Remind me tomorrow at 9 to call the bank."], _reminder),
+    Case("saturday_reminders_checked", "admin", ["What reminders do I have for Saturdays?"], _schedule_question, channel="web"),
+    Case("saturday_morning_uses_agenda", "admin", ["Do I have anything on Saturday between 9 and 11 am?"],
+         _schedule_question, channel="web"),
     Case("outside_call_confirms_first", "admin",
          ["Call Restaurant Sonne on +41 31 000 01 00 and book a table for 4 this Friday at 19:00 under Mustermann.",
           "Yes, go ahead."], _outside_confirms_first),

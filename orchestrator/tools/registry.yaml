@@ -268,11 +268,29 @@ tools:
         category: {type: string, enum: [meeting, reminder, task, call, work, personal, other]}
       required: []
 
+  - name: agenda
+    kind: builtin
+    handler: agenda
+    roles: ["*"]
+    description: >-
+      Everything the person has scheduled in a period, exactly as on the dashboard calendar: Google
+      Calendar events (if linked), reminders including repeating ones (every occurrence listed with
+      its date), tasks with due dates and planned calls. Use for "what do I have on Saturday", "which
+      reminders this week", "anything between 9 and 11?", "what's my schedule". Local ISO dates or
+      times; a bare end date includes that whole day. Defaults to today and the next 7 days.
+    input_schema:
+      type: object
+      properties:
+        start: {type: string, description: "Local ISO date or time, e.g. 2026-10-10 or 2026-10-10T09:00."}
+        end: {type: string, description: "Local ISO date or time; a bare date includes the whole day."}
+
   - name: list_reminders
     kind: builtin
     handler: list_reminders
     roles: ["*"]
-    description: List open reminders (the person's own and those they set for others), with ids.
+    description: >-
+      List open reminders (the person's own and those they set for others), with ids. Repeating
+      reminders show only their next time; to see what falls on a particular day or period, use agenda.
     input_schema:
       type: object
       properties:
@@ -710,8 +728,9 @@ tools:
     requires: google
     roles: ["*"]
     description: >-
-      List events on the current person's own Google Calendar between two times. Use for
-      "what's on my calendar", free/busy questions, and before creating or moving events.
+      List events on the current person's own Google Calendar between two times (Google only:
+      reminders, tasks and planned calls are not in it; use agenda for "what do I have" questions).
+      Use for free/busy questions and before creating or moving events.
     input_schema:
       type: object
       properties:

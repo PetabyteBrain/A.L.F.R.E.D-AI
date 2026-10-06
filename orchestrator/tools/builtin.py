@@ -552,6 +552,60 @@ async def _cal(fn, *args, **kwargs):
 
 
 @handler
+async def agenda(ctx, start: str = "", end: str = "") -> dict:
+    """Everything scheduled in a period, as on the dashboard calendar: Google events, reminders
+    (repeats expanded), tasks with due dates, planned calls. Local ISO dates/times; a bare end date
+    counts the whole day. Defaults: today and the next 7 days."""
+    from datetime import timedelta
+    from .. import agenda as agenda_mod
+    tz = ZoneInfo(settings.timezone)
+
+    def parse(value: str, end_of_day: bool) -> datetime:
+        v = (value or "").strip()
+        dt = datetime.fromisoformat(v)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=tz)
+        if end_of_day and len(v) == 10:
+            dt += timedelta(days=1)
+        return dt
+
+    try:
+        s = parse(start, False) if start else datetime.now(tz).replace(hour=0, minute=0, second=0, microsecond=0)
+        e = parse(end, True) if end else s + timedelta(days=8)
+    except ValueError:
+        return {"error": "Use ISO dates or times, e.g. 2026-10-10 or 2026-10-10T09:00."}
+    if e <= s:
+        e = s + timedelta(days=1)
+    try:
+        data = await agenda_mod.items(ctx.person, s.isoformat(), e.isoformat())
+    except agenda_mod.AgendaError as ex:
+        return {"error": str(ex)}
+
+    def local(it: dict) -> str:
+        if it.get("all_day"):
+            return datetime.fromisoformat(it["start"][:10]).strftime("%a %d %b %Y") + " (all day)"
+        return datetime.fromisoformat(it["start"].replace("Z", "+00:00")).astimezone(tz).strftime("%a %d %b %Y %H:%M")
+
+    out = []
+    for it in data["items"]:
+        if it.get("link_state") == "event_deleted":
+            continue
+        row = {"when": local(it), "kind": it["kind"], "title": it["title"], "category": it.get("category")}
+        if it.get("recurrence"):
+            row["repeats"] = it["recurrence"]
+        if it["kind"] == "reminder":
+            row["reminder_id"] = it["id"]
+            row["by"] = it.get("channel")
+            if it.get("link_state") == "linked":
+                row["tied_to_calendar_event"] = True
+        out.append(row)
+    cal = data.get("calendar", {})
+    return {"from": s.strftime("%a %d %b %Y %H:%M"), "until": e.strftime("%a %d %b %Y %H:%M"), "items": out[:80],
+            "google_calendar": "included" if cal.get("linked") and not cal.get("error")
+            else ("not reachable: " + cal["error"]) if cal.get("error") else "not linked (reminders, tasks and calls only)"}
+
+
+@handler
 async def calendar_list_events(ctx, start: str, end: str, query: str = "", max_results: int = 25):
     from .. import google_calendar
     return await _cal(google_calendar.list_events, ctx.person.id, start, end, query, max_results)

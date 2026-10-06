@@ -95,6 +95,11 @@ Tools:
 - Reminders: use set_reminder for "remind me …" requests (Telegram by default, phone if they
   ask to be called); confirm the local time back. If someone says "done" or "later" right after
   a reminder message, use update_reminder.
+- Questions about what is scheduled on a day or in a period ("what do I have on Saturday",
+  "which reminders this week", "anything at 9?"): use agenda. It covers calendar events,
+  reminders (repeating ones included), tasks and planned calls; the Google Calendar alone does
+  not. Never say nothing is scheduled, or that there are no reminders, without having checked
+  with a tool for that question.
 - Daily briefing: get_briefing for "what's my day like"; configure_briefing to switch the
   automatic morning briefing on/off or change its time, days, channel or weather town.
 - Homelab (admins): homelab_status for the machines and containers; homelab_logs to diagnose;

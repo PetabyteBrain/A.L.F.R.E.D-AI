@@ -3537,3 +3537,30 @@ def test_avatar_helper_page_context():
     assert "Tasks page" in a and "Settings:" in a and "Personnel:" in a
     f = dashboard_guide.context(friend, "profile")
     assert "Profile page" in f and "Settings:" not in f and "Usage:" not in f
+
+
+@pytest.mark.asyncio
+async def test_agenda_tool_lists_repeating_reminders(monkeypatch):
+    from datetime import datetime, timedelta
+    from zoneinfo import ZoneInfo
+    from orchestrator import google_calendar, reminders
+    from orchestrator.config import settings
+    from orchestrator.tools import builtin, registry as tools
+    monkeypatch.setattr(google_calendar, "is_linked", lambda uid: False)
+    admin = registry.lookup("telegram", "111")
+    tz = ZoneInfo(settings.timezone)
+    today = datetime.now(tz).date()
+    sat = today + timedelta(days=(5 - today.weekday()) % 7 or 7)              # next Saturday
+    r = reminders.create(created_by=admin, text="Wake up call", when=f"{sat.isoformat()}T09:00", recurrence="weekly")
+    ctx = tools.ToolContext(admin, None, "web")
+    # the Saturday after next: only reachable by expanding the weekly repeat
+    later = sat + timedelta(days=7)
+    out = await builtin.HANDLERS["agenda"](ctx, start=later.isoformat(), end=later.isoformat())
+    hits = [i for i in out["items"] if i.get("reminder_id") == r["id"]]
+    assert len(hits) == 1 and hits[0]["repeats"] == "weekly" and hits[0]["when"].endswith("09:00")
+    assert hits[0]["when"].startswith("Sat") and "not linked" in out["google_calendar"]
+    # a time window that excludes it
+    out = await builtin.HANDLERS["agenda"](ctx, start=f"{later.isoformat()}T10:00", end=f"{later.isoformat()}T11:00")
+    assert not [i for i in out["items"] if i.get("reminder_id") == r["id"]]
+    assert "agenda" in {t["name"] for t in tools.tools_for("friend", "web", admin.id)}
+    reminders.cancel(r["id"], admin)
