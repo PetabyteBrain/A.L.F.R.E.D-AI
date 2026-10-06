@@ -40,6 +40,7 @@ the original spec is in `docs/archive/original-spec.md`. Keep the plan updated w
   after 14 days (`orchestrator/recording_archive.py`); always read/delete them through that module.
 - Model: `claude-haiku-4-5` (user's choice) via the official `anthropic` SDK (1.x, async client).
   Haiku 4.5 does not take adaptive thinking/effort; don't add them.
+- Every acting tool call passes a weekday/date check first (`orchestrator/dates.py`, `registry.date_problems`).
 - Keep the static system prompt in `agent_core.STATIC_SYSTEM` byte-stable (prompt caching); put
   per-request details in `_dynamic_system`. Tool list is sorted for the same reason.
 
