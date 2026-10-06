@@ -1229,3 +1229,55 @@ main[hidden], [hidden] { display: none !important; }
 @keyframes clouds { from { transform: translateX(-30px); } 50% { transform: translateX(30px); } to { transform: translateX(-30px); } }
 @keyframes beam { 0%, 100% { opacity: .75; } 50% { opacity: .55; } }
 .boot .emblem-bat-scene, .login-visual .emblem-bat-scene { transform: translateY(-4%); }
+
+/* ==========================================================================
+   Alfred's avatar (components/AlfredAvatar.jsx): portrait button, helper panel with a speech
+   bubble, and toasts. Uses the theme tokens, so it fits every skin.
+   ========================================================================== */
+.avatar-launcher { position: fixed; right: 20px; bottom: 20px; z-index: 70; width: 68px; height: 68px; padding: 0; border-radius: 50%;
+  overflow: hidden; cursor: pointer; border: 2px solid var(--line-strong); background: var(--bg);
+  box-shadow: 0 10px 30px -8px rgb(0 0 0 / .8), 0 0 0 4px rgb(var(--accent-rgb) / .08); transition: transform .2s, box-shadow .2s; }
+.avatar-launcher:hover { transform: translateY(-2px) scale(1.04); box-shadow: 0 14px 34px -8px rgb(0 0 0 / .85), 0 0 0 4px rgb(var(--accent-rgb) / .18); }
+.avatar-launcher.is-open { border-color: var(--accent); }
+.avatar-img { display: block; width: 100%; height: 100%; object-fit: cover; animation: avatarIn .35s ease both; user-select: none; }
+@keyframes avatarIn { from { opacity: .2; transform: scale(1.03); } to { opacity: 1; transform: none; } }
+
+.avatar-panel { position: fixed; right: 20px; bottom: 100px; z-index: 80; width: min(420px, calc(100vw - 32px));
+  max-height: calc(100vh - 130px); display: flex; flex-direction: column; gap: 12px; padding: 16px; background: var(--bg);
+  box-shadow: 0 0 0 1px var(--line-strong), 0 24px 60px rgb(0 0 0 / .75); animation: panelIn .25s ease both; }
+@keyframes panelIn { from { opacity: 0; transform: translateY(12px) scale(.98); } to { opacity: 1; transform: none; } }
+.avatar-stage { display: flex; gap: 14px; align-items: flex-start; min-height: 0; }
+.stage-img { width: 120px; height: 120px; flex: none; border: 1px solid var(--line-strong); border-radius: 6px; }
+.speech { position: relative; flex: 1; min-width: 0; max-height: 42vh; overflow-y: auto; padding: 10px 12px;
+  background: rgb(var(--accent-rgb) / .06); border: 1px solid var(--line); border-radius: 10px; font-size: 15px; }
+.speech::before { content: ""; position: absolute; left: -7px; top: 22px; width: 12px; height: 12px; transform: rotate(45deg);
+  background: inherit; border-left: 1px solid var(--line); border-bottom: 1px solid var(--line); background-color: var(--bg); }
+.speech .asked { margin: 0 0 6px; color: var(--muted); font-style: italic; font-size: 13px; }
+.speech .speech-text .md > :first-child { margin-top: 0; }
+.speech .speech-text .md > :last-child { margin-bottom: 0; }
+.avatar-chips { justify-content: flex-start; }
+.avatar-chips .chip { font-size: 12px; padding: 4px 10px; text-align: left; }
+.avatar-compose { display: flex; gap: 8px; }
+.avatar-compose input { flex: 1; min-width: 0; }
+.avatar-foot { display: flex; align-items: center; gap: 12px; justify-content: space-between; font-size: 13px; }
+.small-toggle { gap: 6px; font-size: 13px; color: var(--muted); }
+.small-toggle input { width: 14px; height: 14px; }
+
+.avatar-toast { position: fixed; right: 20px; bottom: 100px; z-index: 75; width: min(380px, calc(100vw - 32px)); display: flex; gap: 12px;
+  align-items: center; padding: 12px; background: var(--bg); box-shadow: 0 0 0 1px var(--line-strong), 0 20px 50px rgb(0 0 0 / .7);
+  animation: panelIn .3s ease both; }
+.toast-img { width: 72px; height: 72px; flex: none; border-radius: 6px; border: 1px solid var(--line); }
+.avatar-toast .bubble-text p { margin: 0 0 8px; font-size: 15px; color: var(--text-strong); }
+.avatar-toast-actions { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+
+:root[data-theme="alfred"] .speech { background: rgb(255 255 255 / .04); border-color: rgb(255 255 255 / .14); font-family: var(--font-body); font-size: 16px; }
+:root[data-theme="alfred"] .speech .asked { font-family: var(--font-body); }
+:root[data-theme="matrix"] .avatar-img { filter: grayscale(1) sepia(1) hue-rotate(70deg) saturate(3) brightness(.9); }
+:root[data-theme="batcave"] .avatar-launcher.is-open, :root[data-theme="batcave"] .stage-img { border-color: var(--accent); }
+
+@media (max-width: 600px) {
+  .avatar-launcher { right: 14px; bottom: 14px; width: 58px; height: 58px; }
+  .avatar-panel, .avatar-toast { right: 8px; left: 8px; width: auto; bottom: 82px; }
+  .stage-img { width: 84px; height: 84px; }
+}
+@media (prefers-reduced-motion: reduce) { .avatar-img, .avatar-panel, .avatar-toast { animation: none; } }

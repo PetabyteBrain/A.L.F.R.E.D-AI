@@ -39,7 +39,7 @@ homepage, the sign-in page or the dashboard and applied everywhere (homepage, da
 | Homelab | Status of all Pis, the Jetson and their containers, logs, confirmed restarts (admin), Minecraft players; alerts when something breaks. An external watchdog on host-d alerts if Alfred himself is down | any channel (admin), Systems |
 | Backups | Nightly verified database snapshot + recordings + `.env` to the Jetson (no-delete key) and to the NAS (snapshot-protected); monthly automatic restore test (`infra/README-backup.md`) | automatic, Systems |
 | Safety & privacy | Registry-only access, roles, code verification of new connections, dashboard 2FA (authenticator app or Telegram code), call audio deleted after 90 days, "download / delete my data", monthly cost budgets with admin alerts, behaviour checks against the real model | everywhere |
-| Dashboard | Live sessions (terminate), archive with audio and search/filters, calendar + tasks/reminders/calls (archived calls searchable), notes & files, event log (CSV export), health, people, API usage, budgets; admin Settings tab (role permissions such as n8n for cofounders, household quiet hours, call screening, view as role) | `/app` |
+| Dashboard | Alfred's avatar helper on every tab (portrait that reacts to what he's doing, speech bubble, knows the page you're on); live sessions (terminate), archive with audio and search/filters, calendar + tasks/reminders/calls (archived calls searchable), notes & files, event log (CSV export), health, people, API usage, budgets; admin Settings tab (role permissions such as n8n for cofounders, household quiet hours, call screening, view as role) | `/app` |
 
 ```
 Phone ──► Twilio ──► /twilio/voice ─► identity ─┬─► <Stream> ─► /twilio/stream (WS), mu-law 8k

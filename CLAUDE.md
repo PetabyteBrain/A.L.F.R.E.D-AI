@@ -47,6 +47,8 @@ the original spec is in `docs/archive/original-spec.md`. Keep the plan updated w
 - React 19 + Vite in `dashboard/web` (no router; tabs in `App.jsx`), built to `dashboard/web/dist`,
   which FastAPI serves. Keep it CSP-clean: no inline scripts, no `dangerouslySetInnerHTML`.
 - Admin Settings tab (`pages/Settings.jsx`) holds household-wide settings; Profile only personal ones.
+- Avatar helper: `components/AlfredAvatar.jsx` (states = portrait file names in `src/assets/avatar/`, from
+  `scripts/crop_avatar.py`); page help text in `dashboard/api/dashboard_guide.py` (keep in sync with App.jsx TABS).
 - Per-role switches: `orchestrator/permissions.py` (+ `permission:` on tools in registry.yaml). Check
   `permissions.allowed(role, ...)` server-side for anything a switch covers; admins always pass.
 - Unknown non-API pages get `public/not-found.html` (`main._http_errors`); API paths keep JSON 404.

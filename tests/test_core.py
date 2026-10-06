@@ -3526,3 +3526,14 @@ def test_fixed_name_assets_are_versioned(tmp_path, monkeypatch):
         assert c.get("/privacy-policy").text != first                 # changed file -> new URL
         # static files: hashed build output may be cached for good, fixed names must revalidate
         assert c.get("/legal/legal.css").headers.get("cache-control") in (None, "no-cache")
+
+
+def test_avatar_helper_page_context():
+    from dashboard.api import dashboard_guide
+    from orchestrator.identity.registry import Person
+    admin = Person(id=1, display_name="A", role="admin")
+    friend = Person(id=2, display_name="F", role="cofounder")
+    a = dashboard_guide.context(admin, "tasks")
+    assert "Tasks page" in a and "Settings:" in a and "Personnel:" in a
+    f = dashboard_guide.context(friend, "profile")
+    assert "Profile page" in f and "Settings:" not in f and "Usage:" not in f

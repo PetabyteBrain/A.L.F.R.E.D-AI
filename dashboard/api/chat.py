@@ -17,7 +17,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from orchestrator import agent_core, db, sessions
 from orchestrator.identity.registry import Person
 
-from . import security
+from . import dashboard_guide, security
 from .routes import current_person
 
 log = logging.getLogger(__name__)
@@ -33,6 +33,7 @@ chat_throttle = security.Throttle(window_s=300, max_failures=20)  # 20 messages 
 class ChatMessage(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
     message: str = Field(min_length=1, max_length=4000)
+    page: str | None = Field(default=None, max_length=20)   # set by the avatar helper: the tab it was opened on
 
 
 def _turns(user_id: int, limit: int) -> list[dict]:
@@ -88,8 +89,9 @@ async def chat_stream(body: ChatMessage, person: Person = Depends(current_person
         # Runs independently of the HTTP response: if the browser goes away mid-reply the exchange
         # still finishes and is saved, so it shows up in the history on the next visit.
         try:
+            extra = dashboard_guide.context(person, body.page) if body.page in dashboard_guide.PAGES else None
             queue.put_nowait(("done", await agent_core.respond(person, "web", session_id, body.message,
-                                                               on_event=on_event)))
+                                                               extra_system=extra, on_event=on_event)))
         except Exception:
             log.exception("Web chat reply failed")
             queue.put_nowait(("error", "Something went wrong on my side. Please try again."))

@@ -6,6 +6,7 @@ import Login from "./components/Login.jsx";
 import TwoFactorCard from "./components/TwoFactorCard.jsx";
 import Stats from "./components/Stats.jsx";
 import ButlerGreeting from "./components/ButlerGreeting.jsx";
+import AlfredAvatar from "./components/AlfredAvatar.jsx";
 import Backdrop from "./components/Backdrop.jsx";
 import { Icon } from "./components/icons.jsx";
 import { Clock, DecodeText, Emblem } from "./components/hud.jsx";
@@ -218,6 +219,9 @@ export default function App() {
           ))}
         </div>
       </div>
+      {active.id !== "chat" && (
+        <AlfredAvatar me={me} assistant={assistant} page={active.id} pageLabel={active.label} onNavigate={setTab} />
+      )}
     </ThemeContext.Provider>
   );
 }
