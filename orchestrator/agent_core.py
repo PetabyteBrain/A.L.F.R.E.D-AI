@@ -160,7 +160,9 @@ def _dynamic_system(person: Person, channel: str, extra: str | None) -> str:
         f"Current person: {person.display_name} (user id {person.id}, role: {person.role}).",
         f"Channel: {channel}.",
         f"Local time: {now} ({settings.timezone}).",
-        f"Next days: {days}. Use these exact dates for weekdays ('this Friday', 'next Tuesday').",
+        f"Coming days: {days}. For a weekday ('this Friday', 'on Saturday') take the first matching day "
+        "in that list and copy its date exactly; if they might mean the week after ('next Friday'), say "
+        "which date you understood. Never work dates out yourself.",
     ]
     notes = memory.prompt_block(person.id)
     if notes:
@@ -282,7 +284,14 @@ async def _run(person: Person, channel: str, session_id: str, user_text: str, ex
                     continue
                 if on_event:
                     await on_event("tool", block.name)
-                out, is_error = await tool_registry.execute(block.name, dict(block.input or {}), ctx)
+                args = dict(block.input or {})
+                problems = tool_registry.date_problems(block.name, args)
+                if problems:   # weekday and date don't match: correct it before anything acts on it
+                    out, is_error = ("Date check failed, nothing was done: " + " ".join(problems)
+                                     + " Fix the date (ask if unsure what they meant) and call again."), True
+                    db.log_tool_call(block.name, args, out, True, session_id, person.id)
+                else:
+                    out, is_error = await tool_registry.execute(block.name, args, ctx)
                 results.append({"type": "tool_result", "tool_use_id": block.id, "content": out, "is_error": is_error})
             messages.append({"role": "user", "content": results})
             continue

@@ -3564,3 +3564,24 @@ async def test_agenda_tool_lists_repeating_reminders(monkeypatch):
     assert not [i for i in out["items"] if i.get("reminder_id") == r["id"]]
     assert "agenda" in {t["name"] for t in tools.tools_for("friend", "web", admin.id)}
     reminders.cancel(r["id"], admin)
+
+
+def test_date_check_catches_wrong_weekday(monkeypatch):
+    from datetime import date
+    from orchestrator import dates
+    from orchestrator.tools import registry as tools
+    monkeypatch.setattr(dates, "_today", lambda: date(2026, 10, 7))          # a Wednesday
+    bad = dates.check_args({"task": "Book a table for 4 on Friday 11 October at 19:00"})
+    assert bad and "Sunday" in bad[0] and "Friday 9 October 2026" in bad[0]
+    assert dates.check_args({"task": "Book a table for 4 on Friday 9 October at 19:00"}) == []
+    assert dates.check_args({"text": "Dentist on Fri 09 Oct"}) == []
+    assert dates.check_args({"text": "Dentist on Thursday, the 9th of October 2026"})      # 9 Oct 2026 is a Friday
+    assert dates.check_args({"summary": "Meeting Monday 4 January"}) == []                 # next year: a Monday
+    # text weekday vs the ISO time argument
+    wrong = dates.check_args({"purpose": "Remind about Friday's dinner booking", "when": "2026-10-11T19:00"})
+    assert wrong and "Friday 9 October 2026" in wrong[0]
+    assert dates.check_args({"purpose": "Dinner on Friday", "when": "2026-10-09T19:00"}) == []
+    assert dates.check_args({"purpose": "Call Max", "when": "2026-10-11T19:00"}) == []      # no weekday named
+    # read-only tools are never blocked; acting ones are
+    assert tools.date_problems("search_conversations", {"query": "Friday 11 October"}) == []
+    assert tools.date_problems("call_external", {"task": "Friday 11 October"})

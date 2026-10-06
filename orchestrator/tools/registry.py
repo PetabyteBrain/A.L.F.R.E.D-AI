@@ -129,6 +129,22 @@ def _truncate(result: Any) -> str:
     return text
 
 
+_READ_ONLY_PREFIXES = ("list_", "get_", "search_", "find_", "calendar_list", "n8n_get", "n8n_list", "homelab_status",
+                       "homelab_logs", "recent_", "agenda", "current_time")
+
+
+def date_problems(name: str, args: dict) -> list[str]:
+    """Weekday/date mismatches in a tool call that acts on something (orchestrator/dates.py)."""
+    if name.startswith(_READ_ONLY_PREFIXES):
+        return []
+    from .. import dates
+    try:
+        return dates.check_args(args)
+    except Exception:  # noqa: BLE001 — a checker bug must never block a tool
+        log.warning("Date check failed for %s", name, exc_info=True)
+        return []
+
+
 async def execute(name: str, args: dict, ctx: ToolContext) -> tuple[str, bool]:
     """Run a tool. Returns (result_text, is_error). Never raises."""
     if not _TOOLS:
