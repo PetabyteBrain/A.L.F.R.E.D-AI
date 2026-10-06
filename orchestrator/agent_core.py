@@ -288,7 +288,8 @@ async def _run(person: Person, channel: str, session_id: str, user_text: str, ex
                 problems = tool_registry.date_problems(block.name, args)
                 if problems:   # weekday and date don't match: correct it before anything acts on it
                     out, is_error = ("Date check failed, nothing was done: " + " ".join(problems)
-                                     + " Fix the date (ask if unsure what they meant) and call again."), True
+                                     + f" Call {block.name} again right now with the corrected date, before you reply "
+                                     "to the person (only ask them if you can't tell which date they meant)."), True
                     db.log_tool_call(block.name, args, out, True, session_id, person.id)
                 else:
                     out, is_error = await tool_registry.execute(block.name, args, ctx)
