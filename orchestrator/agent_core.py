@@ -254,6 +254,8 @@ async def _run(person: Person, channel: str, session_id: str, user_text: str, ex
     max_tokens = 400 if channel == "call" else settings.claude_max_tokens
 
     paused_text = ""   # text from a turn the API paused (pause_turn) before resuming it
+    blocked: set[str] = set()   # tools stopped by the date check and not redone yet
+    nudged = False
     for _ in range(MAX_TOOL_ROUNDS):
         try:
             kwargs = dict(model=settings.claude_model, max_tokens=max_tokens, system=system, messages=messages)
@@ -294,14 +296,25 @@ async def _run(person: Person, channel: str, session_id: str, user_text: str, ex
                 args = dict(block.input or {})
                 problems = tool_registry.date_problems(block.name, args)
                 if problems:   # weekday and date don't match: correct it before anything acts on it
+                    blocked.add(block.name)
                     out, is_error = ("Date check failed, nothing was done: " + " ".join(problems)
                                      + f" Call {block.name} again right now with the corrected date, before you reply "
                                      "to the person (only ask them if you can't tell which date they meant)."), True
                     db.log_tool_call(block.name, args, out, True, session_id, person.id)
                 else:
+                    blocked.discard(block.name)
                     out, is_error = await tool_registry.execute(block.name, args, ctx)
                 results.append({"type": "tool_result", "tool_use_id": block.id, "content": out, "is_error": is_error})
             messages.append({"role": "user", "content": results})
+            continue
+
+        if blocked and not nudged and response.stop_reason == "end_turn":
+            # A step was stopped by the date check and the model is answering without redoing it: one nudge.
+            nudged = True
+            messages.append({"role": "assistant", "content": response.content})
+            messages.append({"role": "user", "content": "[automatic check, not from the person] "
+                             f"{', '.join(sorted(blocked))} was stopped by the date check and hasn't been redone. "
+                             "Call it again now with the corrected date, then answer the person."})
             continue
 
         text = (paused_text + " " + _text_of(response.content)).strip() if paused_text else _text_of(response.content)

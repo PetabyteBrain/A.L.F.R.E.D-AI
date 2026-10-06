@@ -329,11 +329,20 @@ async def run_case(case: Case, people: dict) -> tuple[str | None, list[list[Call
                                            "the changed details."}), False
             return json.dumps(_canned(name, args)), False
         real = tool_registry.execute
+        real_dates = tool_registry.date_problems
+
+        def watched_dates(name, args, _turn=turn):        # record calls the date check stopped, for the report
+            problems = real_dates(name, args)
+            if problems:
+                _turn.append((f"BLOCKED_BY_DATE_CHECK:{name}", dict(args)))
+            return problems
         tool_registry.execute = fake_execute
+        tool_registry.date_problems = watched_dates
         try:
             replies.append(await agent_core.respond(person, case.channel, sid, text))
         finally:
             tool_registry.execute = real
+            tool_registry.date_problems = real_dates
         calls.append(turn)
     return case.check(calls, replies), calls, replies
 
