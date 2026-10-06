@@ -83,7 +83,10 @@ def _canned(name: str, args: dict) -> dict:
             {"path": "Notes/recipe curry.md", "size": 380, "starts_with": "Green curry"},
             {"path": "Notes/ideas.md", "size": 900, "starts_with": "Ideas"},
             {"path": "Notes/garage.txt", "size": 120, "starts_with": "Winter tyres"},
-            {"path": "Lists/Shopping.md", "size": 200, "starts_with": "Shopping"}], "other_files": ["Pets/photo.jpg"]}
+            {"path": "Lists/Shopping.md", "size": 200, "starts_with": "Shopping"}], "other_files": ["Pets/photo.jpg"],
+            "next": "If they asked for a tidy-up, now call notes_reorganize (folders) or notes_rewrite (contents) with "
+                    "your proposed steps. That changes nothing yet; the person sees the steps and says yes or no. "
+                    "Don't list suggestions in your own words instead."}
     if name == "nas_notes" and args.get("action") in ("list", None):
         return {"scope": "personal", "notes": ["Notes/recipe pasta.md", "Notes/recipe curry.md", "Notes/ideas.md",
                                                "Notes/garage.txt", "Lists/Shopping.md"]}

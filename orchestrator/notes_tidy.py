@@ -79,7 +79,10 @@ def overview(person: Person) -> dict:
     counts = {f: sum(1 for n in notes if n["path"].startswith(f + "/")) for f in folders}
     return {"folders": [{"path": f, "notes": counts[f]} for f in sorted(folders)], "notes": notes,
             "other_files": other[:80],
-            "rules": "Only .md/.txt notes can be moved, merged, split or rewritten; other files stay where they are."}
+            "rules": "Only .md/.txt notes can be moved, merged, split or rewritten; other files stay where they are.",
+            "next": "If they asked for a tidy-up, now call notes_reorganize (folders) or notes_rewrite (contents) with "
+                    "your proposed steps. That changes nothing yet; the person sees the steps and says yes or no. "
+                    "Don't list suggestions in your own words instead."}
 
 
 # --- validation --------------------------------------------------------------------------------

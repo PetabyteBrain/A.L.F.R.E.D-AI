@@ -164,6 +164,8 @@ def _dynamic_system(person: Person, channel: str, extra: str | None) -> str:
     days = ", ".join((today + timedelta(days=i)).strftime("%a %d %b") for i in range(1, 15))
     lines = [
         f"Current person: {person.display_name} (user id {person.id}, role: {person.role}).",
+        *([] if person.role in ("admin", "cofounder") else
+          ["This person has no access to the Company company files: never use scope company for them."]),
         f"Channel: {channel}.",
         f"Local time: {now} ({settings.timezone}).",
         f"Coming days: {days}. For a weekday ('this Friday', 'on Saturday') take the first matching day "
