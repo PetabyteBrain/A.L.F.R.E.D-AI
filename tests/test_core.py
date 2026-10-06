@@ -3585,3 +3585,23 @@ def test_date_check_catches_wrong_weekday(monkeypatch):
     # read-only tools are never blocked; acting ones are
     assert tools.date_problems("search_conversations", {"query": "Friday 11 October"}) == []
     assert tools.date_problems("call_external", {"task": "Friday 11 October"})
+
+
+def test_cross_channel_continuity():
+    from fastapi.testclient import TestClient
+    from orchestrator import agent_core, continuity, sessions
+    from orchestrator.main import app
+    admin = registry.lookup("telegram", "111")
+    tg = sessions.start_session(admin.id, "telegram")
+    sessions.add_turn(tg, "user", "Book the garage for the winter tyres")
+    sessions.add_turn(tg, "assistant", "Shall I set a reminder?")
+    block = continuity.prompt_block(admin.id, "web")
+    assert block and "Telegram" in block and "winter tyres" in block and "them:" in block and "you:" in block
+    assert continuity.prompt_block(admin.id, "telegram") is None or "winter tyres" not in continuity.prompt_block(admin.id, "telegram")
+    assert "winter tyres" in agent_core._dynamic_system(admin, "call", None)
+    with TestClient(app, base_url="http://testserver") as c:
+        c.post("/api/login", json={"username": "admin", "password": "correct horse battery"}, headers=CSRF)
+        assert c.get("/api/continuity").json()["on"] is True
+        assert c.put("/api/continuity", json={"on": False}, headers=CSRF).json()["on"] is False
+        assert "winter tyres" not in agent_core._dynamic_system(admin, "web", None)
+        c.put("/api/continuity", json={"on": True}, headers=CSRF)

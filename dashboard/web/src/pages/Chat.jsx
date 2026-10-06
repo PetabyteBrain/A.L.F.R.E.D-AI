@@ -2,7 +2,8 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { api, apiStream } from "../api.js";
 import { ErrorNote } from "../components/common.jsx";
 import Markdown from "../components/Markdown.jsx";
-import { Emblem, Panel } from "../components/hud.jsx";
+import { Panel } from "../components/hud.jsx";
+import { Portrait } from "../components/portraits.jsx";
 
 const time = (iso) => (iso ? new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "");
 
@@ -23,7 +24,11 @@ function Message({ m, assistant }) {
   const waiting = m.streaming && !m.text;
   return (
     <div className={`msg ${mine ? "mine" : "theirs"}${m.failed ? " failed" : ""}${m.streaming ? " streaming" : ""}`}>
-      {!mine && <div className="avatar"><Emblem size="sm" /></div>}
+      {!mine && (
+        <div className="avatar portrait">
+          <Portrait decorative state={m.streaming ? (m.tool ? "reading" : m.text ? "explaining" : "thinking") : "neutral"} />
+        </div>
+      )}
       <div className="bubble">
         <div className="who">{mine ? "You" : assistant}<span>{time(m.ts)}</span></div>
         {mine ? <div className="md"><p>{m.text}</p></div> : !waiting && <Markdown text={m.text} />}
@@ -123,7 +128,7 @@ export default function Chat({ me, assistant }) {
       <div className="chat-scroll" ref={scroller} onScroll={onScroll} aria-live="polite" aria-busy={sending}>
         {messages && messages.length === 0 && (
           <div className="chat-empty">
-            <Emblem size="md" />
+            <Portrait state="greeting" className="chat-hero-img" />
             <h3>How may I be of service?</h3>
             <p className="muted">Ask anything, or try one of these:</p>
             <div className="chips">

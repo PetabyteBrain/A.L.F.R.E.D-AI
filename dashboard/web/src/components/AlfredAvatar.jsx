@@ -3,19 +3,8 @@ import { api, apiStream } from "../api.js";
 import { firstName } from "../format.js";
 import { usePoll } from "../hooks.js";
 import Markdown from "./Markdown.jsx";
+import { Portrait } from "./portraits.jsx";
 
-// Portraits cut from docs/assets/alfred-avatar-sheet.jpg (scripts/crop_avatar.py); hashed by the build.
-const PORTRAITS = Object.fromEntries(
-  Object.entries(import.meta.glob("../assets/avatar/*.webp", { eager: true, import: "default" }))
-    .map(([path, url]) => [path.split("/").pop().replace(".webp", ""), url]),
-);
-const ALT = {
-  neutral: "Alfred", idle: "Alfred, standing by", greeting: "Alfred greeting you", listening: "Alfred listening",
-  thinking: "Alfred thinking", reading: "Alfred checking his tablet", working: "Alfred at the computers",
-  explaining: "Alfred explaining", pleased: "Alfred, pleased", concerned: "Alfred, concerned", firm: "Alfred, arms folded",
-  pointing: "Alfred raising a finger", bow: "Alfred bowing", tea: "Alfred having tea", attentive: "Alfred, attentive",
-  lookout: "Alfred looking out",
-};
 const TIPS_KEY = "alfred-avatar-tips";
 const GREETED_KEY = "alfred-avatar-greeted";
 // Idle life: after a quiet spell he does something (tea, a look to the side, his tablet), holds it a
@@ -49,11 +38,6 @@ function toolLabel(name) {
   if (name.includes("task") || name.includes("reminder")) return "Checking the task list";
   if (name.startsWith("n8n_")) return "Consulting the automation server";
   return "Looking into it";
-}
-
-function Portrait({ state, className }) {
-  const src = PORTRAITS[state] || PORTRAITS.neutral;
-  return <img key={state} className={`avatar-img ${className || ""}`} src={src} alt={ALT[state] || "Alfred"} draggable="false" />;
 }
 
 /* Alfred's avatar: a portrait button on every dashboard tab that opens a small helper with a speech
@@ -110,6 +94,10 @@ export default function AlfredAvatar({ me, assistant, page, pageLabel, onNavigat
     const t = setTimeout(() => setToast({ state: "greeting", text: `${greetingWord(new Date().getHours())}, ${name}. I'm here should you need anything.` }), 1200);
     return () => clearTimeout(t);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // A phone call in progress (scoped like the Live tab): he keeps an eye on it from the corner.
+  const { data: live } = usePoll(() => api("/sessions/active"), 20000);
+  const onCall = (live || []).some((s) => s.channel === "call");
 
   // Systems that fall over: he raises a finger (once per change, not on every poll).
   const { data: health } = usePoll(() => api("/health"), 60000);
@@ -225,9 +213,12 @@ export default function AlfredAvatar({ me, assistant, page, pageLabel, onNavigat
         </section>
       )}
 
-      <button className={`avatar-launcher${open ? " is-open" : ""}`} onClick={open ? closePanel : openPanel}
-              aria-label={open ? `Close ${assistant}` : `Ask ${assistant}`} aria-expanded={open} title={`Ask ${assistant}`}>
-        <Portrait state={open ? state : toast ? toast.state : (["bow", "concerned", ...IDLE_MOMENTS].includes(state) ? state : "idle")} className="launcher-img" />
+      <button className={`avatar-launcher${open ? " is-open" : ""}${onCall && !open ? " on-call" : ""}`} onClick={open ? closePanel : openPanel}
+              aria-label={open ? `Close ${assistant}` : `Ask ${assistant}`} aria-expanded={open}
+              title={onCall && !open ? `${assistant} is keeping an eye on a call` : `Ask ${assistant}`}>
+        <Portrait className="launcher-img" state={open ? state : toast ? toast.state
+          : ["bow", "concerned"].includes(state) ? state : onCall ? "lookout"
+          : IDLE_MOMENTS.includes(state) ? state : "idle"} />
       </button>
     </>
   );

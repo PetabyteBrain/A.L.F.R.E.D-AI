@@ -95,6 +95,7 @@ the original spec is in `docs/archive/original-spec.md`. Keep the plan updated w
   `send_to_user` goes silent by default). Pass `silent=False` only for things the person set up.
 - New columns on existing tables go in `db.ADDED_COLUMNS` (applied on start).
 - `memory.prompt_block` goes into `_dynamic_system` only, never into STATIC_SYSTEM (cache).
+- Same for `continuity.prompt_block` (other-channel turns; per-person switch `users.cross_channel`).
 - Conversation search: FTS5 `transcripts_fts` (triggers in db.SCHEMA); scoping rules live in
   `orchestrator/search.py` (own + calls requested; admin all). Telegram output goes through
   `tg_format.md_to_html` (validated tags), never raw parse_mode Markdown.

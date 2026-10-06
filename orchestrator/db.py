@@ -482,6 +482,7 @@ def _migrate_identifier_verified_at() -> None:
 
 # Columns added after tables already existed in production: (table, column, declaration).
 ADDED_COLUMNS = [
+    ("users", "cross_channel", "INTEGER NOT NULL DEFAULT 1"),         # continuity.py: recent turns from other channels
     ("scheduled_calls", "urgent", "INTEGER NOT NULL DEFAULT 0"),      # skips the target's quiet hours
     ("tasks", "owner_user_id", "INTEGER REFERENCES users(id) ON DELETE SET NULL"),
     ("tasks", "requested_by", "INTEGER REFERENCES users(id) ON DELETE SET NULL"),

@@ -9,6 +9,7 @@ import QuietHoursCard from "../components/QuietHoursCard.jsx";
 import GoogleCalendarCard from "../components/GoogleCalendarCard.jsx";
 import TwoFactorCard from "../components/TwoFactorCard.jsx";
 import VoiceModeCard from "../components/VoiceModeCard.jsx";
+import ContinuityCard from "../components/ContinuityCard.jsx";
 import MyDataCard from "../components/MyDataCard.jsx";
 import { Panel } from "../components/hud.jsx";
 
@@ -98,6 +99,7 @@ export default function Profile({ assistant, refreshMe }) {
           <GoogleCalendarCard assistant={assistant} />
           <QuietHoursCard assistant={assistant} />
           <VoiceModeCard assistant={assistant} />
+          <ContinuityCard assistant={assistant} />
           <BriefingCard assistant={assistant} />
           <MemoryCard assistant={assistant} />
           <MyDataCard assistant={assistant} />

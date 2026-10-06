@@ -52,6 +52,7 @@ class Case:
     check: Callable[[list[list[Call]], list[str]], str | None]   # (calls per turn, replies) -> problem or None
     channel: str = "telegram"
     history: list[tuple[str, str]] = field(default_factory=list)  # (speaker, text) before the first turn
+    elsewhere: list[tuple[str, str, str]] = field(default_factory=list)  # (channel, speaker, text) on other channels
 
 
 # --- canned tool results ---------------------------------------------------------------------
@@ -188,6 +189,10 @@ def _schedule_question(calls, replies):
     return None if re.search(r"wake|workout", replies[-1], re.I) else "didn't mention the Saturday reminders"
 
 
+def _continues_thread(calls, replies):
+    return None if re.search(r"tyre|tire|garage|winter", replies[-1], re.I) else         "didn't pick up what was said on Telegram"
+
+
 def _reminder(calls, replies):
     return None if "set_reminder" in _names(_all(calls)) else "didn't set a reminder"
 
@@ -227,6 +232,10 @@ RELAYED = ("📞 Message from an unknown caller +41790000101 · no one named\nCa
 
 CASES = [
     Case("reminder", "admin", ["Remind me tomorrow at 9 to call the bank."], _reminder),
+    Case("continues_telegram_thread", "admin", ["What was the thing I asked you about on Telegram earlier?"],
+         _continues_thread, channel="web",
+         elsewhere=[("telegram", "user", "I need to get the winter tyres changed at the garage before the first snow."),
+                    ("telegram", "assistant", "Noted, sir. Shall I set a reminder to book the garage?")]),
     Case("saturday_reminders_checked", "admin", ["What reminders do I have for Saturdays?"], _schedule_question, channel="web"),
     Case("saturday_morning_uses_agenda", "admin", ["Do I have anything on Saturday between 9 and 11 am?"],
          _schedule_question, channel="web"),
@@ -276,6 +285,9 @@ async def run_case(case: Case, people: dict) -> tuple[str | None, list[list[Call
     sid = sessions.start_session(person.id, case.channel)
     for speaker, text in case.history:
         sessions.add_turn(sid, speaker, text)
+    for channel, speaker, text in case.elsewhere:
+        other = sessions.start_session(person.id, channel)
+        sessions.add_turn(other, speaker, text)
     calls: list[list[Call]] = []
     replies: list[str] = []
     for text in case.turns:

@@ -14,7 +14,7 @@ from zoneinfo import ZoneInfo
 
 import anthropic
 
-from . import db, memory, sessions, usage, voice_replies
+from . import continuity, db, memory, sessions, usage, voice_replies
 from .config import settings
 from .identity.registry import Person
 from .tools import registry as tool_registry
@@ -170,6 +170,9 @@ def _dynamic_system(person: Person, channel: str, extra: str | None) -> str:
     voice = voice_replies.prompt_line(person.id, channel)
     if voice:
         lines.append(voice)
+    elsewhere = continuity.prompt_block(person.id, channel)
+    if elsewhere:
+        lines.append(elsewhere)
     if extra:
         lines.append(extra)
     return "\n".join(lines)

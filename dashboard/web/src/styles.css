@@ -1281,3 +1281,28 @@ main[hidden], [hidden] { display: none !important; }
   .stage-img { width: 84px; height: 84px; }
 }
 @media (prefers-reduced-motion: reduce) { .avatar-img, .avatar-panel, .avatar-toast { animation: none; } }
+.avatar-launcher.on-call { border-color: rgb(var(--ok-rgb)); box-shadow: 0 10px 30px -8px rgb(0 0 0 / .8), 0 0 0 4px rgb(var(--ok-rgb) / .25); animation: onCall 2.4s ease-in-out infinite; }
+@keyframes onCall { 50% { box-shadow: 0 10px 30px -8px rgb(0 0 0 / .8), 0 0 0 7px rgb(var(--ok-rgb) / .12); } }
+
+/* Alfred's portrait in the Chat tab */
+.msg .avatar.portrait { width: 40px; height: 40px; border-radius: 50%; overflow: hidden; border: 1px solid var(--line-strong); align-self: flex-start; }
+.chat-hero-img { width: 132px; height: 132px; border-radius: 50%; border: 2px solid var(--line-strong); box-shadow: 0 12px 30px -10px rgb(0 0 0 / .8); }
+:root[data-theme="matrix"] .chat-hero-img, :root[data-theme="matrix"] .msg .avatar.portrait img { filter: grayscale(1) sepia(1) hue-rotate(70deg) saturate(3) brightness(.9); }
+@media (max-width: 700px) { .msg .avatar.portrait { display: block; width: 30px; height: 30px; } }
+
+/* Alfred skin: his messages as notecards (ivory, faint rules, dark serif), people as calling cards */
+:root[data-theme="alfred"] :is(.msg.theirs .bubble, .speech) {
+  --text: #2a2a2e; --text-strong: #111113; --muted: #6a6a70; --faint: #9a9aa0; --line: rgb(0 0 0 / .12);
+  color: var(--text-strong); border: 0; border-left: 0; border-radius: 3px;
+  background: repeating-linear-gradient(180deg, transparent 0 27px, rgb(40 60 90 / .07) 27px 28px), linear-gradient(180deg, #f7f5ef, #eeebe3);
+  box-shadow: 0 1px 0 rgb(255 255 255 / .6) inset, 0 10px 24px -12px rgb(0 0 0 / .9); }
+:root[data-theme="alfred"] .msg.theirs .bubble :is(a, code) { color: #111113; }
+:root[data-theme="alfred"] .msg.theirs .bubble code, :root[data-theme="alfred"] .speech code { background: rgb(0 0 0 / .06); border-color: rgb(0 0 0 / .1); }
+:root[data-theme="alfred"] .msg.theirs .who { color: #6a6a70; }
+:root[data-theme="alfred"] .speech::before { background-color: #f4f1ea; border-color: transparent; }
+:root[data-theme="alfred"] .speech .tool-note .led, :root[data-theme="alfred"] .msg.theirs .dots i { background: #111113; box-shadow: none; }
+:root[data-theme="alfred"] .person-row { border: 1px solid rgb(255 255 255 / .14); border-left: 1px solid rgb(255 255 255 / .14);
+  box-shadow: inset 0 0 0 3px rgb(14 14 16), inset 0 0 0 4px rgb(255 255 255 / .05); border-radius: 2px; padding: 12px 16px; }
+:root[data-theme="alfred"] .person-row > div:first-child > div:first-child { font-family: var(--font-display); font-variant: small-caps; letter-spacing: .06em; font-size: 19px; }
+:root[data-theme="alfred"] .conn-item { border-bottom: 1px solid rgb(255 255 255 / .08); }
+:root[data-theme="alfred"] :is(.msg.theirs .bubble, .speech) :is(th, h3, h4, blockquote) { color: #3c3c42; }
