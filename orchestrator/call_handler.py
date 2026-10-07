@@ -27,7 +27,7 @@ from xml.sax.saxutils import quoteattr
 
 from fastapi import APIRouter, HTTPException, Request, Response, WebSocket, WebSocketDisconnect
 
-from . import agent_core, db, sessions, usage
+from . import ai_config, agent_core, db, sessions, usage
 from .config import settings
 from .identity import registry
 from .identity.registry import Person
@@ -395,7 +395,7 @@ async def voicemail_message(person: Person, info: dict) -> str:
     fallback = (f"Hello {first}, this is {name}{on_behalf}. "
                 + ("I'll try you again a little later." if purpose else "Nothing urgent; I'll try again later.")
                 + " Goodbye.")
-    if not purpose or not settings.anthropic_api_key:
+    if not purpose or not ai_config.configured():
         return fallback
     try:
         from .agent_core import client

@@ -5,6 +5,7 @@ roughly a cent or two for the whole set).
     docker compose exec alfred python -m orchestrator.evals            # all checks (on the Pi)
     docker compose exec alfred python -m orchestrator.evals --list
     docker compose exec alfred python -m orchestrator.evals --only outside_call_confirms_first
+    docker compose exec alfred python -m orchestrator.evals --model claude-sonnet-5-5   # another model, this run only
     RUN_EVALS=1 pytest tests/test_evals.py                              # locally, with ANTHROPIC_API_KEY
 
 Safe to run anywhere: a throwaway database in a temp folder, no Telegram/Twilio/n8n/Google/web
@@ -373,7 +374,8 @@ async def main(only: str | None = None) -> int:
                 print(f"        turn {i + 1} tools: {[(n, a) for n, a in t]}")
                 print(f"        turn {i + 1} reply: {r[:300]!r}")
     cost = db.query_one("SELECT SUM(cost_usd) AS c FROM api_usage")["c"] or 0
-    print(f"\n{len(cases) - failed}/{len(cases)} passed · model {settings.claude_model} · cost ≈ ${cost:.3f}")
+    from . import ai_config
+    print(f"\n{len(cases) - failed}/{len(cases)} passed · model {ai_config.current()['model']} · cost ≈ ${cost:.3f}")
     return 1 if failed else 0
 
 
@@ -383,4 +385,8 @@ if __name__ == "__main__":
         print("\n".join(c.name for c in CASES))
         sys.exit(0)
     only = args[args.index("--only") + 1] if "--only" in args else None
+    if "--model" in args:                    # stored in the throwaway database, so only this run uses it
+        db.init_db()
+        chosen = args[args.index("--model") + 1]
+        db.set_setting("ai", {"key": "primary", "model": chosen, "effort": "medium", "call_model": chosen})
     sys.exit(asyncio.run(main(only)))

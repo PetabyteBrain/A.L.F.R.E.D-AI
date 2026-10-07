@@ -6,7 +6,7 @@ import logging
 
 import anthropic
 
-from . import call_handler, db, sessions, telegram_handler
+from . import ai_config, call_handler, db, sessions, telegram_handler
 from .config import settings
 from .tools import n8n_tool
 
@@ -16,11 +16,11 @@ INTERVAL = 300  # seconds
 
 
 async def _claude() -> tuple[bool, str]:
-    if not settings.anthropic_api_key:
+    if not ai_config.configured():
         return False, "not configured"
     try:
         from .agent_core import client
-        m = await client().models.retrieve(settings.claude_model)
+        m = await client().models.retrieve(ai_config.current()["model"])
         return True, f"{m.id} reachable"
     except anthropic.AuthenticationError:
         return False, "authentication failed"

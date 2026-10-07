@@ -21,13 +21,13 @@ log = logging.getLogger(__name__)
 
 def _insert(provider: str, kind: str, *, model: str = "", input_tokens: int = 0, output_tokens: int = 0,
             cache_read: int = 0, cache_write: int = 0, units: float = 0, unit: str = "", cost: float = 0,
-            user_id: int | None = None, session_id: str | None = None) -> None:
+            user_id: int | None = None, session_id: str | None = None, account: str | None = None) -> None:
     try:
         db.execute(
             "INSERT INTO api_usage(ts, provider, kind, model, input_tokens, output_tokens, cache_read_tokens, "
-            "cache_write_tokens, units, unit, cost_usd, user_id, session_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "cache_write_tokens, units, unit, cost_usd, user_id, session_id, account) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (db.now_iso(), provider, kind, model, input_tokens, output_tokens, cache_read, cache_write,
-             units, unit, round(cost, 6), user_id, session_id),
+             units, unit, round(cost, 6), user_id, session_id, account),
         )
     except Exception:  # metering must never break the actual work
         log.exception("usage insert failed")
@@ -41,14 +41,18 @@ def record_claude(usage, *, kind: str, user_id: int | None = None, session_id: s
     o = getattr(usage, "output_tokens", 0) or 0
     cr = getattr(usage, "cache_read_input_tokens", 0) or 0
     cw = getattr(usage, "cache_creation_input_tokens", 0) or 0
-    cost = (i * settings.price_claude_input + o * settings.price_claude_output
-            + cr * settings.price_claude_cache_read + cw * settings.price_claude_cache_write) / 1_000_000
-    _insert("anthropic", kind, model=model or settings.claude_model, input_tokens=i, output_tokens=o,
-            cache_read=cr, cache_write=cw, cost=cost, user_id=user_id, session_id=session_id)
+    from . import ai_config
+    model = model or settings.claude_model
+    p_in, p_out, p_cr, p_cw = ai_config.price(model)
+    cost = (i * p_in + o * p_out + cr * p_cr + cw * p_cw) / 1_000_000
+    account = ai_config.key_name()
+    _insert("anthropic", kind, model=model, input_tokens=i, output_tokens=o,
+            cache_read=cr, cache_write=cw, cost=cost, user_id=user_id, session_id=session_id, account=account)
     searches = getattr(getattr(usage, "server_tool_use", None), "web_search_requests", 0) or 0
     if searches:
         _insert("anthropic", "web_search", model="web_search", units=searches, unit="searches",
-                cost=searches * settings.price_web_search_per_1k / 1000, user_id=user_id, session_id=session_id)
+                cost=searches * settings.price_web_search_per_1k / 1000, user_id=user_id, session_id=session_id,
+                account=account)
 
 
 def record_tts(chars: int, *, user_id: int | None, session_id: str | None, provider: str = "elevenlabs") -> None:
@@ -140,6 +144,9 @@ def report(days: int) -> dict:
         "a.cache_write_tokens) AS input, SUM(a.output_tokens) AS output, SUM(a.cost_usd) AS cost "
         "FROM api_usage a LEFT JOIN users u ON u.id = a.user_id WHERE a.ts >= ? "
         "GROUP BY a.user_id ORDER BY cost DESC", (since,))
+    by_account = q(
+        "SELECT COALESCE(account, 'primary') AS account, SUM(cost_usd) AS cost, COUNT(*) AS requests FROM api_usage "
+        "WHERE provider = 'anthropic' AND ts >= ? GROUP BY COALESCE(account, 'primary') ORDER BY cost DESC", (since,))
     total = sum((r["cost"] or 0) for r in claude) + sum((r["cost"] or 0) for r in eleven)
     return {
         "days": days,
@@ -152,6 +159,7 @@ def report(days: int) -> dict:
         "voice": voice,
         "requests": requests,
         "by_user": by_user,
+        "by_account": by_account,
         "prices": {
             "claude_input_per_mtok": settings.price_claude_input,
             "claude_output_per_mtok": settings.price_claude_output,

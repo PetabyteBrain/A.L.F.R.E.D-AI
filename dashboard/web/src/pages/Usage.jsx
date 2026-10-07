@@ -164,14 +164,17 @@ export default function Usage() {
                   {!u.by_user.length && <tr><td colSpan={4} className="muted">—</td></tr>}
                 </tbody>
               </table>
+              {(u.by_account || []).length > 0 && (
+                <p className="muted small">Claude by API key: {u.by_account.map((r) => `${r.account} ${usd(r.cost)}`).join(" · ")}</p>
+              )}
               {u.requests.length > 0 && (
                 <p className="muted small">{u.requests.map((r) => `${r.provider} ${r.kind}: ${compact(r.requests)} requests`).join(" · ")}</p>
               )}
             </section>
           </div>
           <p className="muted tiny">
-            Claude figures are exact (from each API response), priced at ${u.prices.claude_input_per_mtok}/M input,
-            {" "}${u.prices.claude_output_per_mtok}/M output, ${u.prices.claude_cache_read_per_mtok}/M cache reads.
+            Claude figures are exact (from each API response), each priced at its model's rates (Haiku 4.5: $1/M input,
+            {" "}$5/M output; Sonnet 5.5: $2 / $10; Opus 5.5: $4 / $20; Fable 5.1: $10 / $50).
             {" "}ElevenLabs is metered by characters and seconds; set PRICE_ELEVENLABS_* in .env for cost estimates.
             {" "}Telegram and Google Calendar have no usage charges.
           </p>

@@ -15,7 +15,7 @@ from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request, Res
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, ConfigDict, Field
 
-from orchestrator import db, health, sessions
+from orchestrator import ai_config, db, health, sessions
 from orchestrator.config import settings
 from orchestrator.identity import mfa, registry
 from orchestrator.identity.registry import Person
@@ -529,7 +529,7 @@ async def overview(person: Person = Depends(current_person)) -> dict:
             "n8n": settings.n8n_enabled,
             "google": settings.google_enabled,
         },
-        "model": settings.claude_model,
+        "model": ai_config.current()["model"],
     }
 
 

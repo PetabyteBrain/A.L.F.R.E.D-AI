@@ -14,7 +14,7 @@ from zoneinfo import ZoneInfo
 
 import httpx
 
-from . import db, usage
+from . import ai_config, db, usage
 from .config import settings
 from .identity import registry
 from .identity.registry import Person
@@ -274,7 +274,7 @@ async def compose(person: Person, data: dict, channel: str) -> str:
               f"present, add a gentle nudge about those. Mention anything 'unavailable' in a few words. {style} "
               f"Address them as {who}. End with one "
               f"brief, dry, kind remark, not a question.")
-    if not settings.anthropic_api_key:
+    if not ai_config.configured():
         return f"Good morning, {who}. (Briefing text needs the language model, which isn't configured.)"
     resp = await client().messages.create(model=settings.claude_model, max_tokens=500, system=system,
                                           messages=[{"role": "user", "content": json.dumps(data, ensure_ascii=False)}])

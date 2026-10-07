@@ -14,7 +14,7 @@ from zoneinfo import ZoneInfo
 
 import anthropic
 
-from . import continuity, db, memory, sessions, usage, voice_replies
+from . import ai_config, continuity, db, memory, sessions, usage, voice_replies
 from .config import settings
 from .identity.registry import Person
 from .tools import registry as tool_registry
@@ -32,10 +32,9 @@ OnEvent = Callable[[str, str], Awaitable[None]]
 
 
 def client() -> anthropic.AsyncAnthropic:
-    global _client
-    if _client is None:
-        _client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key or None, max_retries=3, timeout=60.0)
-    return _client
+    """Client for the API key selected on the Settings tab (orchestrator/ai_config.py). `_client`, when set,
+    overrides it (tests and the dev server inject a fake model there)."""
+    return _client if _client is not None else ai_config.client()
 
 
 # Stable part of the system prompt — keep it byte-identical between requests so it caches.
@@ -243,26 +242,28 @@ async def _call_model(kwargs: dict, on_event: OnEvent | None):
 
 async def _run(person: Person, channel: str, session_id: str, user_text: str, extra_system: str | None,
                on_event: OnEvent | None = None, attachments: list[dict] | None = None) -> str:
-    if not settings.anthropic_api_key:
-        return "My language model isn't configured yet (ANTHROPIC_API_KEY is empty)."
+    if not ai_config.configured():
+        return "My language model isn't configured yet (no Anthropic API key for the selected account)."
 
     messages = _merge_user(sessions.history(person.id, channel), user_text)
     if attachments:                    # e.g. a photo sent on Telegram: shown to the model for this turn only
         messages[-1] = {"role": "user", "content": [*attachments, {"type": "text", "text": messages[-1]["content"]}]}
+    model = ai_config.model_for(channel)
     tools = tool_registry.tools_for(person.role, channel, person.id)
+    tools = [{**t, "type": ai_config.web_search_type(model)} if t.get("type", "").startswith("web_search_") else t
+             for t in tools]
     system = [
         {"type": "text", "text": STATIC_SYSTEM, "cache_control": {"type": "ephemeral"}},
         {"type": "text", "text": _dynamic_system(person, channel, extra_system)},
     ]
     ctx = ToolContext(person=person, session_id=session_id, channel=channel)
-    max_tokens = 400 if channel == "call" else settings.claude_max_tokens
 
     paused_text = ""   # text from a turn the API paused (pause_turn) before resuming it
     blocked: set[str] = set()   # tools stopped by the date check and not redone yet
     nudged = False
     for _ in range(MAX_TOOL_ROUNDS):
         try:
-            kwargs = dict(model=settings.claude_model, max_tokens=max_tokens, system=system, messages=messages)
+            kwargs = dict(model=model, system=system, messages=messages, **ai_config.request_params(model, channel))
             if tools:
                 kwargs["tools"] = tools
             response = await _call_model(kwargs, on_event)
@@ -280,8 +281,19 @@ async def _run(person: Person, channel: str, session_id: str, user_text: str, ex
             db.set_health("claude", False, "connection error")
             return "I can't reach my language model right now (network)."
 
-        db.set_health("claude", True, f"ok ({settings.claude_model})")
-        usage.record_claude(getattr(response, "usage", None), kind=channel, user_id=person.id, session_id=session_id)
+        db.set_health("claude", True, f"ok ({model})")
+        usage.record_claude(getattr(response, "usage", None), kind=channel, user_id=person.id, session_id=session_id,
+                            model=model)
+
+        if response.stop_reason == "refusal" and model != ai_config.HAIKU:
+            # A safety classifier on the bigger model declined: answer this turn with Haiku instead
+            # (its reasoning from this turn is dropped by the API; history is unchanged).
+            log.info("Refusal on %s (%s); retrying the turn on %s", model,
+                     getattr(getattr(response, "stop_details", None), "category", None), ai_config.HAIKU)
+            model = ai_config.HAIKU
+            tools = [{**t, "type": ai_config.web_search_type(model)} if t.get("type", "").startswith("web_search_")
+                     else t for t in tools]
+            continue
 
         if response.stop_reason == "pause_turn":
             # Server-side tool loop (web search) paused: send the turn back as-is and it resumes.

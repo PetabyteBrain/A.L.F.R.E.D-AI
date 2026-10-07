@@ -3666,3 +3666,46 @@ def test_notes_tidy(monkeypatch, tmp_path):
         raise AssertionError("applied twice")
     except notes_tidy.TidyError:
         pass
+
+
+def test_ai_model_and_key_switch(monkeypatch):
+    from fastapi.testclient import TestClient
+    from orchestrator import ai_config, usage
+    from orchestrator.main import app
+    monkeypatch.setenv("ANTHROPIC_API_KEY_2", "sk-ant-second-key-9z9z")
+    monkeypatch.setenv("ANTHROPIC_KEY_2_LABEL", "Company")
+    db.execute("DELETE FROM app_settings WHERE key = 'ai'")
+    assert ai_config.current() == ai_config.DEFAULTS
+    # Haiku: no thinking parameters; the bigger models: effort + room to think, web search variant
+    assert ai_config.request_params("claude-haiku-4-5", "web") == {"max_tokens": ai_config.settings.claude_max_tokens}
+    p = ai_config.request_params("claude-sonnet-5-5", "web")
+    assert p["output_config"] == {"effort": "medium"} and p["max_tokens"] >= 16000
+    assert ai_config.request_params("claude-opus-5-5", "call")["output_config"] == {"effort": "low"}
+    assert ai_config.web_search_type("claude-haiku-4-5") == "web_search_20250305"
+    assert ai_config.web_search_type("claude-opus-5-5") == "web_search_20260209"
+
+    with TestClient(app, base_url="http://testserver") as c:
+        c.post("/api/login", json={"username": "admin", "password": "correct horse battery"}, headers=CSRF)
+        d = c.get("/api/settings/ai").json()
+        keys = {k["id"]: k for k in d["keys"]}
+        assert keys["secondary"]["label"] == "Company" and keys["secondary"]["hint"] == "…9z9z"
+        assert "sk-ant-second-key" not in c.get("/api/settings/ai").text            # never the key itself
+        r = c.put("/api/settings/ai", json={"key": "secondary", "model": "claude-sonnet-5-5", "effort": "low"}, headers=CSRF)
+        assert r.status_code == 200 and r.json()["current"]["model"] == "claude-sonnet-5-5"
+        assert c.put("/api/settings/ai", json={"model": "gpt-4"}, headers=CSRF).status_code == 400
+        assert c.put("/api/settings/ai", json={"effort": "max"}, headers=CSRF).status_code == 400
+        c.post("/api/view-as", json={"role": "cofounder"}, headers=CSRF)
+        assert c.get("/api/settings/ai").status_code == 403                              # admins only
+        c.delete("/api/view-as", headers=CSRF)
+
+    assert ai_config.model_for("web") == "claude-sonnet-5-5" and ai_config.model_for("call") == "claude-haiku-4-5"
+    assert ai_config.client().api_key == "sk-ant-second-key-9z9z"
+    # usage: priced for the model, booked to the key that paid
+    class U: input_tokens, output_tokens, cache_read_input_tokens, cache_creation_input_tokens = 1_000_000, 100_000, 0, 0
+    usage.record_claude(U(), kind="web", model="claude-sonnet-5-5")
+    row = db.query_one("SELECT cost_usd, account FROM api_usage ORDER BY id DESC LIMIT 1")
+    assert row["account"] == "secondary" and abs(row["cost_usd"] - (2.0 + 1.0)) < 1e-6
+    # the chosen key disappears from .env: back to the primary one
+    monkeypatch.delenv("ANTHROPIC_API_KEY_2")
+    assert ai_config.key_name() == "primary"
+    db.execute("DELETE FROM app_settings WHERE key = 'ai'")

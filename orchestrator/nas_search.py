@@ -32,7 +32,8 @@ CACHE_FILES = 600
 
 def _ask(system: str, content: str, max_tokens: int, user_id: int) -> str:
     import anthropic
-    client = anthropic.Anthropic(api_key=settings.anthropic_api_key or None, max_retries=2, timeout=30)
+    from . import ai_config
+    client = ai_config.sync_client(timeout=30)
     resp = client.messages.create(model=settings.claude_model, max_tokens=max_tokens, system=system,
                                   messages=[{"role": "user", "content": content}])
     usage.record_claude(getattr(resp, "usage", None), kind="nas_search", user_id=user_id)
