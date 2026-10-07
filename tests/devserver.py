@@ -154,8 +154,22 @@ def fake_claude() -> None:
                 content.append(NS(type="tool_use", id="tu1", name="current_time", input={}))
             return NS(stop_reason="tool_use" if self.tool else "end_turn", content=content, usage=None)
 
+    class PlanStream(Stream):                  # Files tab "Tidy up": a small demo plan
+        def __init__(self, structure):
+            super().__init__("", tool=False)
+            self.steps = ([{"op": "folder", "path": "Travel"}, {"op": "move", "from": "Lists/Packing.md", "to": "Travel/Packing.md"},
+                           {"op": "move", "from": "Notes/Gone.md", "to": "Travel/Gone.md"}] if structure else
+                          [{"op": "write", "path": "Notes/Projects/Ideas.md", "text": "# Ideas\n\n- Garden shed\n- Alps trip\n"}])
+
+        async def get_final_message(self):
+            await asyncio.sleep(1.0)
+            return NS(stop_reason="tool_use", usage=None, content=[NS(type="tool_use", id="tp1", name="propose_plan", input={
+                "summary": "Demo plan from the preview server.", "steps": self.steps})])
+
     class Messages:
         def stream(self, **kw):
+            if any(t.get("name") == "propose_plan" for t in kw.get("tools", [])):
+                return PlanStream("FOLDER STRUCTURE" in kw.get("system", ""))
             last = kw["messages"][-1]["content"]
             if isinstance(last, str) and "calendar" in last.lower():
                 return Stream("Let me have a look.", tool=True)

@@ -1349,7 +1349,9 @@ main[hidden], [hidden] { display: none !important; }
 .tidy-form { display: grid; gap: 8px; justify-items: start; }
 .tidy-form textarea { width: 100%; }
 .tidy-steps { list-style: none; margin: 8px 0; padding: 0; display: grid; gap: 6px; }
-.tidy-steps label { display: inline; overflow-wrap: anywhere; cursor: pointer; }
-.tidy-steps .link { margin-left: 8px; }
+.tidy-steps label { display: inline-flex; align-items: baseline; gap: 8px; overflow-wrap: anywhere; cursor: pointer;
+  font-size: 13px; text-transform: none; letter-spacing: normal; }
+.tidy-steps input[type="checkbox"] { width: auto; flex: none; margin: 0; }
+.tidy-steps .link { margin-left: 8px; font-size: 12px; }
 .tidy-text { white-space: pre-wrap; max-height: 260px; overflow: auto; font-size: 12px; padding: 8px; margin: 6px 0 0;
   border: 1px solid var(--line); border-radius: 6px; }
