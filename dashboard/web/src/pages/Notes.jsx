@@ -251,6 +251,14 @@ export default function Notes({ assistant }) {
   const [active, setActive] = useState(null);
   const [refresh, setRefresh] = useState(0);
   const [tidy, setTidy] = useState(false);
+  const [wide, setWide] = useState(() => { try { return localStorage.getItem("alfred-files-wide") === "1"; } catch { return false; } });
+  useEffect(() => {
+    try { localStorage.setItem("alfred-files-wide", wide ? "1" : "0"); } catch { /* storage blocked */ }
+    if (!wide) return undefined;
+    const esc = (e) => { if (e.key === "Escape" && !e.target.closest?.("textarea, input")) setWide(false); };
+    window.addEventListener("keydown", esc);
+    return () => window.removeEventListener("keydown", esc);
+  }, [wide]);
   const [dirty, setDirty] = useState(() => new Set());     // open files with unsaved edits
   const markDirty = useCallback((k, d) => setDirty((s) => {
     if (d === s.has(k)) return s;
@@ -299,8 +307,8 @@ export default function Notes({ assistant }) {
         <TidyUp assistant={assistant} unsaved={dirty.size} onClose={() => setTidy(false)}
                 onDone={() => setRefresh((n) => n + 1)} />
       )}
-      <div className="files-grid">
-        <div>
+      <div className={`files-grid${wide && current ? " wide" : ""}`}>
+        <div className="files-side">
           <Explorer scope={scope} path={path} setPath={setPath} onOpen={open} refreshKey={refresh}
                     onChanged={() => setRefresh((n) => n + 1)} />
           <Recent data={recent} onOpen={open} scopes={st.scopes} />
@@ -321,7 +329,13 @@ export default function Notes({ assistant }) {
           {/* every open file stays mounted, so switching between file tabs keeps unsaved edits */}
           {tabs.map((t) => (
             <div key={key(t)} hidden={key(t) !== active}>
-              <div className="muted tiny file-path">{SCOPE_LABEL[t.scope]} / {t.path}</div>
+              <div className="file-path-row">
+                <span className="muted tiny file-path">{SCOPE_LABEL[t.scope]} / {t.path}</span>
+                <button className="btn ghost small" onClick={() => setWide(!wide)} aria-pressed={wide}
+                        title={wide ? "Back to the explorer beside the file (Esc)" : "Use the whole page width for this file"}>
+                  {wide ? "⤡ Show explorer" : "⤢ Page width"}
+                </button>
+              </div>
               <FileEditor file={t} onSaved={() => setRefresh((n) => n + 1)} onDirty={(d) => markDirty(key(t), d)} />
             </div>
           ))}

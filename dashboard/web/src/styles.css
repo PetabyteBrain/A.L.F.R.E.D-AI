@@ -1375,3 +1375,12 @@ main[hidden], [hidden] { display: none !important; }
 .pv-notes { margin: 6px 0 0; }
 .pv-text { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 70vh; overflow: auto; font-size: 12.5px;
   border: 1px solid var(--line); border-radius: 6px; padding: 10px; }
+
+/* Files tab: page-width mode (explorer hidden) */
+.files-grid.wide { grid-template-columns: minmax(0, 1fr); }
+.files-grid.wide > .files-side { display: none; }
+.files-grid.wide .pv-frame { height: calc(100vh - 150px); }
+.file-path-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 6px; }
+.file-path-row .file-path { margin-bottom: 0; min-width: 0; }
+.file-path-row .btn { flex: none; }
+.pv-modes { margin-bottom: 8px; }

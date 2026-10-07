@@ -17,6 +17,13 @@ WORKDIR /app
 # ssh client: the homelab operator reaches hosts with a restricted key (orchestrator/homelab.py)
 RUN apt-get update && apt-get install -y --no-install-recommends openssh-client \
     && rm -rf /var/lib/apt/lists/*
+# LibreOffice (no GUI) turns Word/Excel/PowerPoint files into PDFs for the Files tab's document view
+# (orchestrator/office_pdf.py). Liberation/Carlito/Caladea are metric-compatible with Arial/Times/Calibri/
+# Cambria, so layouts don't shift.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        libreoffice-writer-nogui libreoffice-calc-nogui libreoffice-impress-nogui \
+        fonts-liberation2 fonts-crosextra-carlito fonts-crosextra-caladea fonts-dejavu-core \
+    && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
 RUN pip install -r requirements.txt

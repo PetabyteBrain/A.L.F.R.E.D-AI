@@ -7,8 +7,8 @@ from typing import Literal
 
 from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
-from fastapi.responses import Response
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
+from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 from orchestrator import nas, nas_files, company_todo
@@ -126,21 +126,100 @@ async def file_preview_json(scope: AnyScope, path: str = Query(max_length=400), 
         raise HTTPException(status_code=400, detail=str(e))
 
 
+_RANGE_CHUNK = 4 * 1024 * 1024          # an open-ended range ("bytes=0-") is answered in pieces of this size
+_STREAM_CHUNK = 1024 * 1024
+
+
+def _view_headers(name: str, kind: str) -> dict:
+    return {"Content-Disposition": f"inline; filename*=UTF-8''{quote(name)}", "Cache-Control": "private, no-store",
+            "Accept-Ranges": "bytes", "X-Frame-Options": "SAMEORIGIN",
+            # Chrome's PDF viewer counts as a plugin: object-src 'none' would blank it, so PDFs only limit framing.
+            "Content-Security-Policy": "frame-ancestors 'self'" if kind == "application/pdf" else
+            "default-src 'none'; img-src 'self' data:; media-src 'self'; frame-ancestors 'self'"}
+
+
+def _parse_range(header: str | None, size: int) -> tuple[int, int] | None:
+    """(start, end inclusive) for a single 'bytes=a-b' / 'bytes=a-' / 'bytes=-n' range, else None."""
+    if not header or not header.startswith("bytes=") or "," in header:
+        return None
+    a, _, b = header[6:].strip().partition("-")
+    try:
+        if a == "":
+            n = int(b)
+            return (max(0, size - n), size - 1) if n > 0 else None
+        start = int(a)
+        end = min(int(b), size - 1) if b else min(start + _RANGE_CHUNK - 1, size - 1)
+    except ValueError:
+        return None
+    return (start, end) if start <= end < size else None
+
+
+def _ranged(request: Request, size: int, read, name: str, kind: str) -> Response:
+    """200 (streamed) or 206 for a byte range; `read(start, length)` is a blocking reader."""
+    headers = _view_headers(name, kind)
+    rng = _parse_range(request.headers.get("range"), size)
+    if request.headers.get("range") and rng is None:
+        return Response(status_code=416, headers={"Content-Range": f"bytes */{size}"})
+    if rng:
+        start, end = rng
+        data = read(start, end - start + 1)
+        return Response(data, status_code=206, media_type=kind,
+                        headers={**headers, "Content-Range": f"bytes {start}-{end}/{size}"})
+
+    async def body():
+        pos = 0
+        while pos < size:
+            chunk = await asyncio.to_thread(read, pos, min(_STREAM_CHUNK, size - pos))
+            if not chunk:
+                break
+            pos += len(chunk)
+            yield chunk
+    return StreamingResponse(body(), media_type=kind, headers={**headers, "Content-Length": str(size)})
+
+
 @router.get("/view")
-async def view(scope: AnyScope, path: str = Query(max_length=400), person: Person = Depends(current_person)) -> Response:
-    """PDFs, pictures, audio and video shown by the browser itself, framed only by the dashboard.
-    Fixed content types from a short list (+ nosniff), so nothing in a file can run as a page."""
-    from orchestrator import file_preview
+async def view(request: Request, scope: AnyScope, path: str = Query(max_length=400), as_: str = Query(default="", alias="as"),
+               person: Person = Depends(current_person)) -> Response:
+    """PDFs, pictures, audio and video shown by the browser itself (byte ranges, so video can seek and
+    start before the whole file arrives), and office documents as PDF (as=pdf, orchestrator/office_pdf.py).
+    Fixed content types from a short list (+ nosniff), framed only by the dashboard: nothing in a file
+    can run as a page."""
+    from orchestrator import file_preview, office_pdf
+    if as_ == "pdf":
+        try:
+            pdf = await office_pdf.pdf_for(person, scope, path)
+        except office_pdf.ConvertError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        except nas.NasError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        name = path.rsplit("/", 1)[-1].rsplit(".", 1)[0] + ".pdf"
+        return _ranged(request, len(pdf), lambda s, n: pdf[s:s + n], name, "application/pdf")
     kind = file_preview.inline_type(path)
     if not kind:
         raise HTTPException(status_code=400, detail="This file type isn't shown inline. Download it instead.")
-    name, data = await _run(nas_files.download, person, scope, path)
-    return Response(data, media_type=kind, headers={
-        "Content-Disposition": f"inline; filename*=UTF-8''{quote(name)}", "Cache-Control": "private, no-store",
-        "X-Frame-Options": "SAMEORIGIN",
-        # Chrome's PDF viewer counts as a plugin: object-src 'none' would blank it, so PDFs only limit framing.
-        "Content-Security-Policy": "frame-ancestors 'self'" if kind == "application/pdf" else
-        "default-src 'none'; img-src 'self' data:; media-src 'self'; frame-ancestors 'self'"})
+    info = await _run(nas_files.stat_file, person, scope, path)
+    if request.headers.get("range"):
+        rng = _parse_range(request.headers.get("range"), info["size"])
+        if rng:                                            # read the one piece now, outside the event loop
+            data = await _run(nas_files.read_range, person, scope, path, rng[0], rng[1] - rng[0] + 1)
+            return _ranged(request, info["size"], lambda s, n: data[s - rng[0]:s - rng[0] + n], info["name"], kind)
+    return _ranged(request, info["size"], lambda s, n: nas_files.read_range(person, scope, path, s, n), info["name"], kind)
+
+
+@router.post("/view/prepare")
+async def prepare_view(body: PathBody, person: Person = Depends(current_person)) -> dict:
+    """Converts an office document to PDF ahead of showing it (so the page can say "preparing" and show
+    a readable error instead of an error page inside the frame). Cached: the frame then loads at once."""
+    from orchestrator import office_pdf
+    if not office_pdf.supported(body.path):
+        raise HTTPException(status_code=400, detail="No document view for this file type.")
+    try:
+        pdf = await office_pdf.pdf_for(person, body.scope, body.path)
+    except office_pdf.ConvertError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except nas.NasError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return {"ok": True, "bytes": len(pdf)}
 
 
 @router.post("/upload")

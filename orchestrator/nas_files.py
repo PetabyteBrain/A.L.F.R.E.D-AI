@@ -113,6 +113,32 @@ def download(person: Person, scope: str, path: str) -> tuple[str, bytes]:
     return rel.rsplit("\\", 1)[-1], data
 
 
+def stat_file(person: Person, scope: str, path: str) -> dict:
+    """Name, size and modified time of one file (previews: range requests, conversion cache)."""
+    smb = _smb()
+    full, rel = _paths(person, scope, path)
+
+    def go():
+        st = smb.stat(full)
+        return {"name": rel.rsplit("\\", 1)[-1], "size": st.st_size, "mtime": st.st_mtime, "full": full, "rel": rel}
+    return _call(go)
+
+
+def read_range(person: Person, scope: str, path: str, start: int, length: int) -> bytes:
+    """`length` bytes from `start` (video/audio/PDF range requests: no size limit on the file itself)."""
+    smb = _smb()
+    full, rel = _paths(person, scope, path)
+
+    def go():
+        with smb.open_file(full, mode="rb") as f:
+            f.seek(start)
+            return f.read(length)
+    data = _call(go)
+    if start == 0:
+        touch(person, scope, rel, "viewed")
+    return data
+
+
 def upload(person: Person, scope: str, folder: str, filename: str, data: bytes, replace: bool = False) -> dict:
     from .uploads import safe_name
     if len(data) > MAX_UPLOAD_BYTES:

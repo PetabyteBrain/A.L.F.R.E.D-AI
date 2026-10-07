@@ -1,15 +1,18 @@
 import { useEffect, useState } from "react";
 import { api } from "../api.js";
 
-// Read-only previews (orchestrator/file_preview.py). PDFs, pictures, audio and video come straight
-// from /api/nas/view; office documents arrive as plain data and are drawn here (never HTML from a file).
+// Read-only previews. PDFs, pictures, audio and video come straight from /api/nas/view. Office documents
+// are shown in their real layout as a PDF made on the server (orchestrator/office_pdf.py, LibreOffice);
+// "Quick view" draws their text/tables from plain data instead (orchestrator/file_preview.py, never HTML).
 const q = (scope, path) => new URLSearchParams({ scope, path }).toString();
 const ext = (p) => (p.match(/\.[^./]+$/)?.[0] || "").toLowerCase();
 const IMAGE = [".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"];
 const AUDIO = [".mp3", ".m4a", ".wav", ".ogg"];
 const VIDEO = [".mp4", ".webm", ".mov"];
-export const DATA_PREVIEW = [".docx", ".odt", ".xlsx", ".xlsm", ".csv", ".tsv", ".pptx", ".doc", ".xls", ".ppt",
-  ".xml", ".html", ".htm", ".ini", ".conf", ".cfg", ".toml", ".sh", ".ps1", ".bat", ".py", ".js", ".jsx", ".ts", ".tsx",
+const OFFICE = [".docx", ".doc", ".docm", ".dotx", ".odt", ".rtf", ".xlsx", ".xlsm", ".xls", ".ods",
+  ".pptx", ".ppt", ".pptm", ".ppsx", ".odp"];
+const QUICK = [".docx", ".odt", ".xlsx", ".xlsm", ".pptx"];          // also readable as plain data
+export const DATA_PREVIEW = [".csv", ".tsv", ".xml", ".html", ".htm", ".ini", ".conf", ".cfg", ".toml", ".sh", ".ps1", ".bat", ".py", ".js", ".jsx", ".ts", ".tsx",
   ".css", ".sql", ".srt", ".vtt", ".tex", ".rtf"];
 
 export function previewKind(path) {
@@ -18,6 +21,7 @@ export function previewKind(path) {
   if (IMAGE.includes(e)) return "image";
   if (AUDIO.includes(e)) return "audio";
   if (VIDEO.includes(e)) return "video";
+  if (OFFICE.includes(e)) return "office";
   return DATA_PREVIEW.includes(e) ? "data" : null;
 }
 
@@ -88,25 +92,15 @@ function Slides({ slides }) {
   );
 }
 
-export default function FilePreview({ scope, path, version = 0 }) {
-  const kind = previewKind(path);
+function DataView({ scope, path, version }) {
   const [data, setData] = useState(null);
   const [err, setErr] = useState("");
-  const src = `/api/nas/view?${q(scope, path)}&r=${version}`;
-
   useEffect(() => {
-    if (kind !== "data") return undefined;
     let live = true;
     setData(null); setErr("");
     api(`/nas/preview?${q(scope, path)}`).then((d) => live && setData(d)).catch((e) => live && setErr(e.message));
     return () => { live = false; };
-  }, [scope, path, kind, version]);
-
-  if (!kind) return <p className="muted small">No preview for this file type. Download it to open it.</p>;
-  if (kind === "pdf") return <iframe className="pv-frame" src={src} title={`Preview of ${path}`} />;
-  if (kind === "image") return <div className="pv-media"><img src={src} alt={path.split("/").pop()} /></div>;
-  if (kind === "audio") return <audio className="pv-audio" controls preload="metadata" src={src} />;
-  if (kind === "video") return <div className="pv-media"><video controls preload="metadata" src={src} /></div>;
+  }, [scope, path, version]);
   if (err) return <p className="muted small">{err}</p>;
   if (!data) return <p className="muted">Loading preview…</p>;
   if (data.kind === "doc") return <Doc blocks={data.blocks} />;
@@ -118,4 +112,65 @@ export default function FilePreview({ scope, path, version = 0 }) {
       {data.truncated && <p className="muted tiny">Only the beginning is shown; download the file for the rest.</p>}
     </>
   );
+}
+
+/* Word / Excel / PowerPoint: the document as a PDF in its real layout (made on the server, cached). */
+function OfficeView({ scope, path, version }) {
+  const quickOk = QUICK.includes(ext(path));
+  const [mode, setMode] = useState("layout");
+  const [state, setState] = useState("preparing");          // preparing | ready | error
+  const [err, setErr] = useState("");
+  useEffect(() => {
+    if (mode !== "layout") return undefined;
+    let live = true;
+    setState("preparing"); setErr("");
+    api("/nas/view/prepare", { method: "POST", body: { scope, path } })
+      .then(() => live && setState("ready"))
+      .catch((e) => { if (live) { setErr(e.message); setState("error"); } });
+    return () => { live = false; };
+  }, [scope, path, version, mode]);
+  return (
+    <div>
+      {quickOk && (
+        <div className="seg pv-modes" role="group" aria-label="View">
+          <button className={mode === "layout" ? "active" : ""} aria-pressed={mode === "layout"} onClick={() => setMode("layout")}>Original layout</button>
+          <button className={mode === "quick" ? "active" : ""} aria-pressed={mode === "quick"} onClick={() => setMode("quick")}>Quick view</button>
+        </div>
+      )}
+      {mode === "quick" ? <DataView scope={scope} path={path} version={version} /> : (
+        <>
+          {state === "preparing" && <p className="muted small">Preparing the document… (the first time can take a few seconds)</p>}
+          {state === "error" && <p className="muted small">{err}{quickOk ? " Try Quick view." : ""}</p>}
+          {state === "ready" && (
+            <iframe className="pv-frame" title={`Preview of ${path}`}
+                    src={`/api/nas/view?${q(scope, path)}&as=pdf&r=${version}`} />
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+function Video({ src, path }) {
+  const [failed, setFailed] = useState(false);
+  if (failed) {
+    return <p className="muted small">This video can't be played in the browser (often an iPhone .mov in HEVC). Download it to watch it.</p>;
+  }
+  return (
+    <div className="pv-media">
+      <video controls playsInline preload="metadata" src={src} onError={() => setFailed(true)} aria-label={path.split("/").pop()} />
+    </div>
+  );
+}
+
+export default function FilePreview({ scope, path, version = 0 }) {
+  const kind = previewKind(path);
+  const src = `/api/nas/view?${q(scope, path)}&r=${version}`;
+  if (!kind) return <p className="muted small">No preview for this file type. Download it to open it.</p>;
+  if (kind === "pdf") return <iframe className="pv-frame" src={src} title={`Preview of ${path}`} />;
+  if (kind === "image") return <div className="pv-media"><img src={src} alt={path.split("/").pop()} /></div>;
+  if (kind === "audio") return <audio className="pv-audio" controls preload="metadata" src={src} />;
+  if (kind === "video") return <Video src={src} path={path} />;
+  if (kind === "office") return <OfficeView scope={scope} path={path} version={version} />;
+  return <DataView scope={scope} path={path} version={version} />;
 }

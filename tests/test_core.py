@@ -4037,3 +4037,62 @@ async def test_billed_cost_from_anthropic(monkeypatch):
     billing._cache.clear()
     assert (await budgets.spend())["anthropic"] >= 2.0          # the real bill wins when it's higher
     billing._cache.clear()
+
+
+def test_video_ranges_and_office_pdf(monkeypatch, tmp_path):
+    import dataclasses
+    from fastapi.testclient import TestClient
+    from orchestrator import nas, office_pdf
+    from orchestrator.config import settings
+    from orchestrator.main import app
+    import orchestrator.nas_files as nf
+    from dashboard.api import notes as notes_api
+    fake = _FakeSMB(tmp_path)
+    monkeypatch.setattr(nas, "settings", dataclasses.replace(settings, nas_host="nas", nas_user="u", nas_password="p",
+                                                             nas_share_company="Company", nas_share_personal="Alfred_Personal"))
+    monkeypatch.setattr(nas, "_smb", lambda: fake)
+    monkeypatch.setattr(nf, "_smb", lambda: fake)
+    admin = registry.lookup("telegram", "111")
+    video = bytes(range(256)) * 40                                     # 10240 bytes
+    nf.upload(admin, "personal", "", "clip.mp4", video)
+    nf.upload(admin, "personal", "", "Offer.docx", b"PK fake docx")
+    assert notes_api._parse_range("bytes=0-", 10_000_000) == (0, notes_api._RANGE_CHUNK - 1)
+    assert notes_api._parse_range("bytes=-100", 1000) == (900, 999)
+    assert notes_api._parse_range("bytes=5-2", 1000) is None and notes_api._parse_range("bytes=0-1,5-6", 1000) is None
+    converted = []
+
+    def fake_convert(name, data):
+        converted.append((name, data))
+        return b"%PDF-1.7 converted"
+    monkeypatch.setattr(office_pdf, "_convert", fake_convert)
+    monkeypatch.setattr(office_pdf, "_cache_dir", lambda: (tmp_path / "cache").mkdir(exist_ok=True) or tmp_path / "cache")
+    with TestClient(app, base_url="http://testserver") as c:
+        c.post("/api/login", json={"username": "admin", "password": "correct horse battery"}, headers=CSRF)
+        q = {"scope": "personal", "path": "clip.mp4"}
+        r = c.get("/api/nas/view", params=q, headers={"Range": "bytes=100-199"})
+        assert r.status_code == 206 and r.content == video[100:200]
+        assert r.headers["content-range"] == "bytes 100-199/10240" and r.headers["accept-ranges"] == "bytes"
+        r = c.get("/api/nas/view", params=q)
+        assert r.status_code == 200 and r.content == video and r.headers["content-length"] == "10240"
+        assert c.get("/api/nas/view", params=q, headers={"Range": "bytes=99999-"}).status_code == 416
+        # office document: converted once, then served from the cache as a PDF
+        d = {"scope": "personal", "path": "Offer.docx"}
+        assert c.post("/api/nas/view/prepare", json=d, headers=CSRF).json()["ok"] is True
+        r = c.get("/api/nas/view", params={**d, "as": "pdf"})
+        assert r.status_code == 200 and r.content == b"%PDF-1.7 converted" and r.headers["content-type"] == "application/pdf"
+        assert r.headers["content-security-policy"] == "frame-ancestors 'self'"
+        assert len(converted) == 1 and converted[0][1] == b"PK fake docx"
+        nf.upload(admin, "personal", "", "Offer.docx", b"PK changed docx!", replace=True)    # new size: new PDF
+        c.get("/api/nas/view", params={**d, "as": "pdf"})
+        assert len(converted) == 2
+        bad = c.post("/api/nas/view/prepare", json={"scope": "personal", "path": "clip.mp4"}, headers=CSRF)
+        assert bad.status_code == 400
+
+    def broken(name, data):
+        raise office_pdf.ConvertError("This document couldn't be shown")
+    monkeypatch.setattr(office_pdf, "_convert", broken)
+    nf.upload(admin, "personal", "", "Broken.xlsx", b"nope")
+    with TestClient(app, base_url="http://testserver") as c:
+        c.post("/api/login", json={"username": "admin", "password": "correct horse battery"}, headers=CSRF)
+        r = c.post("/api/nas/view/prepare", json={"scope": "personal", "path": "Broken.xlsx"}, headers=CSRF)
+        assert r.status_code == 400 and "couldn't be shown" in r.json()["detail"]
