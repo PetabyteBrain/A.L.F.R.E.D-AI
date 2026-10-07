@@ -504,6 +504,20 @@ async def refresh_health(person: Person = Depends(admin_only)) -> list[dict]:
     return _health_rows(person)
 
 
+@router.get("/updates")
+async def get_updates(person: Person = Depends(admin_only)) -> dict:
+    from orchestrator import update_check
+    return update_check.last()
+
+
+@router.post("/updates/check")
+async def check_updates(person: Person = Depends(admin_only)) -> dict:
+    from orchestrator import homelab, update_check
+    if not homelab.enabled():
+        raise HTTPException(status_code=400, detail="The homelab key isn't set up on this server.")
+    return await update_check.run(notify=False)
+
+
 @router.get("/overview")
 async def overview(person: Person = Depends(current_person)) -> dict:
     where, params = _scope(person)

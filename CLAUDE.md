@@ -44,8 +44,10 @@ the original spec is in `docs/archive/original-spec.md`. Keep the plan updated w
   (effort via `output_config`, larger max_tokens) - use `ai_config.request_params`, never hard-code. Keep
   history append-only within a turn (preserved thinking). Helper jobs stay on CLAUDE_MODEL (Haiku).
   `agent_core._client`, when set, overrides the key (tests, dev server).
-- Notes tidy-up: `orchestrator/notes_tidy.py` (personal scope, .md/.txt only, preview -> confirm after a new user turn).
-- Every acting tool call passes a weekday/date check first (`orchestrator/dates.py`, `registry.date_problems`).
+- Notes tidy-up: `orchestrator/notes_tidy.py` (personal scope, .md/.txt only, preview -> confirm after a new user turn;
+  Files tab: `propose` -> ticked steps -> `dashboard_apply`, the Apply click is the confirmation).
+- Every acting tool call passes a weekday/date check first (`orchestrator/dates.py`, `registry.date_problems`);
+  `resolve_date` (`dates.resolve`) turns spoken days into dates so the model never counts.
 - Keep the static system prompt in `agent_core.STATIC_SYSTEM` byte-stable (prompt caching); put
   per-request details in `_dynamic_system`. Tool list is sorted for the same reason.
 
@@ -114,12 +116,14 @@ the original spec is in `docs/archive/original-spec.md`. Keep the plan updated w
 - Backups: `infra/backup.sh` (Pi crontab 03:30) + `orchestrator/backup.py`; restore in
   `infra/README-backup.md`. Shell scripts must stay LF (`.gitattributes`; this PC has autocrlf).
 - Monthly restore test: `infra/restore-drill.sh` (Pi crontab, 1st 04:30) -> `orchestrator/restore_drill.py`
-  in a throwaway container. Recording retention: `orchestrator/retention.py` (+ Jetson crontab).
+  in a throwaway container, for the Jetson copy and the NAS copy (`backup_nas fetch`). Recording retention: `orchestrator/retention.py` (+ Jetson crontab).
 - Budgets: `orchestrator/budgets.py` (warnings to admins only). Data export/deletion:
   `orchestrator/privacy.py`; a new table holding personal data must be added to `collect` and `erase`
   (the personal NAS folder is already included).
 - Homelab: hosts in `orchestrator/homelab.yaml`; per-host access via `infra/ops/alfred-ops`
-  (forced command) + `~/.config/alfred-ops/allow`. Never widen the key to a shell.
+  (forced command) + `~/.config/alfred-ops/allow`. Never widen the key to a shell. After changing the
+  script, install it on every host (infra/ops/README.md). Monthly update report: `orchestrator/update_check.py`
+  (`alfred-ops updates`; report only, never install anything from Alfred).
 
 ## Testing
 - Behaviour checks against the real model (costs cents): `python -m orchestrator.evals` (in the

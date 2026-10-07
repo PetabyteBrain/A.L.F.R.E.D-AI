@@ -10,6 +10,9 @@ to a shell.
     logs <container> [lines]   last log lines of an allowlisted container (max 200)
     restart <container>        restart an allowlisted container
     mc                         Minecraft: version, players online (server list ping; RCON not needed)
+    updates                    report only: pending OS packages (from apt's existing lists), reboot
+                               needed, and containers whose image tag has a newer build upstream
+                               (registry HEAD requests; nothing is pulled or installed)
 
 Allowlist: ~/.config/alfred-ops/allow, one container name per line. Restarts and logs are refused
 for anything not listed there.
@@ -23,6 +26,9 @@ import socket
 import subprocess
 import sys
 import time
+import urllib.error
+import urllib.request
+from concurrent.futures import ThreadPoolExecutor
 
 ALLOW_FILE = os.path.expanduser("~/.config/alfred-ops/allow")
 NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,62}$")
@@ -114,6 +120,113 @@ def status():
          "manageable": sorted(allowed)})
 
 
+def apt_updates():
+    if not shutil.which("apt"):
+        return None
+    code, so, _ = run(["apt", "list", "--upgradable"], 60)       # reads the cached lists; no root needed
+    pkgs = [ln.split("/", 1)[0] for ln in so.splitlines() if "/" in ln and "[upgradable" in ln]
+    security = [ln.split("/", 1)[0] for ln in so.splitlines() if "[upgradable" in ln and "-security" in ln]
+    try:
+        lists_age_d = round((time.time() - os.path.getmtime("/var/lib/apt/lists")) / 86400, 1)
+    except OSError:
+        lists_age_d = None
+    return {"count": len(pkgs), "security": len(security), "names": pkgs[:40], "lists_age_d": lists_age_d}
+
+
+_ACCEPT = ", ".join(["application/vnd.oci.image.index.v1+json", "application/vnd.docker.distribution.manifest.list.v2+json",
+                     "application/vnd.oci.image.manifest.v1+json", "application/vnd.docker.distribution.manifest.v2+json"])
+
+
+def _split_ref(ref):
+    name, tag = ref, "latest"
+    if "@" in name:
+        return None
+    if ":" in name.rsplit("/", 1)[-1]:
+        name, tag = name.rsplit(":", 1)
+    first = name.split("/", 1)[0]
+    if "/" in name and ("." in first or ":" in first or first == "localhost"):
+        registry, repo = first, name.split("/", 1)[1]
+    else:
+        registry, repo = "registry-1.docker.io", name if "/" in name else f"library/{name}"
+    return registry, repo, tag
+
+
+def _head(url, token=None):
+    req = urllib.request.Request(url, method="HEAD", headers={"Accept": _ACCEPT, "User-Agent": "alfred-ops"})
+    if token:
+        req.add_header("Authorization", f"Bearer {token}")
+    return urllib.request.urlopen(req, timeout=10)
+
+
+def remote_digest(ref):
+    """Digest of the tag upstream (anonymous; HEAD requests don't count against Docker Hub's pull limit)."""
+    parts = _split_ref(ref)
+    if not parts:
+        return None
+    registry, repo, tag = parts
+    url = f"https://{registry}/v2/{repo}/manifests/{tag}"
+    try:
+        return _head(url).headers.get("Docker-Content-Digest")
+    except urllib.error.HTTPError as e:
+        if e.code != 401:
+            return None
+        chal = e.headers.get("WWW-Authenticate", "")
+        fields = dict(re.findall(r'(\w+)="([^"]*)"', chal))
+        if not chal.lower().startswith("bearer") or "realm" not in fields:
+            return None
+        q = "&".join(f"{k}={urllib.request.quote(fields[k], safe=':/')}" for k in ("service", "scope") if k in fields)
+        if "scope" not in fields:
+            q += ("&" if q else "") + f"scope=repository:{repo}:pull"
+        try:
+            with urllib.request.urlopen(f"{fields['realm']}?{q}", timeout=10) as r:
+                tok = json.loads(r.read()).get("token") or ""
+            return _head(url, tok).headers.get("Docker-Content-Digest")
+        except Exception:  # noqa: BLE001 — unknown registry quirks: just "can't tell"
+            return None
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def image_updates():
+    if not shutil.which("docker"):
+        return None
+    code, so, _ = run(["docker", "ps", "-a", "--format", "{{.Names}}\t{{.Image}}"])
+    if code:
+        return None
+    pairs = [ln.split("\t", 1) for ln in so.splitlines() if "\t" in ln]
+    refs = sorted({img for _, img in pairs})
+    local = {}
+    for ref in refs:
+        code, so, _ = run(["docker", "image", "inspect", "--format", "{{json .RepoDigests}}", ref])
+        local[ref] = [d.split("@", 1)[1] for d in (json.loads(so) if code == 0 and so.strip() else []) or []]
+    checkable = [r for r in refs if local[r]]
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        remote = dict(zip(checkable, pool.map(remote_digest, checkable)))
+    items = []
+    for name, ref in pairs:
+        if not local[ref]:
+            state = "built here"
+        elif remote.get(ref) is None:
+            state = "cannot check"        # built here, private, or the registry did not answer
+        else:
+            state = "current" if remote[ref] in local[ref] else "newer upstream"
+        items.append({"container": name, "image": ref, "state": state})
+    return items
+
+
+def updates():
+    osr = {}
+    try:
+        with open("/etc/os-release") as f:
+            osr = dict(ln.rstrip().split("=", 1) for ln in f if "=" in ln)
+    except OSError:
+        pass
+    code, so, _ = run(["docker", "version", "--format", "{{.Server.Version}}"], 10) if shutil.which("docker") else (1, "", "")
+    out({"host": socket.gethostname(), "os": osr.get("PRETTY_NAME", "").strip('"'), "kernel": os.uname().release,
+         "docker": so.strip() if code == 0 else None, "reboot_required": os.path.exists("/var/run/reboot-required"),
+         "packages": apt_updates(), "images": image_updates()})
+
+
 def need_allowed(name):
     if not NAME.match(name or ""):
         out({"error": "bad container name"}, 2)
@@ -151,6 +264,8 @@ def main():
                      "online": players.get("online"), "max": players.get("max"),
                      "players": [p.get("name") for p in (players.get("sample") or players.get("Sample") or [])]})
         out({"error": "no allowlisted Minecraft container on this host"}, 3)
+    if op == "updates" and not args:
+        updates()
     out({"error": f"operation not allowed: {op}"}, 2)
 
 

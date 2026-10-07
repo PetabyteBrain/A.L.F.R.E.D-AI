@@ -53,7 +53,9 @@ folders back the same way as from the Jetson (any SMB client, e.g. the NAS web s
 
 It fetches the newest snapshot and the 3 newest recordings back from the Jetson, checks the
 recordings match the originals, and opens everything in a throwaway container without network or
-secrets (`orchestrator/restore_drill.py`). The result shows on Systems as "Restore test
+secrets (`orchestrator/restore_drill.py`). Then the same for the NAS copy: the alfred container
+fetches it into `data/restore-drill-nas` (`python -m orchestrator.backup_nas fetch`, which also
+compares the recordings) and it is opened the same way. Both must pass. The result shows on Systems as "Restore test
 (monthly)"; admins get a Telegram message if it fails. Run it by hand the same way.
 
 Run a backup by hand: `~/alfred/infra/backup.sh` (log: `~/alfred/data/backups/backup.log`).

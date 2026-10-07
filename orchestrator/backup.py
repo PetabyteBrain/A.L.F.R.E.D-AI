@@ -105,7 +105,7 @@ def counts(conn: sqlite3.Connection) -> dict:
 
 
 def drill_report(ok: bool, detail: str) -> None:
-    db.set_setting(_DRILL_KEY, {"at": db.now_iso(), "ok": ok, "detail": detail[:300]})
+    db.set_setting(_DRILL_KEY, {"at": db.now_iso(), "ok": ok, "detail": detail[:600]})  # Jetson + NAS
     db.log_activity("system" if ok else "error", f"Restore test {'passed' if ok else 'FAILED'}: {detail[:200]}")
     db.set_health("restore_drill", *drill_health())
     if not ok:

@@ -59,6 +59,11 @@ async def _backup_nas() -> tuple[bool, str]:
     return backup_nas.health_now()
 
 
+async def _updates() -> tuple[bool, str]:
+    from . import update_check
+    return update_check.health_now()
+
+
 async def _nas() -> tuple[bool, str]:
     from . import nas
     if not nas.enabled():
@@ -86,6 +91,7 @@ PROBES = {
     "backup": _backup,
     "backup_nas": _backup_nas,
     "restore_drill": _restore_drill,
+    "updates": _updates,
     "nas": _nas,
     "n8n": _n8n,
     "google": _google,
@@ -125,6 +131,8 @@ async def background_loop() -> None:
             from . import agenda
             await agenda.sync_all()             # reminders follow their calendar events
             await budgets.check()
+            from . import update_check
+            await update_check.monthly()        # 1st of the month: report only
         except Exception:
             log.exception("Health loop iteration failed")
         await asyncio.sleep(INTERVAL)

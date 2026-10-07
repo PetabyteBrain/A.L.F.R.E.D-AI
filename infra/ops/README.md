@@ -7,10 +7,17 @@ key is pinned to one script, so it can never get a shell:
 command="/home/user/bin/alfred-ops",restrict ssh-ed25519 AAAA… alfred-ops@alfred-server
 ```
 
-`alfred-ops` offers `status`, `logs <container> [lines]`, `restart <container>` and `mc`
-(Minecraft players). Logs and restarts only work for containers listed in
+`alfred-ops` offers `status`, `logs <container> [lines]`, `restart <container>`, `mc`
+(Minecraft players) and `updates` (monthly report: pending packages, reboot needed, newer container
+images upstream; reads only, installs nothing). Logs and restarts only work for containers listed in
 `~/.config/alfred-ops/allow` (one name per line) on that host; that list is also what the
 monitor watches. Hosts are listed in `orchestrator/homelab.yaml`.
+
+## Update the script on every host
+
+After changing `alfred-ops`, copy it to each host in `orchestrator/homelab.yaml` (same `scp` +
+`install` line as below). A host with the old script answers "operation not allowed" and Systems
+says so.
 
 ## Add a host
 

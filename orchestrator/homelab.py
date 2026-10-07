@@ -241,6 +241,11 @@ def host_rows_visible(rows: list[dict], is_admin: bool) -> list[dict]:
     rank = {f"host {h['name']}": i for i, h in enumerate(configured)}
     out = []
     for r in rows:
+        if r["service"] == "updates":                  # monthly update check (update_check.py): admins only
+            if is_admin:
+                out.append({**r, "group": "homelab", "label": "Updates (monthly)",
+                            "role": "Report only: nothing is installed", "order": len(configured)})
+            continue
         if r["service"].startswith("host "):
             if not is_admin or r["service"] not in roles:
                 continue

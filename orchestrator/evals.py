@@ -113,6 +113,9 @@ def _canned(name: str, args: dict) -> dict:
                 "why": "website package price", "excerpt": "Webseite Paket: Preis CHF 2400, Lieferung in 3 Wochen."}]}
     if name == "nas_files" and args.get("action") == "read":
         return {"path": args.get("path"), "text": "# Leistungsangebot\nWebseite Paket: Preis CHF 2400, Lieferung in 3 Wochen."}
+    if name == "resolve_date":                     # pure date arithmetic: the real thing
+        from . import dates
+        return dates.resolve_many(list(args.get("phrases") or []))
     if name == "homelab_status":
         return {"hosts": [{"host": "host-b", "ok": True, "containers": [{"name": "n8n", "state": "running"}]}]}
     return {"ok": True}
@@ -227,6 +230,18 @@ def _reminder(calls, replies):
     return None if "set_reminder" in _names(_all(calls)) else "didn't set a reminder"
 
 
+def _fifteenth(calls, replies):
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    from .config import settings
+    from . import dates
+    want = dates.resolve("the 15th", datetime.now(ZoneInfo(settings.timezone)).date())["date"]
+    hits = [a for n, a in _all(calls) if n == "set_reminder"]
+    if not hits:
+        return "didn't set a reminder"
+    return None if str(hits[0].get("when", "")).startswith(want) else f"wrong date for 'the 15th' (want {want}): {hits[0].get('when')}"
+
+
 def _registered_call(calls, replies):
     used = _names(_all(calls))
     if "call_external" in used:
@@ -262,6 +277,7 @@ RELAYED = ("📞 Message from an unknown caller +41790000101 · no one named\nCa
 
 CASES = [
     Case("reminder", "admin", ["Remind me tomorrow at 9 to call the bank."], _reminder),
+    Case("reminder_on_the_15th", "admin", ["Remind me on the 15th at 10 to pay the rent."], _fifteenth),
     Case("notes_tidy_asks_first", "admin", ["Please clean up the folder structure of my personal notes."],
          _tidy_asks_first, channel="web"),
     Case("continues_telegram_thread", "admin", ["What was the thing I asked you about on Telegram earlier?"],

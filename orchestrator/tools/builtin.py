@@ -24,6 +24,12 @@ async def current_time(ctx) -> str:
 
 
 @handler
+async def resolve_date(ctx, phrases: list[str] | None = None, phrase: str = "") -> dict:
+    from .. import dates
+    return dates.resolve_many(list(phrases or []) + ([phrase] if phrase else []))
+
+
+@handler
 async def list_tasks(ctx, include_finished: bool = False) -> dict:
     from .. import tasks
     out: dict[str, Any] = {"tasks": [
@@ -324,6 +330,24 @@ async def search_conversations(ctx, query: str, person: str = "", channel: str =
     except search.SearchError as e:
         return {"error": str(e)}
     return {"matches": hits} if hits else {"matches": [], "note": "Nothing found. Try other or fewer words."}
+
+
+@handler
+async def homelab_updates(ctx, check_now: bool = False) -> dict:
+    from .. import homelab, update_check
+    if not ctx.person.is_admin:
+        return {"error": "Only an admin can see the update report."}
+    if check_now:
+        if not homelab.enabled():
+            return {"error": "The homelab key isn't set up."}
+        report = await update_check.run(notify=False)
+    else:
+        report = update_check.last()
+    if not report.get("at"):
+        return {"report": None, "note": "No update check has run yet; it runs on the 1st of the month (check_now runs it)."}
+    return {"checked_at": report["at"], "summary": report["summary"],
+            "hosts": [update_check._host_line(h) for h in report["hosts"]],
+            "note": "Report only. Alfred doesn't install updates; the person does that on the machines."}
 
 
 @handler

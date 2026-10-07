@@ -29,6 +29,22 @@ tools:
       type: object
       properties: {}
 
+  - name: resolve_date
+    kind: builtin
+    handler: resolve_date
+    roles: ["*"]
+    description: >-
+      Turn what the person said into exact dates: "next Friday", "Friday next week", "the 15th",
+      "in three weeks", "end of the month", "the weekend", "15.10", "Friday 9 October" (checks the
+      weekday). Use it for any day that isn't simply in the "Coming days" list, before acting on it,
+      and copy the date it returns. Pass several phrases at once. Follow its note (e.g. say which
+      "next Friday" you understood); on an error, ask the person.
+    input_schema:
+      type: object
+      properties:
+        phrases: {type: array, items: {type: string}, description: "The person's own words for each day, e.g. ['next Friday', 'the 15th']."}
+      required: [phrases]
+
   - name: list_tasks
     kind: builtin
     handler: list_tasks
@@ -369,6 +385,19 @@ tools:
       type: object
       properties:
         host: {type: string, description: "host-b, host-f, host-c, host-g, host-h or jetson"}
+
+  - name: homelab_updates
+    kind: builtin
+    handler: homelab_updates
+    roles: [admin]
+    description: >-
+      The monthly update report for the homelab machines: pending OS packages (and how many are
+      security fixes), containers with a newer image upstream, reboots needed. Report only; Alfred
+      never installs anything. check_now re-checks every machine (takes up to a minute or two).
+    input_schema:
+      type: object
+      properties:
+        check_now: {type: boolean, description: "Check the machines now instead of reading the last report."}
 
   - name: homelab_logs
     kind: builtin

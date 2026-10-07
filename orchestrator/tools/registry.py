@@ -130,7 +130,7 @@ def _truncate(result: Any) -> str:
 
 
 _READ_ONLY_PREFIXES = ("list_", "get_", "search_", "find_", "calendar_list", "n8n_get", "n8n_list", "homelab_status",
-                       "homelab_logs", "recent_", "agenda", "current_time")
+                       "homelab_logs", "recent_", "agenda", "current_time", "resolve_date")
 
 
 def date_problems(name: str, args: dict) -> list[str]:

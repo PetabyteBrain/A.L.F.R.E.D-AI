@@ -3021,6 +3021,18 @@ def test_backup_copy_to_nas(monkeypatch, tmp_path):
     assert not old.exists() and (root / "db" / snap.name).exists()
     backup_nas.report(True, detail)
     assert backup_nas.health_now()[0]
+    # monthly restore test: the NAS copy comes back and its recordings match the originals
+    assert backup_nas.fetch() == snap.name
+    drill = backup_nas.drill_dir()
+    assert (drill / "alfred.db").read_bytes() == snap.read_bytes() and list((drill / "storage").rglob("audio.wav"))
+    wavs[0].write_bytes(b"RIFF damaged")
+    try:
+        backup_nas.fetch()
+        raise AssertionError("a damaged NAS copy passed")
+    except Exception as e:  # noqa: BLE001
+        assert "differs from the original" in str(e)
+    import shutil
+    shutil.rmtree(drill)
 
 
 
@@ -3587,6 +3599,30 @@ def test_date_check_catches_wrong_weekday(monkeypatch):
     assert tools.date_problems("call_external", {"task": "Friday 11 October"})
 
 
+async def test_resolve_date():
+    from datetime import date
+    from orchestrator import dates
+    from orchestrator.tools import builtin, registry as tools
+    t = date(2026, 10, 7)                                                     # a Wednesday
+    r = lambda ph: dates.resolve(ph, t)                                       # noqa: E731
+    assert r("this Friday")["date"] == "2026-10-09" and r("tomorrow at 3pm")["date"] == "2026-10-08"
+    assert r("next Friday")["date"] == "2026-10-09" and "16 October" in r("next Friday")["note"]
+    assert r("Friday next week")["date"] == r("next friday week")["date"] == "2026-10-16"
+    assert r("wednesday")["date"] == "2026-10-07" and "today" in r("wednesday")["note"]
+    assert r("the 15th")["date"] == "2026-10-15" and r("the 3rd")["date"] == "2026-11-03"
+    assert r("15.10")["date"] == r("15 October")["date"] == r("October 15th")["date"] == "2026-10-15"
+    assert r("1.1.27")["date"] == "2027-01-01" and r("in 3 weeks")["date"] == "2026-10-28"
+    assert r("in two months")["date"] == "2026-12-07" and r("end of the month")["date"] == "2026-10-31"
+    assert r("next week")["end"] == "2026-10-18" and r("this weekend")["date"] == "2026-10-10"
+    assert "error" in r("Friday 11 October") and "Friday 9 October 2026" in r("Friday 11 October")["error"]
+    assert "error" in r("31 February") and "error" in r("sometime soon") and "error" in r("3 weeks")
+    assert dates.resolve("31 January", date(2026, 1, 31))["date"] == "2026-01-31"
+    assert dates._add_months(date(2026, 1, 31), 1) == date(2026, 2, 28)
+    out = await builtin.HANDLERS["resolve_date"](None, phrases=["Saturday"])
+    assert out["dates"][0]["phrase"] == "Saturday" and "today" in out
+    assert tools.date_problems("resolve_date", {"phrases": ["Friday 11 October"]}) == []
+
+
 def test_cross_channel_continuity():
     from fastapi.testclient import TestClient
     from orchestrator import agent_core, continuity, sessions
@@ -3666,6 +3702,118 @@ def test_notes_tidy(monkeypatch, tmp_path):
         raise AssertionError("applied twice")
     except notes_tidy.TidyError:
         pass
+
+
+async def test_monthly_update_check(monkeypatch):
+    from datetime import datetime
+    from orchestrator import homelab, update_check
+    from orchestrator.tools import builtin
+    calls, sent = [], []
+    answers = {
+        "host-b": {"host": "host-b", "os": "Debian 13", "kernel": "6.12", "docker": "29.1", "reboot_required": True,
+                   "packages": {"count": 12, "security": 3, "names": ["bash", "openssl"], "lists_age_d": 1.0},
+                   "images": [{"container": "caddy", "image": "caddy:latest", "state": "newer upstream"},
+                              {"container": "n8n", "image": "n8n-custom:latest", "state": "cannot check"}]},
+        "host-f": {"error": "operation not allowed: updates"},
+    }
+
+    async def fake_ops(host, *args, timeout=25):
+        calls.append((host["name"], args))
+        return answers[host["name"]]
+
+    async def fake_notify(text):
+        sent.append(text)
+    monkeypatch.setattr(homelab, "hosts", lambda: [{"name": "host-b", "ssh": "x@1", "role": "proxy"},
+                                                   {"name": "host-f", "ssh": "x@2", "role": "web"}])
+    monkeypatch.setattr(homelab, "_ops", fake_ops)
+    monkeypatch.setattr(homelab, "_notify_admins", fake_notify)
+    monkeypatch.setattr(homelab, "enabled", lambda: True)
+    db.execute("DELETE FROM app_settings WHERE key = 'update_check'")
+
+    class Clock(datetime):
+        now_value = datetime(2026, 11, 1, 8, 0)
+        @classmethod
+        def now(cls, tz=None):
+            return cls.now_value.replace(tzinfo=tz)
+    monkeypatch.setattr(update_check, "datetime", Clock)
+    await update_check.monthly()                                   # 08:00 on the 1st: not yet
+    assert not calls
+    Clock.now_value = datetime(2026, 11, 1, 9, 30)
+    monkeypatch.setattr(db, "now_iso", lambda: "2026-11-01T08:30:00+00:00")
+    await update_check.monthly()
+    assert calls == [("host-b", ("updates",)), ("host-f", ("updates",))]
+    assert len(sent) == 1 and "nothing was installed" in sent[0] and "reboot needed" in sent[0] and "caddy" in sent[0]
+    assert "not installed there yet" in sent[0]
+    await update_check.monthly()                                   # same month: once only
+    assert len(calls) == 2
+    rep = update_check.last()
+    assert rep["summary"].startswith("12 package updates (3 security) · 1 newer images") and "not checked: host-f" in rep["summary"]
+    rows = homelab.host_rows_visible(db.query("SELECT service, ok, detail, checked_at FROM health"), False)
+    assert "updates" not in [r["service"] for r in rows]           # admins only
+    rows = homelab.host_rows_visible(db.query("SELECT service, ok, detail, checked_at FROM health"), True)
+    assert [r for r in rows if r["service"] == "updates"][0]["group"] == "homelab"
+    admin = registry.lookup("telegram", "111")
+    out = await builtin.HANDLERS["homelab_updates"](type("C", (), {"person": admin})())
+    assert out["summary"] == rep["summary"] and any("host-b" in h for h in out["hosts"])
+
+
+def test_notes_tidy_from_files_tab(monkeypatch, tmp_path):
+    import dataclasses
+    from types import SimpleNamespace as NS
+    from fastapi.testclient import TestClient
+    from orchestrator import agent_core, ai_config, nas
+    from orchestrator.config import settings
+    from orchestrator.main import app
+    import orchestrator.nas_files as nf
+    fake = _FakeSMB(tmp_path)
+    monkeypatch.setattr(nas, "settings", dataclasses.replace(settings, nas_host="nas", nas_user="u", nas_password="p",
+                                                             nas_share_company="Company", nas_share_personal="Alfred_Personal"))
+    monkeypatch.setattr(nas, "_smb", lambda: fake)
+    monkeypatch.setattr(nf, "_smb", lambda: fake)
+    monkeypatch.setattr(ai_config, "configured", lambda: True)
+    admin = registry.lookup("telegram", "111")
+    for path, text in (("soup.md", "# Soup\nleeks"), ("stew.md", "# Stew\nbeef"), ("todo.txt", "call  bank")):
+        nf.save_text(admin, "personal", path, text, None, create=True)
+    seen = {}
+
+    class Stream:
+        def __init__(self, final):
+            self.final = final
+        async def __aenter__(self):
+            return self
+        async def __aexit__(self, *exc):
+            return False
+        async def get_final_message(self):
+            return self.final
+
+    class FakeMessages:
+        def stream(self, **kw):
+            seen.update(kw)
+            steps = [{"op": "folder", "path": "Recipes"}, {"op": "move", "from": "soup.md", "to": "Recipes/soup.md"},
+                     {"op": "move", "from": "stew.md", "to": "Recipes/stew.md"},
+                     {"op": "move", "from": "nowhere.md", "to": "Recipes/x.md"},          # doesn't exist: left out
+                     {"op": "write", "path": "todo.txt", "text": "x"}]                     # wrong kind: left out
+            return Stream(NS(stop_reason="tool_use", usage=None, content=[NS(type="tool_use", id="t1", name="propose_plan",
+                                                                               input={"summary": "Recipes together.", "steps": steps})]))
+    monkeypatch.setattr(agent_core, "_client", NS(messages=FakeMessages()))
+    with TestClient(app, base_url="http://testserver") as c:
+        c.post("/api/login", json={"username": "admin", "password": "correct horse battery"}, headers=CSRF)
+        plan = c.post("/api/nas/tidy/plan", json={"kind": "structure", "wishes": "recipes together"}, headers=CSRF).json()
+        assert "recipes together" in seen["messages"][0]["content"] and "soup.md" in seen["messages"][0]["content"]
+        assert seen["tools"][0]["name"] == "propose_plan"
+        assert [s["line"] for s in plan["steps"]] == ["New folder: Recipes", "Move soup.md -> Recipes/soup.md",
+                                                      "Move stew.md -> Recipes/stew.md"]
+        assert len(plan["skipped"]) == 2
+        assert nf.open_text(admin, "personal", "soup.md")                       # nothing changed yet
+        r = c.post("/api/nas/tidy/apply", json={"kind": "structure", "digest": "wrong", "steps": [0]}, headers=CSRF)
+        assert r.status_code == 400
+        out = c.post("/api/nas/tidy/apply", json={"kind": "structure", "digest": plan["digest"], "steps": [0, 1]},
+                     headers=CSRF).json()                                       # stew unticked
+        assert out["applied"] is True
+        assert nf.open_text(admin, "personal", "Recipes/soup.md")["text"] == "# Soup\nleeks"
+        assert nf.open_text(admin, "personal", "stew.md")["text"] == "# Stew\nbeef"
+        again = c.post("/api/nas/tidy/apply", json={"kind": "structure", "digest": plan["digest"], "steps": [2]}, headers=CSRF)
+        assert again.status_code == 400                                         # used up
 
 
 def test_ai_model_and_key_switch(monkeypatch):

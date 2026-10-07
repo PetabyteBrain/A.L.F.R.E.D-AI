@@ -169,7 +169,8 @@ def _dynamic_system(person: Person, channel: str, extra: str | None) -> str:
         f"Local time: {now} ({settings.timezone}).",
         f"Coming days: {days}. For a weekday ('this Friday', 'on Saturday') take the first matching day "
         "in that list and copy its date exactly; if they might mean the week after ('next Friday'), say "
-        "which date you understood. Never work dates out yourself.",
+        "which date you understood. Never work dates out yourself: for anything else (next week, the 15th, "
+        "in three weeks, end of the month, a date with a weekday) call resolve_date and copy its date.",
     ]
     notes = memory.prompt_block(person.id)
     if notes:

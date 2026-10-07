@@ -418,6 +418,12 @@ button.row { width: 100%; text-align: left; font: inherit; color: var(--text-str
 .sys-group h3.sub { display: flex; align-items: center; gap: 12px; }
 .group-state { margin-left: auto; font: 400 11px var(--font-mono); letter-spacing: .08em; text-transform: none; }
 .group-state.ok { color: var(--ok); } .group-state.bad { color: var(--bad); }
+.group-actions { margin-left: auto; display: flex; gap: 6px; letter-spacing: normal; text-transform: none; }
+.upd-list { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 10px; }
+.upd-list li { overflow-wrap: anywhere; }
+.upd-more { margin-left: 8px; padding: 1px 8px; }
+.upd-names { margin-top: 4px; }
+.warn-text { color: rgb(var(--warn-rgb)); }
 .sys-role { font: 400 11px var(--font-mono); color: var(--accent); letter-spacing: .04em; margin-top: -2px; }
 .sys-card { padding: 14px 16px; background: var(--fill); border: 1px solid var(--line); border-top: 2px solid var(--ok); display: grid; gap: 6px; }
 .sys-card.bad { border-top-color: var(--bad); background: rgb(var(--bad-rgb) / .06); }
@@ -1335,3 +1341,15 @@ main[hidden], [hidden] { display: none !important; }
 :root[data-theme="alfred"] .setting-card { background: rgb(255 255 255 / .025); border-color: rgb(255 255 255 / .1); }
 :root[data-theme="batcave"] .settings-title { font-weight: 400; font-size: 28px; letter-spacing: .08em; }
 :root[data-theme="matrix"] .settings-nav button.active { background: rgb(0 255 65 / .1); }
+
+/* Files tab: Tidy up */
+.tidy-box { border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; margin: 0 0 14px; }
+.tidy-head { display: flex; align-items: center; gap: 8px; }
+.tidy-head .sub { flex: 1; }
+.tidy-form { display: grid; gap: 8px; justify-items: start; }
+.tidy-form textarea { width: 100%; }
+.tidy-steps { list-style: none; margin: 8px 0; padding: 0; display: grid; gap: 6px; }
+.tidy-steps label { display: inline; overflow-wrap: anywhere; cursor: pointer; }
+.tidy-steps .link { margin-left: 8px; }
+.tidy-text { white-space: pre-wrap; max-height: 260px; overflow: auto; font-size: 12px; padding: 8px; margin: 6px 0 0;
+  border: 1px solid var(--line); border-radius: 6px; }

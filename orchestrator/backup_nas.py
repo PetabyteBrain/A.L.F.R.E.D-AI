@@ -1,6 +1,8 @@
 """Second off-device backup copy on the NAS (the first goes to the Jetson, infra/backup.sh).
 
     python -m orchestrator.backup_nas copy <snapshot file name> < .env
+    python -m orchestrator.backup_nas fetch           -> newest copy back into /data/restore-drill-nas
+                                                         (monthly restore test, infra/restore-drill.sh)
 
 Run by infra/backup.sh right after the Jetson copy, inside the container (SMB via smbprotocol).
 Target: NAS_BACKUP_PATH in the personal share (default `.alfred-backups`), reachable only by
@@ -86,6 +88,51 @@ def _prune(smb, root: str) -> int:
     return n
 
 
+def drill_dir() -> Path:
+    return settings.db_path.parent / "restore-drill-nas"
+
+
+def fetch(samples: int = 3) -> str:
+    """Restore test: bring the newest database copy and the newest recordings back from the NAS
+    into drill_dir(), and check the recordings match the originals still on the Pi. The drill
+    container then opens them exactly like the Jetson copy. Returns the snapshot's name."""
+    import shutil
+    from . import nas
+    smb = nas._smb()
+    root = _root()
+    dest = drill_dir()
+    shutil.rmtree(dest, ignore_errors=True)
+    (dest / "storage").mkdir(parents=True)
+
+    def unc(*parts: str) -> str:
+        return "\\".join((root, *parts))
+
+    def go():
+        snaps = sorted(e.name for e in smb.scandir(unc("db"))
+                       if e.name.startswith("alfred-") and e.name.endswith(".db"))
+        if not snaps:
+            raise RuntimeError("no database copy on the NAS")
+        with smb.open_file(unc("db", snaps[-1]), mode="rb") as f:
+            (dest / "alfred.db").write_bytes(f.read())
+        wavs = []
+        prefix = unc("storage") + "\\"
+        for dirpath, _dirs, files in smb.walk(unc("storage")):
+            if "audio.wav" in files and dirpath.startswith(prefix):
+                rel = dirpath[len(prefix):].split("\\")
+                wavs.append((rel[1] if len(rel) > 1 else "", rel))      # {user}/{date}/{session}
+        for _date, rel in sorted(wavs)[-samples:]:
+            with smb.open_file(unc("storage", *rel, "audio.wav"), mode="rb") as f:
+                data = f.read()
+            local = dest / "storage" / Path(*rel) / "audio.wav"
+            local.parent.mkdir(parents=True, exist_ok=True)
+            local.write_bytes(data)
+            original = settings.storage_root / Path(*rel) / "audio.wav"
+            if original.exists() and original.read_bytes() != data:
+                raise RuntimeError(f"NAS copy of {'/'.join(rel)}/audio.wav differs from the original")
+        return snaps[-1]
+    return nas._call(go)
+
+
 def report(ok: bool, detail: str) -> None:
     st = db.get_setting(_STATE_KEY) or {}
     if ok:
@@ -123,6 +170,13 @@ def main(argv: list[str]) -> int:
         report(True, detail)
         print(f"ok {detail}")
         return 0
+    if argv[:1] == ["fetch"]:
+        try:
+            print(f"ok {fetch()}")
+            return 0
+        except Exception as e:  # noqa: BLE001 — the restore test reports it
+            print(f"FAIL {type(e).__name__}: {e}"[:300])
+            return 1
     print(__doc__)
     return 2
 

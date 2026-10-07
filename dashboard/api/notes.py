@@ -192,3 +192,34 @@ async def change_todo(body: TodoBody, person: Person = Depends(current_person)) 
     if body.action == "update":
         return await _run(company_todo.update, person, body.todo, body.status, body.importance)
     return await _run(company_todo.move, person, body.todo, body.to or "current")
+
+
+# --- "Tidy up" on the Files tab (orchestrator/notes_tidy.py): own folder, .md/.txt only -------------
+
+class TidyPlanBody(Strict):
+    kind: Literal["structure", "content"]
+    wishes: str = Field(default="", max_length=1000)
+
+
+class TidyApplyBody(Strict):
+    kind: Literal["structure", "content"]
+    digest: str = Field(min_length=1, max_length=40)
+    steps: list[int] = Field(min_length=1, max_length=60)
+
+
+@router.post("/tidy/plan")
+async def tidy_plan(body: TidyPlanBody, person: Person = Depends(current_person)) -> dict:
+    from orchestrator import notes_tidy
+    try:
+        return await notes_tidy.propose(person, body.kind, body.wishes)
+    except (notes_tidy.TidyError, nas.NasError) as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/tidy/apply")
+async def tidy_apply(body: TidyApplyBody, person: Person = Depends(current_person)) -> dict:
+    from orchestrator import notes_tidy
+    try:
+        return await asyncio.to_thread(notes_tidy.dashboard_apply, person, body.kind, body.digest, body.steps)
+    except (notes_tidy.TidyError, nas.NasError) as e:
+        raise HTTPException(status_code=400, detail=str(e))
