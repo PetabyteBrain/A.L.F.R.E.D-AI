@@ -553,6 +553,8 @@ async def usage_report(person: Person = Depends(admin_only), days: int = Query(d
     from orchestrator import usage
     data = usage.report(days)
     data["twilio_month"] = await usage.twilio_month_to_date()
+    from orchestrator import billing
+    data["anthropic_billed"] = await billing.billed(days)
     return data
 
 

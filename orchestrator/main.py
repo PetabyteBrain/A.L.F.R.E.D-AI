@@ -110,12 +110,24 @@ def _asset_version(url: str) -> str:
     return cached[1]
 
 
+# Browser-tab icons: one version over all of them. The served page carries it in <meta name="icon-version">,
+# and theme-boot.js / themes.setFavicon put it on the skin's icon URL, so a browser never reuses an old icon.
+_ICONS = ("/favicon.svg", "/favicon-alfred.svg", "/favicon-batcave.svg", "/favicon-matrix.svg", "/favicon-alfred.svg")
+
+
+def _icon_version() -> str:
+    return hashlib.sha256("".join(_asset_version(u) for u in _ICONS).encode()).hexdigest()[:10]
+
+
 def _versioned(html: str) -> str:
     for url in _FIXED_NAME_ASSETS:
         v = _asset_version(url)
         if v:
             html = html.replace(f'"{url}"', f'"{url}?v={v}"')
-    return html
+    iv = _icon_version()
+    for url in _ICONS:
+        html = html.replace(f'"{url}"', f'"{url}?v={iv}"')
+    return html.replace('<link rel="icon"', f'<meta name="icon-version" content="{iv}">\n  <link rel="icon"', 1)
 
 
 def _page(path: Path, status_code: int = 200) -> HTMLResponse:

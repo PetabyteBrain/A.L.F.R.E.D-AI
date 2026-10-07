@@ -89,7 +89,10 @@ the original spec is in `docs/archive/original-spec.md`. Keep the plan updated w
   channel-gated to calls). Outcome hook: `call_handler._call_finished` -> `scheduler.on_call_finished`.
 - Google Calendar: `orchestrator/google_calendar.py` + `dashboard/api/google.py`; tools marked
   `requires: google` in registry.yaml only appear for people with a linked calendar.
-- Usage metering: `orchestrator/usage.py`; record every new billable API call there.
+- Usage metering: `orchestrator/usage.py`; record every new billable API call there (also when it is
+  cut off: see `agent_core._record_cut`). Real billed cost (optional admin key): `orchestrator/billing.py`.
+- Files tab previews: `orchestrator/file_preview.py` returns plain data; never render HTML from a file and
+  only serve inline types from `INLINE` (no SVG/HTML).
 - Agenda (`orchestrator/agenda.py`): reminders tied to calendar events + categories; any code that
   changes or deletes a calendar event should call `agenda.on_event_changed`.
 

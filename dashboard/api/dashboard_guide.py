@@ -16,7 +16,8 @@ PAGES: dict[str, tuple[str, str]] = {
                        "calendar-only entry) and List view (tasks, meetings, reminders, scheduled and archived "
                        "calls, n8n automations if allowed)."),
     "notes": ("Files", "notes, lists and files on the NAS: own folder, Company for admins/cofounders, every "
-                       "folder for admins; editor with Markdown preview and checklists, recent files; "
+                       "folder for admins; editor with Markdown preview and checklists, read-only previews of PDF, Word, Excel, "
+                       "PowerPoint, pictures, audio and video, recent files; "
                        "Tidy up asks Alfred to propose a cleaner layout for your notes, applied only after you approve it."),
     "activity": ("Log", "the event log of everything that happened; admins can export it."),
     "health": ("Systems", "health of the services, Pis, Jetson and backups; admins also see the monthly "

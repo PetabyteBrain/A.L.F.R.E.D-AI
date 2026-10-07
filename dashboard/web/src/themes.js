@@ -11,7 +11,15 @@ export const THEME_KEY = "alfred-theme";
 export const normalizeTheme = (t) => (THEMES[t] ? t : DEFAULT_THEME); // e.g. old "friday" -> alfred
 
 // Browser-tab icon per skin (public/favicon-<skin>.svg; favicon.svg = Stark for pages without JS).
+// A fresh <link> with a versioned URL (meta icon-version, set by the server): browsers often ignore a
+// changed href on the existing element, and may hold on to an old copy of the same URL.
 export function setFavicon(theme) {
   const link = document.querySelector('link[rel="icon"]');
-  if (link) link.setAttribute("href", `/favicon-${normalizeTheme(theme)}.svg`);
+  if (!link) return;
+  const ver = document.querySelector('meta[name="icon-version"]')?.getAttribute("content");
+  const href = `/favicon-${normalizeTheme(theme)}.svg${ver ? `?v=${ver}` : ""}`;
+  if (link.getAttribute("href") === href) return;
+  const fresh = link.cloneNode(false);
+  fresh.setAttribute("href", href);
+  link.replaceWith(fresh);
 }

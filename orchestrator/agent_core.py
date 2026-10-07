@@ -10,6 +10,7 @@ import logging
 from collections import defaultdict
 from collections.abc import Awaitable, Callable
 from datetime import datetime, timedelta
+from types import SimpleNamespace
 from zoneinfo import ZoneInfo
 
 import anthropic
@@ -228,17 +229,42 @@ async def respond(
         return reply
 
 
-async def _call_model(kwargs: dict, on_event: OnEvent | None):
+async def _call_model(kwargs: dict, on_event: OnEvent | None, on_cut=None):
     if on_event is None:
         return await client().messages.create(**kwargs)
+    streamed = 0
     async with client().messages.stream(**kwargs) as stream:
-        async for event in stream:
-            if event.type == "text":
-                await on_event("delta", event.text)
-            elif event.type == "content_block_start" and getattr(event.content_block, "type", "") == "server_tool_use":
-                # A server-side tool (web search) starts mid-response: same signal as a local tool.
-                await on_event("tool", event.content_block.name)
-        return await stream.get_final_message()
+        try:
+            async for event in stream:
+                if event.type == "text":
+                    streamed += len(event.text)
+                    await on_event("delta", event.text)
+                elif event.type == "content_block_start" and getattr(event.content_block, "type", "") == "server_tool_use":
+                    # A server-side tool (web search) starts mid-response: same signal as a local tool.
+                    await on_event("tool", event.content_block.name)
+            return await stream.get_final_message()
+        except BaseException:
+            # Cut off mid-reply (caller talked over Alfred or hung up, chat tab closed, network): the input
+            # is billed in full and the output so far, so it is still metered (usage.py).
+            if on_cut is not None:
+                _record_cut(stream, streamed, on_cut)
+            raise
+
+
+def _record_cut(stream, streamed_chars: int, on_cut) -> None:
+    try:
+        snap = stream.current_message_snapshot
+    except AssertionError:                     # nothing came back yet: no usage numbers to record
+        return
+    try:
+        u = snap.usage
+        out = max(getattr(u, "output_tokens", 0) or 0, streamed_chars // 4)
+        on_cut(SimpleNamespace(input_tokens=u.input_tokens, output_tokens=out,
+                               cache_read_input_tokens=getattr(u, "cache_read_input_tokens", 0),
+                               cache_creation_input_tokens=getattr(u, "cache_creation_input_tokens", 0),
+                               server_tool_use=getattr(u, "server_tool_use", None)))
+    except Exception:  # noqa: BLE001 — metering must never break a turn
+        log.warning("Couldn't meter a cut-off reply", exc_info=True)
 
 
 async def _run(person: Person, channel: str, session_id: str, user_text: str, extra_system: str | None,
@@ -267,7 +293,8 @@ async def _run(person: Person, channel: str, session_id: str, user_text: str, ex
             kwargs = dict(model=model, system=system, messages=messages, **ai_config.request_params(model, channel))
             if tools:
                 kwargs["tools"] = tools
-            response = await _call_model(kwargs, on_event)
+            response = await _call_model(kwargs, on_event, lambda u, m=model: usage.record_claude(
+                u, kind=f"{channel} (cut off)", user_id=person.id, session_id=session_id, model=m))
         except anthropic.AuthenticationError:
             db.set_health("claude", False, "authentication failed")
             return "I can't reach my language model right now (authentication failed)."

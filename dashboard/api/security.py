@@ -185,7 +185,7 @@ user_throttle = Throttle(window_s=900, max_failures=5)
 
 CSP = (
     "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; "
-    "media-src 'self'; connect-src 'self'; font-src 'self'; object-src 'none'; "
+    "media-src 'self'; connect-src 'self'; font-src 'self'; object-src 'none'; frame-src 'self'; "
     "base-uri 'none'; frame-ancestors 'none'; form-action 'self'"
 )
 

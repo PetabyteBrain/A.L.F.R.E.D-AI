@@ -2,7 +2,8 @@
 
 Budgets (USD per calendar month, local time) are set by admins on the Usage tab; empty = none.
 Spend this month:
-- anthropic: estimated from metered tokens + web searches (usage.py prices)
+- anthropic: estimated from metered tokens + web searches (usage.py prices), or what Anthropic actually
+  billed this month if that is higher (billing.py, only with an Admin API key)
 - elevenlabs: estimated from metered characters/seconds (only if prices are configured)
 - twilio: the real month-to-date bill from Twilio's Usage API (calls + phone number)
 - total: the sum of the above
@@ -66,6 +67,10 @@ async def spend() -> dict:
     out = {"anthropic": 0.0, "elevenlabs": 0.0, "twilio": None}
     for r in rows:
         out[r["provider"]] = round(r["cost"] or 0, 4)
+    from . import billing
+    real = await billing.month_to_date()
+    if real is not None and real > out["anthropic"]:
+        out["anthropic"] = real
     tw = await usage.twilio_month_to_date()
     if tw and tw.get("total") is not None:
         out["twilio"] = round(tw["total"], 4)

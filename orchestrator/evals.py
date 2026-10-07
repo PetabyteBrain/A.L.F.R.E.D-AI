@@ -18,7 +18,9 @@ import os
 import sys
 import tempfile
 
-# Isolate BEFORE anything reads the settings.
+# Isolate BEFORE anything reads the settings. The live database is remembered only to add this run's
+# cost to Alfred's usage (one "evals" line per model), so the Usage tab matches the Anthropic bill.
+_LIVE_DB = os.environ.get("DB_PATH") or "/data/alfred.db"
 _TMP = tempfile.mkdtemp(prefix="alfred-evals-")
 os.environ.update({
     "DB_PATH": os.path.join(_TMP, "evals.db"), "STORAGE_ROOT": os.path.join(_TMP, "storage"),
@@ -390,9 +392,33 @@ async def main(only: str | None = None) -> int:
                 print(f"        turn {i + 1} tools: {[(n, a) for n, a in t]}")
                 print(f"        turn {i + 1} reply: {r[:300]!r}")
     cost = db.query_one("SELECT SUM(cost_usd) AS c FROM api_usage")["c"] or 0
+    _meter_live()
     from . import ai_config
     print(f"\n{len(cases) - failed}/{len(cases)} passed · model {ai_config.current()['model']} · cost ≈ ${cost:.3f}")
     return 1 if failed else 0
+
+
+def _meter_live() -> None:
+    """The run's API usage, summed per model and key, into the live database (if there is one)."""
+    import sqlite3
+    if not os.path.exists(_LIVE_DB):
+        return
+    rows = db.query("SELECT provider, model, account, SUM(input_tokens) i, SUM(output_tokens) o, SUM(cache_read_tokens) cr, "
+                    "SUM(cache_write_tokens) cw, SUM(units) u, MAX(unit) unit, SUM(cost_usd) c FROM api_usage "
+                    "WHERE provider = 'anthropic' GROUP BY provider, model, account")
+    if not rows:
+        return
+    try:
+        conn = sqlite3.connect(_LIVE_DB, timeout=30)
+        with conn:
+            for r in rows:
+                conn.execute("INSERT INTO api_usage(ts, provider, kind, model, input_tokens, output_tokens, cache_read_tokens, "
+                             "cache_write_tokens, units, unit, cost_usd, account) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                             (db.now_iso(), r["provider"], "evals", r["model"], r["i"] or 0, r["o"] or 0, r["cr"] or 0,
+                              r["cw"] or 0, r["u"] or 0, r["unit"] or "", r["c"] or 0, r["account"]))
+        conn.close()
+    except sqlite3.Error as e:
+        print(f"(couldn't add this run's cost to Alfred's usage: {e})")
 
 
 if __name__ == "__main__":

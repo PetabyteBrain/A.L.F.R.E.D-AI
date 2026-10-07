@@ -1355,3 +1355,23 @@ main[hidden], [hidden] { display: none !important; }
 .tidy-steps .link { margin-left: 8px; font-size: 12px; }
 .tidy-text { white-space: pre-wrap; max-height: 260px; overflow: auto; font-size: 12px; padding: 8px; margin: 6px 0 0;
   border: 1px solid var(--line); border-radius: 6px; }
+
+/* Files tab: read-only previews */
+.file-preview { margin-top: 10px; min-width: 0; }
+.pv-frame { width: 100%; height: 75vh; min-height: 420px; border: 1px solid var(--line); border-radius: 6px; background: #fff; }
+.pv-media img, .pv-media video { max-width: 100%; max-height: 75vh; display: block; border-radius: 6px; }
+.pv-audio { width: 100%; }
+.pv-table-wrap { overflow: auto; max-height: 70vh; border: 1px solid var(--line); border-radius: 6px; margin: 8px 0; }
+.pv-table { border-collapse: collapse; font-size: 12.5px; min-width: 100%; }
+.pv-table th, .pv-table td { border: 1px solid var(--line); padding: 4px 8px; text-align: left; vertical-align: top;
+  white-space: pre-wrap; max-width: 320px; overflow-wrap: anywhere; }
+.pv-table thead th { position: sticky; top: 0; background: var(--panel, var(--bg)); }
+.pv-doc p { white-space: pre-wrap; }
+.pv-sheets { margin-bottom: 4px; flex-wrap: wrap; }
+.pv-slides { display: grid; gap: 10px; }
+.pv-slide { border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px; }
+.pv-slide h4 { margin: 4px 0 6px; }
+.pv-slide ul { margin: 0; padding-left: 20px; }
+.pv-notes { margin: 6px 0 0; }
+.pv-text { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 70vh; overflow: auto; font-size: 12.5px;
+  border: 1px solid var(--line); border-radius: 6px; padding: 10px; }

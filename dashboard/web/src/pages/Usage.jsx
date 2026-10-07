@@ -106,6 +106,8 @@ export default function Usage() {
   const voiceIn = u?.voice?.find((r) => r.kind === "voice-inbound");
   const voiceOut = u?.voice?.find((r) => r.kind === "voice-outbound");
   const tw = u?.twilio_month;
+  const billed = u?.anthropic_billed;
+  const billedOk = (billed?.accounts || []).filter((a) => a.usd != null);
 
   return (
     <Panel code="09" title="API usage" actions={
@@ -122,6 +124,12 @@ export default function Usage() {
           <div className="stat-grid">
             <Stat label={`Est. cost · ${days}d`} value={usd(u.estimated_cost_usd, 2)}
                   sub={u.elevenlabs_priced ? "Claude + ElevenLabs" : "Claude only (ElevenLabs prices not set)"} />
+            {billed?.configured && (
+              <Stat label={`Billed by Anthropic · ${days}d`}
+                    value={billedOk.length ? usd(billedOk.reduce((a, b) => a + b.usd, 0), 2) : "—"}
+                    sub={(billed.accounts || []).map((a) => `${a.label} ${a.usd != null ? usd(a.usd, 2) : `(${a.error})`}`).join(" · ")
+                         + " · whole organisation, from Anthropic's cost report"} />
+            )}
             <Stat label="Claude tokens" value={`${compact(claude.input + claude.cacheRead + claude.cacheWrite)} / ${compact(claude.output)}`}
                   sub={`in / out · ${compact(claude.requests)} requests`} />
             <Stat label="Prompt cache hits" value={`${Math.round(claude.cacheShare * 100)}%`} sub={`${compact(claude.cacheRead)} tokens read from cache`} />
@@ -173,8 +181,12 @@ export default function Usage() {
             </section>
           </div>
           <p className="muted tiny">
-            Claude figures are exact (from each API response), each priced at its model's rates (Haiku 4.5: $1/M input,
-            {" "}$5/M output; Sonnet 5.5: $2 / $10; Opus 5.5: $4 / $20; Fable 5.1: $10 / $50).
+            Claude figures are Alfred's own metering (token counts from each API response, replies cut off mid-way and
+            {" "}behaviour-check runs included), priced at list rates (Haiku 4.5: $1/M input, $5/M output; Sonnet 5.5: $2 / $10;
+            {" "}Opus 5.5: $4 / $20; Fable 5.1: $10 / $50). Anthropic's bill also covers anything else on the same organisation
+            {" "}(other apps or keys, the Console, Claude Code on an API key): {billed?.configured
+              ? "the Billed figure above is that real total."
+              : "set ANTHROPIC_ADMIN_KEY in .env to show the real billed total here."}
             {" "}ElevenLabs is metered by characters and seconds; set PRICE_ELEVENLABS_* in .env for cost estimates.
             {" "}Telegram and Google Calendar have no usage charges.
           </p>

@@ -112,6 +112,37 @@ async def download(scope: AnyScope, path: str = Query(max_length=400), person: P
         "Content-Disposition": f"attachment; filename*=UTF-8''{quote(name)}", "Cache-Control": "private, no-store"})
 
 
+@router.get("/preview")
+async def file_preview_json(scope: AnyScope, path: str = Query(max_length=400), person: Person = Depends(current_person)) -> dict:
+    """Read-only preview of an office document or code file as plain data (orchestrator/file_preview.py)."""
+    from orchestrator import file_preview
+    name = path.rsplit("/", 1)[-1]
+    if not file_preview.can_preview(name) and not name.lower().endswith(file_preview.LEGACY):
+        raise HTTPException(status_code=400, detail="No preview for this file type. Download it to open it.")
+    name, data = await _run(nas_files.download, person, scope, path)
+    try:
+        return await asyncio.to_thread(file_preview.preview, name, data)
+    except file_preview.PreviewError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.get("/view")
+async def view(scope: AnyScope, path: str = Query(max_length=400), person: Person = Depends(current_person)) -> Response:
+    """PDFs, pictures, audio and video shown by the browser itself, framed only by the dashboard.
+    Fixed content types from a short list (+ nosniff), so nothing in a file can run as a page."""
+    from orchestrator import file_preview
+    kind = file_preview.inline_type(path)
+    if not kind:
+        raise HTTPException(status_code=400, detail="This file type isn't shown inline. Download it instead.")
+    name, data = await _run(nas_files.download, person, scope, path)
+    return Response(data, media_type=kind, headers={
+        "Content-Disposition": f"inline; filename*=UTF-8''{quote(name)}", "Cache-Control": "private, no-store",
+        "X-Frame-Options": "SAMEORIGIN",
+        # Chrome's PDF viewer counts as a plugin: object-src 'none' would blank it, so PDFs only limit framing.
+        "Content-Security-Policy": "frame-ancestors 'self'" if kind == "application/pdf" else
+        "default-src 'none'; img-src 'self' data:; media-src 'self'; frame-ancestors 'self'"})
+
+
 @router.post("/upload")
 async def upload(scope: AnyScope = Form(...), folder: str = Form(default="", max_length=400), replace: bool = Form(default=False),
                  file: UploadFile = File(...), person: Person = Depends(current_person)) -> dict:

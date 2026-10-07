@@ -5,6 +5,12 @@
   try { t = localStorage.getItem("alfred-theme") || t; } catch (e) { /* storage blocked */ }
   if (["alfred", "batcave", "matrix", "alfred"].indexOf(t) < 0) t = "alfred";
   document.documentElement.setAttribute("data-theme", t);
+  // Tab icon: a fresh <link> with a versioned URL (browsers ignore a changed href or keep an old copy).
   var icon = document.querySelector('link[rel="icon"]');      // loaded after the <link>, so it exists
-  if (icon) icon.setAttribute("href", "/favicon-" + t + ".svg");
+  var ver = document.querySelector('meta[name="icon-version"]');
+  if (icon) {
+    var fresh = icon.cloneNode(false);
+    fresh.setAttribute("href", "/favicon-" + t + ".svg" + (ver ? "?v=" + ver.getAttribute("content") : ""));
+    icon.parentNode.replaceChild(fresh, icon);
+  }
 })();

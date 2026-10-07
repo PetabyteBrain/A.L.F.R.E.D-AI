@@ -3857,3 +3857,183 @@ def test_ai_model_and_key_switch(monkeypatch):
     monkeypatch.delenv("ANTHROPIC_API_KEY_2")
     assert ai_config.key_name() == "primary"
     db.execute("DELETE FROM app_settings WHERE key = 'ai'")
+
+
+def _zip(files: dict) -> bytes:
+    import io, zipfile
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as z:
+        for name, text in files.items():
+            z.writestr(name, text)
+    return buf.getvalue()
+
+
+def test_file_previews():
+    import io
+    import openpyxl
+    from orchestrator import file_preview as fp
+    W = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"'
+    docx = _zip({"word/document.xml": f'<w:document {W}><w:body>'
+                 '<w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t>Offer</w:t></w:r></w:p>'
+                 '<w:p><w:r><w:t>Price &lt;b&gt;CHF</w:t></w:r><w:r><w:tab/><w:t>2400</w:t></w:r></w:p>'
+                 '<w:p><w:pPr><w:numPr/></w:pPr><w:r><w:t>three weeks</w:t></w:r></w:p>'
+                 '<w:tbl><w:tr><w:tc><w:p><w:r><w:t>A</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>B</w:t></w:r></w:p></w:tc></w:tr></w:tbl>'
+                 '</w:body></w:document>'})
+    blocks = fp.preview("Offer.docx", docx)["blocks"]
+    assert blocks[0] == {"type": "h", "level": 1, "text": "Offer"}
+    assert blocks[1] == {"type": "p", "text": "Price <b>CHF\t2400"}           # plain text, never markup
+    assert blocks[2]["type"] == "li" and blocks[3] == {"type": "table", "rows": [["A", "B"]]}
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Q4"
+    ws.append(["Item", "Price"])
+    ws.append(["Site", 2400.0])
+    buf = io.BytesIO()
+    wb.save(buf)
+    sheets = fp.preview("Prices.xlsx", buf.getvalue())["sheets"]
+    assert sheets == [{"name": "Q4", "rows": [["Item", "Price"], ["Site", "2400"]], "more": False}]
+    assert fp.preview("a.csv", b"x;y\n1;2\n")["sheets"][0]["rows"] == [["x", "y"], ["1", "2"]]
+
+    A = ('xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" '
+         'xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"')
+    slide = (f'<p:sld {A}><p:cSld><p:spTree>'
+             '<p:sp><p:nvSpPr><p:nvPr><p:ph type="title"/></p:nvPr></p:nvSpPr><p:txBody><a:p><a:r><a:t>Hello</a:t></a:r></a:p></p:txBody></p:sp>'
+             '<p:sp><p:nvSpPr><p:nvPr/></p:nvSpPr><p:txBody><a:p><a:r><a:t>Point one</a:t></a:r></a:p></p:txBody></p:sp>'
+             '</p:spTree></p:cSld></p:sld>')
+    pptx = _zip({"ppt/slides/slide2.xml": slide.replace("Hello", "Second"), "ppt/slides/slide1.xml": slide})
+    slides = fp.preview("Deck.pptx", pptx)["slides"]
+    assert [s["title"] for s in slides] == ["Hello", "Second"] and slides[0]["text"] == ["Point one"]
+
+    assert fp.preview("run.py", b"print('<script>')")["text"] == "print('<script>')"
+    assert fp.inline_type("scan.PDF") == "application/pdf" and fp.inline_type("x.svg") is None   # SVG can carry scripts
+    for name, data, why in (("old.doc", b"x", "Older Office"), ("bad.docx", b"not a zip", "couldn't be read"),
+                            ("x.exe", b"MZ", "No preview")):
+        try:
+            fp.preview(name, data)
+            raise AssertionError(name)
+        except fp.PreviewError as e:
+            assert why in str(e)
+
+
+def test_file_preview_endpoints(monkeypatch, tmp_path):
+    import dataclasses
+    from fastapi.testclient import TestClient
+    from orchestrator import nas
+    from orchestrator.config import settings
+    from orchestrator.main import app
+    import orchestrator.nas_files as nf
+    fake = _FakeSMB(tmp_path)
+    monkeypatch.setattr(nas, "settings", dataclasses.replace(settings, nas_host="nas", nas_user="u", nas_password="p",
+                                                             nas_share_company="Company", nas_share_personal="Alfred_Personal"))
+    monkeypatch.setattr(nas, "_smb", lambda: fake)
+    monkeypatch.setattr(nf, "_smb", lambda: fake)
+    admin = registry.lookup("telegram", "111")
+    nf.upload(admin, "personal", "", "scan.pdf", b"%PDF-1.4 fake")
+    nf.upload(admin, "personal", "", "page.html", b"<script>alert(1)</script>")
+    with TestClient(app, base_url="http://testserver") as c:
+        c.post("/api/login", json={"username": "admin", "password": "correct horse battery"}, headers=CSRF)
+        r = c.get("/api/nas/view", params={"scope": "personal", "path": "scan.pdf"})
+        assert r.status_code == 200 and r.headers["content-type"] == "application/pdf"
+        assert r.headers["x-frame-options"] == "SAMEORIGIN" and r.headers["content-disposition"].startswith("inline")
+        assert r.headers["x-content-type-options"] == "nosniff"
+        assert c.get("/api/nas/view", params={"scope": "personal", "path": "page.html"}).status_code == 400   # never inline
+        j = c.get("/api/nas/preview", params={"scope": "personal", "path": "page.html"}).json()
+        assert j == {"kind": "text", "text": "<script>alert(1)</script>", "truncated": False}
+        assert "frame-src 'self'" in c.get("/app").headers["content-security-policy"]
+    c2 = TestClient(app, base_url="http://testserver")                          # signed out: nothing
+    assert c2.get("/api/nas/view", params={"scope": "personal", "path": "scan.pdf"}).status_code == 401
+
+
+def test_favicon_urls_are_versioned():
+    from orchestrator import main
+    html = main._versioned('<head><link rel="icon" href="/favicon.svg" type="image/svg+xml">'
+                           '<img src="/favicon-batcave.svg"></head>')
+    v = main._icon_version()
+    assert f'<meta name="icon-version" content="{v}">' in html
+    assert f'href="/favicon.svg?v={v}"' in html and f'src="/favicon-batcave.svg?v={v}"' in html
+
+
+async def test_cut_off_reply_is_still_metered(monkeypatch):
+    import asyncio
+    from types import SimpleNamespace as NS
+    from orchestrator import agent_core
+    seen = []
+
+    class Stream:
+        current_message_snapshot = NS(usage=NS(input_tokens=5000, output_tokens=1, cache_read_input_tokens=200,
+                                               cache_creation_input_tokens=0))
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *exc):
+            return False
+
+        def __aiter__(self):
+            return self._events()
+
+        async def _events(self):
+            yield NS(type="text", text="x" * 400)
+            raise asyncio.CancelledError()                # the caller talked over Alfred
+
+    monkeypatch.setattr(agent_core, "_client", NS(messages=NS(stream=lambda **kw: Stream())))
+
+    async def on_event(kind, text):
+        pass
+    try:
+        await agent_core._call_model({}, on_event, seen.append)
+        raise AssertionError("not cancelled")
+    except asyncio.CancelledError:
+        pass
+    assert seen[0].input_tokens == 5000 and seen[0].output_tokens == 100 and seen[0].cache_read_input_tokens == 200
+
+
+async def test_billed_cost_from_anthropic(monkeypatch):
+    from orchestrator import billing, budgets
+    billing._cache.clear()
+    monkeypatch.delenv("ANTHROPIC_ADMIN_KEY", raising=False)
+    monkeypatch.delenv("ANTHROPIC_ADMIN_KEY_2", raising=False)
+    assert (await billing.billed(30)) == {"configured": False} and await billing.month_to_date() is None
+    monkeypatch.setenv("ANTHROPIC_ADMIN_KEY", "sk-ant-admin01-test")
+    pages = [{"data": [{"results": [{"amount": "150.5", "model": "claude-haiku-4-5", "cost_type": "tokens"},
+                                    {"amount": "20", "model": None, "cost_type": "web_search"}]}],
+              "has_more": True, "next_page": "p2"},
+             {"data": [{"results": [{"amount": "29.5", "model": "claude-haiku-4-5"}]}], "has_more": False}]
+    sent = []
+
+    class Resp:
+        status_code = 200
+
+        def __init__(self, body):
+            self.body = body
+
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return self.body
+
+    class Client:
+        def __init__(self, **kw):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *exc):
+            return False
+
+        async def get(self, url, params, headers):
+            sent.append((url, dict(params), headers))
+            return Resp(pages[(len(sent) - 1) % 2])
+
+    monkeypatch.setattr(billing.httpx, "AsyncClient", Client)
+    out = await billing.billed(30)
+    acc = out["accounts"][0]
+    assert acc["usd"] == 2.0 and acc["by_model"] == {"claude-haiku-4-5": 1.8, "web_search": 0.2}
+    assert sent[0][0].endswith("/v1/organizations/cost_report") and sent[0][2]["x-api-key"] == "sk-ant-admin01-test"
+    assert "ending_at" not in sent[0][1] and sent[1][1]["page"] == "p2"
+    billing._cache.clear()
+    assert (await budgets.spend())["anthropic"] >= 2.0          # the real bill wins when it's higher
+    billing._cache.clear()

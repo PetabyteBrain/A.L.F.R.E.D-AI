@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { api, apiUpload } from "../api.js";
 import { ErrorNote, Tag } from "./common.jsx";
 import Markdown from "./Markdown.jsx";
+import FilePreview from "./FilePreview.jsx";
 
 const dl = (scope, path) => `/api/nas/download?${new URLSearchParams({ scope, path })}`;
 const isMd = (p) => /\.md$/i.test(p);
@@ -27,6 +28,7 @@ export default function FileEditor({ file, onSaved, onDirty }) {
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
   const [newItem, setNewItem] = useState("");
+  const [version, setVersion] = useState(0);         // bumps after "Replace with…" so the preview reloads
   const ta = useRef(null);
   const editable = /\.(md|txt|csv|json|log|ya?ml)$/i.test(path);
   const dirty = doc && text !== doc.text;
@@ -80,18 +82,21 @@ export default function FileEditor({ file, onSaved, onDirty }) {
     fd.append("scope", scope); fd.append("folder", folder); fd.append("replace", "true");
     fd.append("file", new File([f], path.slice(path.lastIndexOf("/") + 1)));
     setBusy(true); setErr("");
-    try { await apiUpload("/nas/upload", fd); onSaved?.(); } catch (x) { setErr(x.message); } finally { setBusy(false); e.target.value = ""; }
+    try { await apiUpload("/nas/upload", fd); onSaved?.(); setVersion((v) => v + 1); } catch (x) { setErr(x.message); } finally { setBusy(false); e.target.value = ""; }
   }
 
   if (!editable) {
     return (
       <div className="file-editor">
-        <p className="small">This file type isn't edited in the browser. Download it, edit it, then upload it again to replace it.</p>
-        <ErrorNote error={err} />
-        <div className="form-actions">
-          <a className="btn primary small" href={dl(scope, path)} download>Download</a>
-          <label className="btn small">Replace with… <input type="file" hidden onChange={replace} /></label>
+        <div className="editor-bar">
+          <span className="muted small">Preview only: to change it, download, edit and replace it.</span>
+          <div className="row-actions">
+            <a className="btn primary small" href={dl(scope, path)} download>Download</a>
+            <label className="btn small">Replace with… <input type="file" hidden onChange={replace} disabled={busy} /></label>
+          </div>
         </div>
+        <ErrorNote error={err} />
+        <div className="file-preview"><FilePreview scope={scope} path={path} version={version} /></div>
       </div>
     );
   }
