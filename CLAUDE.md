@@ -38,8 +38,12 @@ the original spec is in `docs/archive/original-spec.md`. Keep the plan updated w
   workbook with openpyxl). Telegram files: `orchestrator/uploads.py`; search by meaning:
   `orchestrator/nas_search.py`. Recordings are written to local `STORAGE_ROOT` and moved to the NAS
   after 14 days (`orchestrator/recording_archive.py`); always read/delete them through that module.
-- Model: `claude-haiku-4-5` (user's choice) via the official `anthropic` SDK (1.x, async client).
-  Haiku 4.5 does not take adaptive thinking/effort; don't add them.
+- Model and billing key are chosen by admins on the Settings tab (`orchestrator/ai_config.py`, setting `ai`):
+  ANTHROPIC_API_KEY / ANTHROPIC_API_KEY_2, conversations on Haiku 4.5 (default) / Sonnet 5.5 / Opus 5.5 /
+  Fable 5.1, calls separately (Haiku default). Haiku takes no thinking/effort; the others always think
+  (effort via `output_config`, larger max_tokens) - use `ai_config.request_params`, never hard-code. Keep
+  history append-only within a turn (preserved thinking). Helper jobs stay on CLAUDE_MODEL (Haiku).
+  `agent_core._client`, when set, overrides the key (tests, dev server).
 - Notes tidy-up: `orchestrator/notes_tidy.py` (personal scope, .md/.txt only, preview -> confirm after a new user turn).
 - Every acting tool call passes a weekday/date check first (`orchestrator/dates.py`, `registry.date_problems`).
 - Keep the static system prompt in `agent_core.STATIC_SYSTEM` byte-stable (prompt caching); put
