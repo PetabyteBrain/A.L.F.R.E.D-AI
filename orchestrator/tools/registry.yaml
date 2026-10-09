@@ -384,7 +384,7 @@ tools:
     input_schema:
       type: object
       properties:
-        host: {type: string, description: "host-b, host-f, host-c, host-g, host-h or jetson"}
+        host: {type: string, description: "A host name from the homelab list (e.g. one from an earlier status answer)."}
 
   - name: homelab_updates
     kind: builtin

@@ -7,3 +7,13 @@ __pycache__/
 data-dev/
 node_modules/
 dashboard/web/dist/
+
+# Personal / machine-specific (kept locally, never pushed)
+CLAUDE.local.md
+*.local.md
+docs/PROJECT_PLAN.md
+docs/archive/
+orchestrator/homelab.yaml
+infra/backup.env
+.env.*
+!.env.example

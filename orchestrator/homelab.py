@@ -22,7 +22,9 @@ from .identity.registry import Person
 
 log = logging.getLogger(__name__)
 
+# The real host list (addresses, roles) stays out of git: copy homelab.example.yaml to homelab.yaml.
 HOSTS_FILE = Path(__file__).with_name("homelab.yaml")
+EXAMPLE_FILE = Path(__file__).with_name("homelab.example.yaml")
 POLL_SECONDS = 300
 DISK_ALERT_PCT = 90
 TEMP_ALERT_C = 80
@@ -38,6 +40,8 @@ class HomelabError(ValueError):
 
 
 def hosts() -> list[dict]:
+    if not HOSTS_FILE.is_file():
+        return []
     return (yaml.safe_load(HOSTS_FILE.read_text(encoding="utf-8")) or {}).get("hosts", [])
 
 
@@ -236,7 +240,7 @@ async def poll_and_alert() -> None:
 
 def host_rows_visible(rows: list[dict], is_admin: bool) -> list[dict]:
     """Systems rows for the dashboard: grouped, host rows only for admins and only configured hosts."""
-    configured = hosts() if HOSTS_FILE.exists() else []
+    configured = hosts()
     roles = {f"host {h['name']}": h.get("role", "") for h in configured}
     rank = {f"host {h['name']}": i for i, h in enumerate(configured)}
     out = []

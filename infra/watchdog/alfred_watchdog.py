@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""External watchdog for Alfred. Runs on another Pi (homelab-host) from cron every 2 minutes and
+"""External watchdog for Alfred. Runs on another machine from cron every 2 minutes and
 messages the admins straight through the Telegram Bot API, so it works when Alfred is down.
 
 Watches (over the tailnet):
@@ -122,7 +122,7 @@ def run() -> int:
         alerted.pop(p)
 
     if new:
-        send(conf, "🚨 Watchdog (host-d): " + "; ".join(LABELS.get(p, p) for p in new) + ".")
+        send(conf, "🚨 Watchdog: " + "; ".join(LABELS.get(p, p) for p in new) + ".")
     if remind:
         send(conf, "🚨 Still a problem: " + "; ".join(LABELS.get(p, p) for p in remind) + ".")
     if cleared:
@@ -137,6 +137,6 @@ if __name__ == "__main__":
     if sys.argv[1:] == ["--test"]:                 # send a test message, show what it sees
         c = config()
         print("problems now:", sorted(problems(c)) or "none")
-        send(c, "✅ Alfred's watchdog on host-d is set up. You'll hear from it only if something breaks.")
+        send(c, "✅ Alfred's watchdog is set up. You'll hear from it only if something breaks.")
         sys.exit(0)
     sys.exit(run())

@@ -1,6 +1,6 @@
 # Homelab operator access (alfred-ops)
 
-Alfred (on alfred-server) checks the homelab with the key `~/.ssh/alfred_ops`. On every host that
+Alfred (on the Alfred server) checks the homelab with the key `~/.ssh/alfred_ops`. On every host that
 key is pinned to one script, so it can never get a shell:
 
 ```
@@ -33,10 +33,13 @@ ssh user@alfred-server 'ssh-keyscan -t ed25519 HOST_IP >> ~/.ssh/alfred_ops_know
 Then add it to `orchestrator/homelab.yaml` and deploy. Until the key is installed, Systems shows the
 host as "access not set up" (no alert).
 
-## Current allowlists (2026-10-03)
+## Allowlists
+
+Each host's `~/.config/alfred-ops/allow` lists the containers Alfred may read logs of and restart.
+Keep databases and Alfred's own container off the list. Example:
 
 | Host | Restart/logs allowed for |
 |---|---|
-
-**Tailscale SSH:** if a host has Tailscale SSH switched on, its tailnet IP answers SSH itself (with a
-browser check) and ignores `authorized_keys`. Use the host's LAN IP for it in `homelab.yaml`.
+| proxy | caddy, n8n (not the databases) |
+| gpu | alfred-speech |
+| alfred-server | nothing (Alfred doesn't restart himself) |

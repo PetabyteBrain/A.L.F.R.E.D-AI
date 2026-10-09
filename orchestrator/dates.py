@@ -51,8 +51,8 @@ def _fmt(d: date) -> str:
     return f"{WEEKDAYS[d.weekday()].title()} {d.day} {d.strftime('%B %Y')}"
 
 
-def _upcoming(weekday: int) -> date:
-    today = _today()
+def _upcoming(weekday: int, today: date | None = None) -> date:
+    today = today or _today()
     return today + timedelta(days=(weekday - today.weekday()) % 7 or 7)
 
 
@@ -193,7 +193,7 @@ def resolve(phrase: str, today: date | None = None) -> dict:
                          rf"(?:\s+(this|next|last)\s+week|\s+(week))?", p):
         mod, wd, week, plus_week = m.group(1) or "", _wd_index(m.group(2)), m.group(3), m.group(4)
         if plus_week:                                   # "next Friday week" = a week after the coming one
-            return _entry(_upcoming(wd) + timedelta(days=7), today, note="Read as a week after the coming one.")
+            return _entry(_upcoming(wd, today) + timedelta(days=7), today, note="Read as a week after the coming one.")
         if week == "next":
             return _entry(monday + timedelta(days=7 + wd), today)
         if week == "this":
@@ -201,14 +201,14 @@ def resolve(phrase: str, today: date | None = None) -> dict:
         if "last" in (week, mod):
             return _entry(today - timedelta(days=(today.weekday() - wd) % 7 or 7), today)
         if mod == "following":
-            return _entry(_upcoming(wd) + timedelta(days=7), today, note="Read as the one after the coming one.")
+            return _entry(_upcoming(wd, today) + timedelta(days=7), today, note="Read as the one after the coming one.")
         if mod == "next":
-            d = _upcoming(wd)
+            d = _upcoming(wd, today)
             return _entry(d, today, note=f"Some people mean the week after ({_fmt(d + timedelta(days=7))}): "
                                          "say which date you understood.")
         if wd == today.weekday() and mod != "coming":
             return _entry(today, today, note=f"That's today; the one next week is {_fmt(today + timedelta(days=7))}.")
-        return _entry(_upcoming(wd), today)
+        return _entry(_upcoming(wd, today), today)
 
     # Explicit dates, optionally after a weekday (which must agree).
     wd_given = None
@@ -237,7 +237,7 @@ def resolve(phrase: str, today: date | None = None) -> dict:
     if wd_given is not None and d.weekday() != wd_given:
         return {"error": f"Doesn't add up: {d.day} {d.strftime('%B %Y')} is a {WEEKDAYS[d.weekday()].title()}, not a "
                          f"{WEEKDAYS[wd_given].title()}. The coming {WEEKDAYS[wd_given].title()} is "
-                         f"{_fmt(_upcoming(wd_given))}. Ask the person which they meant."}
+                         f"{_fmt(_upcoming(wd_given, today))}. Ask the person which they meant."}
     return _entry(d, today)
 
 

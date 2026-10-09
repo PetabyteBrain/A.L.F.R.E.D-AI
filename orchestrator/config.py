@@ -125,7 +125,7 @@ class Settings:
     # Only requests arriving *from* these IPs may set the client IP via CF-Connecting-IP /
     # X-Forwarded-For (the reverse proxy over Tailscale). Everyone else is taken at face value.
     trusted_proxy_ips: frozenset = field(default_factory=lambda: frozenset(
-        ip.strip() for ip in _env("TRUSTED_PROXY_IPS", "100.64.0.2").split(",") if ip.strip()))
+        ip.strip() for ip in _env("TRUSTED_PROXY_IPS", "").split(",") if ip.strip()))
 
     # --- Admin bootstrap (seeded into the registry on startup) ---
     admin_display_name: str = field(default_factory=lambda: _env("ADMIN_DISPLAY_NAME", "Admin"))

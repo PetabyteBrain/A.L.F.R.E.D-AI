@@ -1,13 +1,13 @@
 # External watchdog for Alfred
 
 Alfred monitors everything else, so something outside Alfred has to watch Alfred. Every 2 minutes
-`alfred_watchdog.py` (on **homelab-host**, cron) checks over the tailnet that Alfred answers, that
+`alfred_watchdog.py` (on a second machine, cron) checks over the tailnet that Alfred answers, that
 his health loop is still running, and that Claude, Telegram, Twilio and the Jetson speech server
 are up. Problems go straight to Telegram through the Bot API (works while Alfred is down): after 2
 runs in a row for Alfred down/hung, 3 for a component; a reminder every 6 hours; a message when it
 clears. Standard-library Python only.
 
-## Install (on homelab-host)
+## Install (on the watchdog machine)
 
 ```bash
 mkdir -p ~/alfred-watchdog && chmod 700 ~/alfred-watchdog
@@ -26,4 +26,4 @@ python3 ~/alfred-watchdog/alfred_watchdog.py --test        # sends a test messag
 Alfred side: `WATCHDOG_TOKEN` in `.env` enables `GET /internal/watchdog` (header
 `X-Watchdog-Token`; answers 404 without it). It only returns up/down flags and the age of the
 last health check, no details. Log: `~/alfred-watchdog/watchdog.log`. Alfred's homelab monitor in
-turn watches host-d itself.
+turn watches the watchdog machine itself.

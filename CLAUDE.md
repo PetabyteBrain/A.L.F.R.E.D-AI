@@ -5,16 +5,16 @@ user-facing name comes from `ASSISTANT_NAME`; infra names (folder, container, do
 CSRF value, localStorage keys) intentionally stay `alfred`. Skins: `alfred` (Stark HUD),
 `batcave`, `matrix` and `alfred`, listed in `dashboard/web/src/themes.js` (+ `public/theme-boot.js`,
 which applies the saved skin on every page); animated backgrounds in `src/backdrops.js` (shared with
-the homepage). Full spec lives in the README; the
-current plan is `docs/PROJECT_PLAN.md` (mirrored to `C:\Users\user\Downloads\alfred-agent-spec.md`);
-the original spec is in `docs/archive/original-spec.md`. Keep the plan updated when features land.
+the homepage). Features are in the README, the design in `docs/ARCHITECTURE.md`. Personal planning
+docs and the real homelab map are git-ignored (`docs/PROJECT_PLAN.md`, `CLAUDE.local.md`,
+`orchestrator/homelab.yaml`); keep real phone numbers, IPs, names and hostnames out of tracked files.
 
 ## Where things run
-- Local copy `C:\Github\Claude_Antropic\alfred` is the **master**; deploy to
-  `user@alfred-server:~/alfred` (tailnet 100.64.0.1) and run `docker compose up -d --build`.
-- One container `alfred`, port 8000, data in `./data` (SQLite + recordings). `.env` only on the Pi.
-- Public exposure (when needed for Twilio) goes through the shared Caddy on the proxy host + `the tunnel`;
-  never add a Caddy/proxy service to this compose file.
+- The local checkout is the master; deploy with `git archive HEAD` to the server's `~/alfred` and run
+  `docker compose up -d --build` (details per machine in `CLAUDE.local.md`, if present).
+- One container `alfred`, port 8000, data in `./data` (SQLite + recordings). `.env` only on the server.
+- Public exposure (when needed for Twilio) goes through a reverse proxy on another machine + a
+  Cloudflare Tunnel; never add a Caddy/proxy service to this compose file.
 
 ## Architecture rules
 - Every inbound event resolves through `orchestrator/identity/registry.py` first. Unknown or
@@ -28,8 +28,8 @@ the original spec is in `docs/archive/original-spec.md`. Keep the plan updated w
 - Tools are declared in `orchestrator/tools/registry.yaml` and role-gated twice (list + execute).
   New n8n-backed features = n8n workflow + one yaml entry, no Python changes.
 - `orchestrator/stt_tts/base.py` is the STT/TTS swap point; audio is 8 kHz mu-law end to end.
-  Production uses the Jetson (`speech_server/`, deployed to `user@100.64.0.6:~/alfred-speech`,
-  `docker compose up -d --build` there) with automatic ElevenLabs fallback. English only.
+  Production uses a Jetson (`speech_server/`, deployed to `~/alfred-speech` there, `SPEECH_BIND` in its
+  `.env`, `docker compose up -d --build`) with automatic ElevenLabs fallback. English only.
   Gate telephony on `settings.speech_enabled`, never on `elevenlabs_enabled`.
   Voice: Kokoro `bm_george` for now; another voice may come later (roadmap #24): change
   `KOKORO_VOICE` in the Jetson's `~/alfred-speech/.env` and `docker compose up -d`.
@@ -117,14 +117,14 @@ the original spec is in `docs/archive/original-spec.md`. Keep the plan updated w
   defaults to the person's voice mode. Pass `voice=False` for anything secret (sign-in codes).
 
 ## Ops
-- Backups: `infra/backup.sh` (Pi crontab 03:30) + `orchestrator/backup.py`; restore in
+- Backups: `infra/backup.sh` (Pi crontab 03:30; target in git-ignored `infra/backup.env`) + `orchestrator/backup.py`; restore in
   `infra/README-backup.md`. Shell scripts must stay LF (`.gitattributes`; this PC has autocrlf).
 - Monthly restore test: `infra/restore-drill.sh` (Pi crontab, 1st 04:30) -> `orchestrator/restore_drill.py`
   in a throwaway container, for the Jetson copy and the NAS copy (`backup_nas fetch`). Recording retention: `orchestrator/retention.py` (+ Jetson crontab).
 - Budgets: `orchestrator/budgets.py` (warnings to admins only). Data export/deletion:
   `orchestrator/privacy.py`; a new table holding personal data must be added to `collect` and `erase`
   (the personal NAS folder is already included).
-- Homelab: hosts in `orchestrator/homelab.yaml`; per-host access via `infra/ops/alfred-ops`
+- Homelab: hosts in `orchestrator/homelab.yaml` (git-ignored; template `homelab.example.yaml`); per-host access via `infra/ops/alfred-ops`
   (forced command) + `~/.config/alfred-ops/allow`. Never widen the key to a shell. After changing the
   script, install it on every host (infra/ops/README.md). Monthly update report: `orchestrator/update_check.py`
   (`alfred-ops updates`; report only, never install anything from Alfred).

@@ -8,8 +8,8 @@ number), **Telegram** (text, voice notes, files and photos) and a **web chat**, 
 **TrueNAS** box, wired into **n8n**, and a **dashboard** with two-factor sign-in. Only people in
 the registry get answers; unknown callers can leave a message, everyone else is ignored silently.
 
-Runs as one Docker container on **alfred-server** (`/home/user/alfred`). The project, service,
-container and hostname keep their original `alfred` names (alfred.example.com, `docker compose exec alfred`);
+Runs as one Docker container on a small home server (a Raspberry Pi 5 here). The project, service and
+container keep their original `alfred` names (`docker compose exec alfred`);
 only the assistant's persona and branding are "Alfred" (`ASSISTANT_NAME`). The site has four skins, chosen on the
 homepage, the sign-in page or the dashboard and applied everywhere (homepage, dashboard, legal pages,
 404 page): **Stark** (holographic HUD), **Batcave** (bat-signal yellow on gunmetal, Gotham skyline), **Matrix**
@@ -36,7 +36,7 @@ homepage, the sign-in page or the dashboard and applied everywhere (homepage, da
 | Meetings | "Find an hour with Max next week": common free times (opt-in free/busy sharing, times only), each person asked by Telegram buttons or call, booked with Google invitations | any channel (admin/cofounder), Tasks |
 | Automations | Full n8n API for the admin, webhook tools, async results via callback | any channel |
 | Quiet hours | Household default (22:00-07:00) + per person; calls others asked for wait, messages go silent, "urgent" overrides | Profile |
-| Homelab | Status of all Pis, the Jetson and their containers, logs, confirmed restarts (admin), Minecraft players; alerts when something breaks; monthly update report (packages, security fixes, newer images, reboots; report only). An external watchdog on host-d alerts if Alfred himself is down | any channel (admin), Systems |
+| Homelab | Status of all Pis, the Jetson and their containers, logs, confirmed restarts (admin), Minecraft players; alerts when something breaks; monthly update report (packages, security fixes, newer images, reboots; report only). An external watchdog on another machine alerts if Alfred himself is down | any channel (admin), Systems |
 | Backups | Nightly verified database snapshot + recordings + `.env` to the Jetson (no-delete key) and to the NAS (snapshot-protected); monthly automatic restore test of both copies (`infra/README-backup.md`) | automatic, Systems |
 | AI model & billing | Two Anthropic API keys in .env; admins pick on the Settings tab which key is billed, which Claude model answers (Haiku 4.5, Sonnet 5.5, Opus 5.5, Fable 5.1) and how hard it thinks, plus a separate model for phone calls; Usage shows cost per key | Settings (admin) |
 | Safety & privacy | Date resolver ("next Friday", "the 15th" → exact dates) and a weekday/date check before Alfred acts on anything, registry-only access, roles, code verification of new connections, dashboard 2FA (authenticator app or Telegram code), call audio deleted after 90 days, "download / delete my data", monthly cost budgets with admin alerts, behaviour checks against the real model | everywhere |
@@ -54,11 +54,10 @@ Dashboard (React) ─► /api/* (Argon2 login + 2FA, server-side sessions) ─�
 Agent Core ─► tools ─► n8n · Google Calendar · homelab (alfred-ops) · NAS over SMB (notes, lists, files, to-do)
 n8n ─► /n8n/callback (X-Alfred-Secret) ─► Agent Core ─► Telegram
 Background loops: calls · reminders · task follow-ups · briefings · health · retention · budgets · homelab
-Nightly: backup → Jetson + NAS · monthly restore test · watchdog on host-d every 2 min
+Nightly: backup → Jetson + NAS · monthly restore test · external watchdog every 2 min
 ```
 
-The full, current project plan (architecture, data model, phases, roadmap) is in
-[docs/PROJECT_PLAN.md](docs/PROJECT_PLAN.md).
+How it fits together (components, data flow, security model, operations): [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## Status by phase
 
@@ -71,17 +70,18 @@ The full, current project plan (architecture, data model, phases, roadmap) is in
 | 5 | Self-hosted speech on the Jetson Orin (Whisper large-v3-turbo + Kokoro `bm_george`) | live; `speech_server/`, ElevenLabs as fallback |
 | 6 | NAS (TrueNAS over SMB): notes, lists, files, Company to-do, receipts, second backup, recordings after 14 days | live |
 
-## First start on the Pi
+## First start on the server
 
 ```bash
 cd ~/alfred
 cp .env.example .env      # fill in keys as you get them
+cp orchestrator/homelab.example.yaml orchestrator/homelab.yaml   # your hosts (optional; git-ignored)
 mkdir -p data             # owned by you (uid 1000) so the container can write
 docker compose up -d --build
 docker compose exec alfred python -m orchestrator.identity.admin_cli set-password 1 admin
 ```
 
-Dashboard: `http://alfred-server:8000` (LAN/Tailscale). For plain-HTTP LAN testing set
+Dashboard: `http://<server>:8000` (LAN/Tailscale). For plain-HTTP LAN testing set
 `DASHBOARD_COOKIE_SECURE=false`, otherwise the login cookie is only sent over HTTPS.
 
 ## Managing people
@@ -121,14 +121,13 @@ executions, trigger any webhook), so you can ask Alfred to build workflows for y
 
 ## Going public (needed for phone calls)
 
-Telegram needs no public URL. Twilio does. Following the existing homelab pattern
-(the proxy host Caddy + `the tunnel`):
+Telegram needs no public URL. Twilio does. One way, without opening ports (Cloudflare Tunnel +
+a reverse proxy such as Caddy on another machine):
 
-1. Caddyfile on the proxy host: `alfred.example.com { tls internal; reverse_proxy <pi5-tailnet-ip>:8000 }`
+1. Reverse proxy: `alfred.example.com { reverse_proxy <server-tailnet-ip>:8000 }`
    (Caddy handles WebSocket upgrades automatically).
-2. `/etc/cloudflared/config.yml`: add `alfred.example.com → https://localhost:443` with
-   `originServerName`, before the 404 catch-all; `cloudflared tunnel route dns … alfred.example.com`.
-3. `docker exec caddy caddy reload && sudo systemctl restart cloudflared`.
+2. `cloudflared` config: route `alfred.example.com` to the proxy; `cloudflared tunnel route dns … alfred.example.com`.
+3. Reload the proxy and restart `cloudflared`.
 4. Twilio console → your number → *A call comes in*: **Webhook** `POST https://alfred.example.com/twilio/voice`.
 5. Optional extra layer: Cloudflare Access on the dashboard path, leaving `/twilio/*` and
    `/n8n/callback` open (they're protected by Twilio signatures / shared secret).
@@ -166,8 +165,8 @@ NAS, share Company:           company files (read-only for Alfred) · Notes/ · 
   Recordings are served only by numeric ID after an ownership check, and paths are confined to `STORAGE_ROOT`.
 - Admins see everything; other dashboard roles see only their own sessions and recordings.
 - The client IP (used for throttling) is taken from `CF-Connecting-IP` only when the request
-  comes from `TRUSTED_PROXY_IPS` (the reverse proxy); uvicorn runs without proxy-header trust.
-- Tip: set `ALFRED_BIND` to the Pi 5 tailnet IP so port 8000 isn't reachable from the LAN.
+  comes from `TRUSTED_PROXY_IPS` (your reverse proxy); uvicorn runs without proxy-header trust.
+- Tip: set `ALFRED_BIND` to the server's tailnet IP so port 8000 isn't reachable from the LAN.
 
 ## Development
 
@@ -183,22 +182,21 @@ cd dashboard/web && npm run dev          # hot-reload React on :5180, proxies /a
 
 The Docker build compiles the React app in a Node stage, so the Pi doesn't need Node installed.
 
-Deploy from Windows (local copy is the master):
+Deploy (from a checkout on your PC):
 
 ```bash
-git archive HEAD | ssh user@alfred-server 'tar -xf - -C ~/alfred'
-ssh user@alfred-server 'cd ~/alfred && docker compose up -d --build'
+git archive HEAD | ssh user@server 'tar -xf - -C ~/alfred'
+ssh user@server 'cd ~/alfred && docker compose up -d --build'
 ```
+
+Files that stay on the server and are never in git: `.env`, `data/`, `orchestrator/homelab.yaml`,
+`infra/backup.env` (`BACKUP_TARGET=user@backup-host`).
 
 Schema changes migrate themselves on start (`db.init_db`); take a DB snapshot into
 `data/backups/` first. Never pipe the archive into an ssh call that also runs
 `docker compose exec` (exec swallows stdin).
 
-## Open questions
+## Not in this repository
 
-- First real n8n workflow beyond the echo test and the daily weather alert.
-- Decided 2026-10-07: threads stay per channel, plus an optional excerpt of the person's recent turns on
-  their other channels (#30, Profile switch "Continue across channels").
-- Alfred's own email address (#7): which address and provider.
-
-The feature roadmap is in [docs/PROJECT_PLAN.md](docs/PROJECT_PLAN.md#10-roadmap--feature-expansions).
+Personal planning notes (roadmap, decisions, the real homelab map) are kept locally and are
+git-ignored (`docs/PROJECT_PLAN.md`, `CLAUDE.local.md`).

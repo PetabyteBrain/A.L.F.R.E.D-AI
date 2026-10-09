@@ -20,6 +20,7 @@ os.environ.update({
     "DASHBOARD_COOKIE_SECURE": "false",
     "TWILIO_VALIDATE_SIGNATURE": "false",
     "PUBLIC_BASE_URL": "https://alfred.example.test",
+    "TRUSTED_PROXY_IPS": "100.64.0.2",
     "ANTHROPIC_API_KEY": "",
     "TELEGRAM_BOT_TOKEN": "",
     "QUIET_HOURS": "off",          # tests must not depend on the time of day; quiet hours have their own test
@@ -1830,6 +1831,7 @@ def test_backup_snapshot_and_health(monkeypatch):
 def test_homelab_operator(monkeypatch):
     import asyncio
     from orchestrator import homelab
+    monkeypatch.setattr(homelab, "HOSTS_FILE", homelab.EXAMPLE_FILE)      # never the real (git-ignored) map
     admin = registry.lookup("telegram", "111")
     friend = registry.lookup("telegram", "22222222")
     calls = []
@@ -1895,9 +1897,11 @@ def test_homelab_operator(monkeypatch):
 
 
 
-def test_systems_rows_grouped_and_homelab_admin_only():
+def test_systems_rows_grouped_and_homelab_admin_only(monkeypatch):
     from fastapi.testclient import TestClient
+    from orchestrator import homelab
     from orchestrator.main import app
+    monkeypatch.setattr(homelab, "HOSTS_FILE", homelab.EXAMPLE_FILE)
     db.set_health("claude", True, "ok")
     db.set_health("host host-b", True, "host-b: load 0.10/4 cpu")
     db.set_health("host old-removed-box", True, "stale")

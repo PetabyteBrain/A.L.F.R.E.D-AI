@@ -1,4 +1,4 @@
-# Runs on the Jetson (~/alfred-speech). Reachable only on the tailnet IP; Alfred on alfred-server
+# Runs on the GPU box (e.g. a Jetson, ~/alfred-speech). Reachable only on its tailnet IP; Alfred
 # calls it with SPEECH_TOKEN (in .env next to this file).
 services:
   speech:
@@ -9,7 +9,7 @@ services:
     restart: unless-stopped
     env_file: .env
     ports:
-      - "${SPEECH_BIND:-100.64.0.6}:8770:8770"
+      - "${SPEECH_BIND:?set SPEECH_BIND (the tailnet IP to listen on) in .env}:8770:8770"
     volumes:
       - ./models:/models          # Whisper / Kokoro weights, downloaded once
     healthcheck:

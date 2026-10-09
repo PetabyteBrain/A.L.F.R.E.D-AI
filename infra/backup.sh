@@ -9,7 +9,9 @@ set -uo pipefail
 
 cd "$(dirname "$0")/.." || exit 1
 KEY="$HOME/.ssh/alfred_backup"
-TARGET="${BACKUP_TARGET:-user@100.64.0.6}"
+# Backup host (user@host of the Jetson/NAS box): from the environment or infra/backup.env (not in git).
+[ -f infra/backup.env ] && . infra/backup.env
+TARGET="${BACKUP_TARGET:?set BACKUP_TARGET=user@backup-host in infra/backup.env}"
 SSH="ssh -i $KEY -o BatchMode=yes -o ConnectTimeout=15"
 report() { docker compose exec -T alfred python -m orchestrator.backup report "$@" </dev/null; }
 fail() { echo "$(date -Is) FAIL: $1"; report fail "$1"; exit 1; }

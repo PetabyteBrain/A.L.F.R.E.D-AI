@@ -1,0 +1,17 @@
+# Homelab hosts Alfred can check (and, for allowlisted containers, restart) via the alfred-ops key.
+# Copy to homelab.yaml (git-ignored) and fill in your own hosts. Each host needs ~/bin/alfred-ops +
+# the restricted key in ~/.ssh/authorized_keys (infra/ops/README.md).
+hosts:
+  - name: host-b
+    ssh: user@100.64.0.2
+    role: Reverse proxy and automations
+  - name: host-g
+    ssh: user@100.64.0.1
+    role: Alfred himself
+  - name: host-h
+    ssh: user@100.64.0.7
+    role: Game server
+    minecraft: true
+  - name: jetson
+    ssh: user@100.64.0.6
+    role: Alfred's speech (Whisper + Kokoro on the GPU), backups
