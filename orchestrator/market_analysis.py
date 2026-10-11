@@ -376,16 +376,20 @@ async def fetch_businesses(spec: Spec, lat: float, lon: float, swiss: bool = Fal
 
 # --- website checks -----------------------------------------------------------------------------
 
-async def _public_host(host: str) -> bool:
-    """Every address the host resolves to must be public (no LAN, loopback, link-local, tailnet/CGNAT)."""
+async def _host_problem(host: str) -> str:
+    """'' if every address the host resolves to is public (no LAN, loopback, link-local, tailnet/CGNAT)."""
     if not host:
-        return False
+        return "not a public web address"
     try:
         infos = await asyncio.get_running_loop().getaddrinfo(host, None, type=socket.SOCK_STREAM)
     except OSError:
-        return False
+        return "domain not found"
     ips = {ipaddress.ip_address(i[4][0]) for i in infos}
-    return bool(ips) and all(ip.is_global for ip in ips)
+    return "" if ips and all(ip.is_global for ip in ips) else "not a public web address"
+
+
+async def _public_host(host: str) -> bool:
+    return not await _host_problem(host)
 
 
 YEAR = re.compile(r"(?:©|&copy;|copyright)\D{0,25}((?:19|20)\d{2})(?:\s*(?:-|–|&ndash;|bis)\s*((?:19|20)\d{2}))?", re.I)
@@ -404,8 +408,9 @@ async def check_site(url: str, client: httpx.AsyncClient | None = None) -> dict:
         current = url
         for _ in range(5):                                   # redirects, each one checked
             parts = urlsplit(current)
-            if parts.scheme not in ("http", "https") or not await _public_host(parts.hostname or ""):
-                out["error"] = "not a public web address"
+            problem = "not a public web address" if parts.scheme not in ("http", "https") else                 await _host_problem(parts.hostname or "")
+            if problem:
+                out["error"] = problem
                 return out
             async with client.stream("GET", current) as r:
                 if r.is_redirect and r.headers.get("location"):
