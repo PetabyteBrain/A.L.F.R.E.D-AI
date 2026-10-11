@@ -98,13 +98,16 @@ def _canned(name: str, args: dict) -> dict:
                                                                for s in args.get("steps", [])],
                 "next": "Show these steps to the person in a short list and stop. Only after they say yes, in their own "
                         "message, call notes_tidy_confirm."}
-    if name == "agenda":
-        return {"from": "Sat 10 Oct 2026 00:00", "until": "Sun 11 Oct 2026 00:00", "google_calendar": "included", "items": [
-            {"when": "Sat 10 Oct 2026 09:00", "kind": "reminder", "title": "Wake up call", "repeats": "weekly", "by": "call"},
-            {"when": "Sat 10 Oct 2026 09:30", "kind": "reminder", "title": "Workout Reminder", "repeats": "weekly", "by": "telegram"}]}
-    if name == "list_reminders":
-        return [{"id": 5, "for": "Sam", "text": "Wake up call", "at_local_time": "Sat 10 Oct 2026 09:00", "recurrence": "weekly"},
-                {"id": 6, "for": "Sam", "text": "Workout Reminder", "at_local_time": "Sat 10 Oct 2026 09:30", "recurrence": "weekly"}]
+    if name in ("agenda", "list_reminders"):          # weekly Saturday reminders, dated the coming Saturday
+        from datetime import timedelta
+        sat = _next_weekday(5)
+        day, nxt = sat.strftime("%a %d %b %Y"), (sat + timedelta(days=1)).strftime("%a %d %b %Y")
+        if name == "list_reminders":
+            return [{"id": 5, "for": "Sam", "text": "Wake up call", "at_local_time": f"{day} 09:00", "recurrence": "weekly"},
+                    {"id": 6, "for": "Sam", "text": "Workout Reminder", "at_local_time": f"{day} 09:30", "recurrence": "weekly"}]
+        return {"from": f"{day} 00:00", "until": f"{nxt} 00:00", "google_calendar": "included", "items": [
+            {"when": f"{day} 09:00", "kind": "reminder", "title": "Wake up call", "repeats": "weekly", "by": "call"},
+            {"when": f"{day} 09:30", "kind": "reminder", "title": "Workout Reminder", "repeats": "weekly", "by": "telegram"}]}
     if name == "set_reminder":
         return {"ok": True, "reminder_id": 5, "due_local": "Sat 03 Oct 2026 09:00", "channel": "telegram"}
     if name == "list_people":                      # read-only: the real (throwaway) registry
