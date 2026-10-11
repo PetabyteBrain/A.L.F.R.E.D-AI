@@ -72,6 +72,10 @@ How it fits together (components, data flow, security model, operations): [docs/
 | 4 | Dashboard + additions (people, calls for others, calendar, usage, web chat, reminders, briefing, voice notes, memory, verification, quiet hours, task follow-ups) | live |
 | 5 | Self-hosted speech on the Jetson Orin (Whisper large-v3-turbo + Kokoro `bm_george`) | live; `speech_server/`, ElevenLabs as fallback |
 | 6 | NAS (TrueNAS over SMB): notes, lists, files, company to-do, receipts, second backup, recordings after 14 days | live |
+| 7 | Market analysis (+ optional SearXNG), Alfred's own email (SMTP + inbound webhook), escalation to the team, Mail tab with groups and tags | live |
+
+Next up: an email **template manager** on the Mail tab (layouts and reusable text templates, switched on or off,
+with usage per template).
 
 ## First start on the server
 
