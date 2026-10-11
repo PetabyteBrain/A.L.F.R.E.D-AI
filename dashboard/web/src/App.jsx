@@ -20,6 +20,7 @@ import Profile from "./pages/Profile.jsx";
 import Usage from "./pages/Usage.jsx";
 import Chat from "./pages/Chat.jsx";
 import Notes from "./pages/Notes.jsx";
+import Mail from "./pages/Mail.jsx";
 import Settings from "./pages/Settings.jsx";
 
 const TABS = [
@@ -28,6 +29,7 @@ const TABS = [
   { id: "history", label: "Archive", title: "Archive", kicker: "Recordings & transcripts", Page: Recordings },
   { id: "tasks", label: "Tasks", title: "Tasks & calls", kicker: "Reminders, calls & tasks", Page: Tasks },
   { id: "notes", label: "Files", title: "Notes & files", kicker: "On the NAS", Page: Notes },
+  { id: "mail", label: "Mail", title: "Mail", kicker: "Alfred's mailbox", Page: Mail },
   { id: "activity", label: "Log", title: "Event log", kicker: "Everything that happened", Page: Activity },
   { id: "health", label: "Systems", title: "Systems", kicker: "Diagnostics", Page: Health },
   { id: "people", label: "Personnel", title: "Personnel", kicker: "Registry & access", Page: People, admin: true },

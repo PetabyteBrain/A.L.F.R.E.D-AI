@@ -146,7 +146,7 @@ CREATE TABLE IF NOT EXISTS verification_sends (   -- rate limit for code calls/m
 CREATE TABLE IF NOT EXISTS sessions (
     id         TEXT PRIMARY KEY,
     user_id    INTEGER NOT NULL REFERENCES users(id),
-    channel    TEXT NOT NULL CHECK (channel IN ('call','telegram','web')),
+    channel    TEXT NOT NULL CHECK (channel IN ('call','telegram','web','email')),
     direction  TEXT NOT NULL DEFAULT 'inbound',
     external_id TEXT,                         -- Twilio CallSid / Telegram chat id
     started_at TEXT NOT NULL,
@@ -393,6 +393,59 @@ CREATE TABLE IF NOT EXISTS context_resets (
     PRIMARY KEY (user_id, channel)
 );
 
+-- Alfred's own email (orchestrator/mail.py): every message in and out; the .eml itself is archived on the NAS.
+CREATE TABLE IF NOT EXISTS emails (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    direction    TEXT NOT NULL CHECK (direction IN ('in','out')),
+    kind         TEXT NOT NULL,              -- in: request|reply|inquiry|unverified|automated|spam; out: sent|reply|auto_reply|notice
+    status       TEXT NOT NULL DEFAULT 'received',  -- received|done|ignored|failed (in); sent|failed (out)
+    scope        TEXT NOT NULL DEFAULT 'company',   -- personal (a registered person's mail) | company
+    user_id      INTEGER REFERENCES users(id) ON DELETE SET NULL,  -- whose mail it is (sender, requester)
+    message_id   TEXT,
+    in_reply_to  TEXT,
+    thread_id    INTEGER,                    -- first email of the conversation
+    from_addr    TEXT NOT NULL DEFAULT '',
+    from_name    TEXT NOT NULL DEFAULT '',
+    to_addrs     TEXT NOT NULL DEFAULT '[]', -- JSON lists
+    cc_addrs     TEXT NOT NULL DEFAULT '[]',
+    subject      TEXT NOT NULL DEFAULT '',
+    body_text    TEXT NOT NULL DEFAULT '',
+    own_text     TEXT NOT NULL DEFAULT '',   -- inbound: the sender's own words, without the quoted thread
+    attachments  TEXT NOT NULL DEFAULT '[]', -- [{name, size, type}]
+    auth         TEXT NOT NULL DEFAULT '{}', -- spf/dkim/dmarc/spam verdicts of inbound mail
+    summary      TEXT NOT NULL DEFAULT '',
+    provider_id  TEXT UNIQUE,                -- inbound provider's id (duplicate webhooks)
+    delete_url   TEXT,                       -- provider copy, removed once archived
+    spool_path   TEXT,                       -- local .eml until it is on the NAS
+    nas_path     TEXT,                       -- personal:<folder>/... or company:...
+    error        TEXT,
+    created_at   TEXT NOT NULL,
+    processed_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_emails_msgid ON emails(message_id);
+CREATE INDEX IF NOT EXISTS idx_emails_user ON emails(user_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_emails_status ON emails(status, direction);
+
+-- Matters Alfred can't or may not decide, passed to the admins and cofounders (orchestrator/escalation.py).
+CREATE TABLE IF NOT EXISTS escalations (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    source       TEXT NOT NULL,              -- email | telegram | web | call
+    email_id     INTEGER REFERENCES emails(id) ON DELETE SET NULL,
+    requester_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    requester    TEXT NOT NULL DEFAULT '',   -- name / address as shown to the team
+    topic        TEXT NOT NULL,
+    summary      TEXT NOT NULL DEFAULT '',
+    urgency      TEXT NOT NULL DEFAULT 'normal',  -- low | normal | high | critical
+    status       TEXT NOT NULL DEFAULT 'open',    -- open | handled
+    notified     TEXT NOT NULL DEFAULT '[]',      -- [{user_id, name, via}]
+    task_id      INTEGER REFERENCES tasks(id) ON DELETE SET NULL,
+    note         TEXT NOT NULL DEFAULT '',
+    handled_by   INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    handled_at   TEXT,
+    created_at   TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_escalations_status ON escalations(status, created_at);
+
 CREATE TABLE IF NOT EXISTS health (
     service    TEXT PRIMARY KEY,
     ok         INTEGER NOT NULL,
@@ -434,18 +487,19 @@ def tx() -> Iterator[sqlite3.Connection]:
 
 
 def _migrate_sessions_channel_check() -> None:
-    """Databases created before the web chat only allow channel IN ('call','telegram').
-    SQLite can't alter a CHECK constraint, so rebuild the table (official 12-step procedure),
-    with foreign keys off for the swap and verified afterwards."""
+    """Older databases allow fewer channels (('call','telegram') before the web chat, no 'email' before
+    Alfred's mailbox). SQLite can't alter a CHECK constraint, so rebuild the table (official 12-step
+    procedure), with foreign keys off for the swap and verified afterwards."""
+    import re
     conn = sqlite3.connect(settings.db_path, timeout=10)
     try:
         row = conn.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='sessions'").fetchone()
-        if not row or "'web'" in row[0]:
+        if not row or "'email'" in row[0]:
             return
         conn.execute("PRAGMA foreign_keys = OFF")
         conn.execute("BEGIN")
-        conn.execute(row[0].replace("CREATE TABLE sessions", "CREATE TABLE sessions_new", 1)
-                     .replace("CHECK (channel IN ('call','telegram'))", "CHECK (channel IN ('call','telegram','web'))"))
+        conn.execute(re.sub(r"CHECK \(channel IN \([^)]*\)\)", "CHECK (channel IN ('call','telegram','web','email'))",
+                            row[0].replace("CREATE TABLE sessions", "CREATE TABLE sessions_new", 1)))
         conn.execute("INSERT INTO sessions_new SELECT * FROM sessions")
         conn.execute("DROP TABLE sessions")
         conn.execute("ALTER TABLE sessions_new RENAME TO sessions")
@@ -507,6 +561,8 @@ ADDED_COLUMNS = [
     ("reminders", "category", "TEXT NOT NULL DEFAULT 'reminder'"),
     ("tasks", "category", "TEXT NOT NULL DEFAULT 'task'"),
     ("dashboard_sessions", "view_as", "TEXT"),   # admin previewing the dashboard as another role
+    ("roles", "can_email", "INTEGER NOT NULL DEFAULT 1"),                # may write to Alfred by email
+    ("user_identifiers", "preferred", "INTEGER NOT NULL DEFAULT 0"),     # the email address Alfred writes to
 ]
 
 

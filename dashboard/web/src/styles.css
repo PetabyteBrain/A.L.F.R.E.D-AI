@@ -1390,3 +1390,22 @@ main[hidden], [hidden] { display: none !important; }
 .file-path-row .file-path { margin-bottom: 0; min-width: 0; }
 .file-path-row .btn { flex: none; }
 .pv-modes { margin-bottom: 8px; }
+
+/* Mail tab (pages/Mail.jsx) */
+.mode-list { display: grid; gap: 4px; margin: 8px 0; }
+.mail-bar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between; margin: 10px 0 12px; }
+.mail-search input { width: 220px; max-width: 100%; }
+.mail-bar .seg { flex-wrap: wrap; max-width: 100%; }
+.mail-list .mail-row > div, .mail-row-top, .mail-row-subject, .mail-who, .mail-row-summary, .mail-view { min-width: 0; }
+.mail-row > div { flex: 1; }
+.mail-row-top { display: flex; justify-content: space-between; gap: 10px; }
+.mail-who, .mail-row-summary { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mail-row-subject { overflow-wrap: anywhere; }
+.mail-view-head { display: flex; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
+.mail-subject { margin: 4px 0 6px; overflow-wrap: anywhere; }
+.mail-view .meta { overflow-wrap: anywhere; margin: 2px 0; }
+.mail-summary { margin: 10px 0; padding: 8px 10px; border-left: 2px solid var(--accent); background: var(--fill); }
+.mail-text { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; font-size: 14px; line-height: 1.6;
+  margin: 12px 0; padding: 12px 14px; border: 1px solid var(--line); background: var(--fill); max-height: 60vh; overflow: auto; }
+.mail-escalation { display: grid; gap: 8px; margin: 12px 0; padding: 10px 12px; border: 1px solid rgb(var(--warn-rgb) / .4); }
+@media (max-width: 640px) { .mail-search input { width: 100%; } .mail-search { width: 100%; } }

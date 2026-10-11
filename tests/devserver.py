@@ -1,6 +1,7 @@
 """Local dashboard preview with demo data and no API keys.
 
-    python -m tests.devserver      -> http://127.0.0.1:8765  (login: admin / devpassword123)
+    python -m tests.devserver      -> http://127.0.0.1:8765  (login: admin / devpassword123, needs 2FA;
+                                      cofounder / devpassword123 without)
 """
 import os
 from pathlib import Path
@@ -18,6 +19,12 @@ os.environ.setdefault("NAS_HOST", "dev-nas")
 os.environ.setdefault("NAS_USER", "dev")
 os.environ.setdefault("NAS_PASSWORD", "dev")
 os.environ.setdefault("NAS_COMPANY_TODO", "To-Do.xlsx")
+# Email "configured" for the Mail tab; nothing is ever sent (fake_mail swaps the transport).
+os.environ.setdefault("MAIL_ADDRESS", "alfred@mail.example.test")
+os.environ.setdefault("SMTP_HOST", "smtp.invalid")
+os.environ.setdefault("SMTP_USER", "alfred@mail.example.test")
+os.environ.setdefault("SMTP_PASSWORD", "dev")
+os.environ.setdefault("COMPANY_NAME", "Acme")
 
 import uvicorn  # noqa: E402
 
@@ -202,9 +209,58 @@ def fake_nas() -> None:
         mod._smb = lambda: fake
 
 
+def fake_mail() -> None:
+    """Email 'configured' with a transport that only logs, plus a few demo messages and an escalation."""
+    import json
+    import logging
+    from orchestrator import mail
+    from orchestrator.identity import registry as reg
+
+    async def health():
+        return True, "SMTP login ok as alfred@mail.example.test (demo)"
+    mail.transport = lambda msg, rcpts: logging.getLogger("devmail").info("Would send %r to %s", msg["Subject"], rcpts)
+    mail.health = health
+    co = db.query_one("SELECT user_id FROM user_identifiers WHERE type = 'dashboard' AND value = 'cofounder'")
+    if not co:                                       # a second dashboard login without 2FA, for previews
+        cid = reg.add_user("Max Cofounder", "cofounder", notes="dev preview")
+        reg.upsert_identifier(cid, "dashboard", "cofounder", reg.hash_password("devpassword123"))
+    if db.query_one("SELECT 1 FROM emails LIMIT 1"):
+        return
+    admin = db.query_one("SELECT id FROM users WHERE role='admin'")["id"]
+    if not reg.email_for(admin):
+        reg.add_identifier(admin, "email", "erika@home.example", verified=True)
+    q = mail.record(direction="in", kind="inquiry", status="done", scope="company", from_addr="max@client.example",
+                    from_name="Max Mustermann", to=["alfred@mail.example.test"], subject="Quote for an online shop",
+                    body_text="Good day,\n\nWe sell handmade furniture and need an online shop with TWINT by spring. "
+                              "Could you send us a quote?\n\nKind regards\nMax Mustermann\n\nOn Mon, someone wrote:\n> old",
+                    own_text="Good day,\n\nWe sell handmade furniture and need an online shop with TWINT by spring. "
+                             "Could you send us a quote?\n\nKind regards\nMax Mustermann",
+                    auth={"spf": "pass", "dkim": True, "dmarc": True, "spam": False},
+                    summary="passed to Erika Mustermann: Wants a quote for an online shop with TWINT by spring.")
+    mail.record(direction="out", kind="auto_reply", status="sent", scope="company", from_addr="alfred@mail.example.test",
+                from_name="Alfred", to=["max@client.example"], subject="Re: Quote for an online shop",
+                body_text="Dear Mr Mustermann,\n\nThank you. I've passed this to the team, who will get back to you.",
+                thread_id=q)
+    db.execute("INSERT INTO escalations(source, email_id, requester, topic, summary, urgency, notified, created_at) "
+               "VALUES ('email', ?, 'Max Mustermann <max@client.example>', 'Quote for an online shop', "
+               "'Wants a quote for an online shop with TWINT by spring.', 'high', ?, ?)",
+               (q, json.dumps([{"user_id": admin, "name": "Erika Mustermann", "via": "telegram"}]), db.now_iso()))
+    mail.record(direction="in", kind="request", status="done", scope="personal", user_id=admin,
+                from_addr="erika@home.example", from_name="Erika Mustermann", to=["alfred@mail.example.test"],
+                subject="Add the dentist to my calendar",
+                body_text="Dentist on Thursday at 10:00 please, with a reminder the day before.",
+                own_text="Dentist on Thursday at 10:00 please, with a reminder the day before.",
+                auth={"spf": "pass", "dkim": True, "dmarc": True, "spam": False},
+                summary="Dear Erika, done: the dentist is in your calendar for Thursday 10:00, reminder Wednesday.")
+    mail.record(direction="in", kind="spam", status="ignored", scope="company", from_addr="win@prize.example",
+                subject="You have won", body_text="Click here", summary="marked as spam by the mail provider",
+                auth={"spf": "fail", "dkim": False, "dmarc": False, "spam": True})
+
+
 if __name__ == "__main__":
     seed()
     fake_nas()
     fake_claude()
+    fake_mail()
     seed_live_call()
     uvicorn.run("orchestrator.main:app", host="127.0.0.1", port=8765)

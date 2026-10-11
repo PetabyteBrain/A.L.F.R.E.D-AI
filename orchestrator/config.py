@@ -118,6 +118,28 @@ class Settings:
     nas_company_todo: str = field(default_factory=lambda: _env(
         "NAS_COMPANY_TODO", "Admin/To-Do.xlsx"))
 
+    # --- Email (orchestrator/mail.py): Alfred's own address, sent over SMTP, received by webhook ---
+    mail_address: str = field(default_factory=lambda: _env("MAIL_ADDRESS").lower())
+    mail_from_name: str = field(default_factory=lambda: _env("MAIL_FROM_NAME"))
+    smtp_host: str = field(default_factory=lambda: _env("SMTP_HOST"))
+    smtp_port: int = field(default_factory=lambda: int(_env("SMTP_PORT", "587") or 587))
+    smtp_user: str = field(default_factory=lambda: _env("SMTP_USER"))
+    smtp_password: str = field(default_factory=lambda: _env("SMTP_PASSWORD"))
+    # Secret part of the inbound webhook URL ({PUBLIC_BASE_URL}/mail/inbound/<token>); empty = no inbound mail.
+    mail_inbound_token: str = field(default_factory=lambda: _env("MAIL_INBOUND_TOKEN"))
+    # Hosts the inbound provider's validation/deletion links may point to (Maileroo).
+    mail_provider_hosts: tuple = field(default_factory=lambda: tuple(
+        h.strip().lower() for h in _env("MAIL_PROVIDER_HOSTS", "maileroo.com").split(",") if h.strip()))
+    # Folder for the mail archive inside each personal folder and in the company share.
+    mail_archive_folder: str = field(default_factory=lambda: _env("MAIL_ARCHIVE_FOLDER", "Mail"))
+    # Personal mail is kept this many days; company mail (inquiries, mail sent for the company) longer,
+    # because business correspondence has to be kept 10 years in Switzerland (OR 958f). 0 = keep forever.
+    mail_retention_days: int = field(default_factory=lambda: int(_env("MAIL_RETENTION_DAYS", "730")))
+    mail_company_retention_days: int = field(default_factory=lambda: int(_env("MAIL_COMPANY_RETENTION_DAYS", "3650")))
+    # Public company details for email footers and answers to strangers.
+    company_website: str = field(default_factory=lambda: _env("COMPANY_WEBSITE").rstrip("/"))
+    company_tagline: str = field(default_factory=lambda: _env("COMPANY_TAGLINE"))
+
     # --- Privacy / data ---
     # Call audio is deleted this many days after the call (transcripts stay until deleted). 0 = keep.
     recording_retention_days: int = field(default_factory=lambda: int(_env("RECORDING_RETENTION_DAYS", "90")))
@@ -180,6 +202,15 @@ class Settings:
     def google_enabled(self) -> bool:
         return bool(self.google_client_id and self.google_client_secret and self.token_encryption_key
                     and self.public_base_url)
+
+    @property
+    def mail_enabled(self) -> bool:
+        """Alfred can send email (SMTP is configured)."""
+        return bool(self.mail_address and self.smtp_host and self.smtp_user and self.smtp_password)
+
+    @property
+    def mail_inbound_enabled(self) -> bool:
+        return self.mail_enabled and bool(self.mail_inbound_token)
 
     @property
     def n8n_enabled(self) -> bool:

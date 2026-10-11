@@ -17,3 +17,5 @@ orchestrator/homelab.yaml
 infra/backup.env
 .env.*
 !.env.example
+orchestrator/company_profile.md
+orchestrator/mail_assets/company-banner.png

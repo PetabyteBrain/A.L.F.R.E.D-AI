@@ -710,3 +710,78 @@ async def calendar_delete_event(ctx, event_id: str, confirmed_by_user: bool = Fa
     from .. import agenda
     await agenda.on_event_changed(ctx.person.id, event_id)      # its reminders become "not needed"
     return result or {"deleted": event_id}
+
+
+# --- email (orchestrator/mail_requests.py, escalation.py) ----------------------------------------
+
+@handler
+async def send_email(ctx, body: str, to: list[str] | str | None = None, subject: str = "", cc: list[str] | None = None,
+                     template: str = "alfred", reply_to_email: int | None = None,
+                     attachments: list[dict] | None = None) -> dict:
+    from .. import mail_requests
+    try:
+        return await mail_requests.prepare(ctx.person, ctx.session_id, to=to, subject=subject, body=body, cc=cc,
+                                           template=template, reply_to_email=reply_to_email, attachments=attachments)
+    except mail_requests.MailRequestError as e:
+        return {"error": str(e)}
+
+
+@handler
+async def confirm_send_email(ctx) -> dict:
+    from .. import mail_requests
+    try:
+        return await mail_requests.confirm(ctx.person, ctx.session_id)
+    except mail_requests.MailRequestError as e:
+        return {"error": str(e)}
+
+
+@handler
+async def list_emails(ctx, box: str = "inbox", query: str = "", limit: int = 15) -> dict:
+    from .. import mail_requests
+    try:
+        return mail_requests.list_for(ctx.person, box=box, query=query, limit=limit)
+    except mail_requests.MailRequestError as e:
+        return {"error": str(e)}
+
+
+@handler
+async def read_email(ctx, email_id: int) -> dict:
+    from .. import mail_requests
+    try:
+        return mail_requests.read(ctx.person, email_id)
+    except mail_requests.MailRequestError as e:
+        return {"error": str(e)}
+
+
+@handler
+async def escalate_to_team(ctx, topic: str, summary: str, urgency: str = "normal") -> dict:
+    from .. import escalation
+    res = await escalation.escalate(source=ctx.channel, topic=topic, summary=summary, urgency=urgency,
+                                    requester=ctx.person.display_name, requester_id=ctx.person.id)
+    if not res.get("escalated"):
+        return {"escalated": False, "note": res.get("note") or "Nobody on the team could be reached right now."}
+    return {"escalated": True, "escalation_id": res["id"],
+            "note": "Passed to the team; tell the person someone will get back to them."}
+
+
+@handler
+async def list_escalations(ctx, status: str = "open") -> dict:
+    from .. import escalation
+    try:
+        rows = escalation.list_for(ctx.person, status=status if status in ("open", "handled", "all") else "open")
+    except escalation.EscalationError as e:
+        return {"error": str(e)}
+    from ..mail import local_time
+    return {"escalations": [{k: r[k] for k in ("id", "source", "email_id", "requester", "topic", "summary", "urgency",
+                                               "status", "note") if r[k] not in (None, "")}
+                            | {"at_local_time": local_time(r["created_at"])} for r in rows]}
+
+
+@handler
+async def close_escalation(ctx, escalation_id: int, note: str = "") -> dict:
+    from .. import escalation
+    try:
+        row = escalation.close(int(escalation_id), ctx.person, note)
+    except escalation.EscalationError as e:
+        return {"error": str(e)}
+    return {"closed": True, "escalation_id": row["id"], "topic": row["topic"]}

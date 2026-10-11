@@ -8,7 +8,7 @@ Rules enforced here, not in the UI:
 - The last active admin can't be demoted, disabled or deleted; nobody can delete themselves or
   remove their own dashboard login.
 - Any change to someone's role, status, password or login revokes their dashboard sessions.
-- New or changed phone/Telegram connections stay inactive until verified with a code
+- New or changed phone/Telegram/email connections stay inactive until verified with a code
   (orchestrator/identity/verification.py); only admins can mark one verified by hand.
 """
 from __future__ import annotations
@@ -50,8 +50,9 @@ def _person_view(user_id: int) -> dict:
     row = db.query_one("SELECT id, display_name, role, active, notes, created_at FROM users WHERE id = ?", (user_id,))
     if not row:
         raise HTTPException(status_code=404, detail="Unknown person.")
-    idents = db.query("SELECT id, type, value, verified_at FROM user_identifiers WHERE user_id = ? "
+    idents = db.query("SELECT id, type, value, verified_at, preferred FROM user_identifiers WHERE user_id = ? "
                       "ORDER BY type, id", (user_id,))
+    primary = registry.email_for(user_id)
     row["active"] = bool(row["active"])
     row["connections"] = []
     for i in idents:
@@ -63,6 +64,7 @@ def _person_view(user_id: int) -> dict:
             "id": i["id"], "type": i["type"], "value": i["value"],
             "needs_verification": needs, "verified": bool(i["verified_at"]) or not needs,
             "pending_until": pend["expires_at"] if pend else None,
+            **({"primary": i["value"] == primary} if i["type"] == "email" else {}),
         })
     login = next((i for i in idents if i["type"] == "dashboard"), None)
     row["dashboard_username"] = login["value"] if login else None
@@ -224,6 +226,22 @@ async def admin_check_code(body: CodeCheck, identifier_id: int = Path(ge=1),
     return _check_code(_editable_connection(identifier_id, None), body.code)
 
 
+def _make_primary(ident: dict, person: Person) -> None:
+    try:
+        registry.set_preferred_email(ident["id"])
+    except RegistryError as e:
+        raise _fail(e)
+    db.log_activity("system", f"{person.display_name} made {_mask('email', ident['value'])} the primary email of "
+                    f"#{ident['user_id']}", user_id=ident["user_id"])
+
+
+@router.post("/connections/{identifier_id}/primary")
+async def admin_make_primary(identifier_id: int = Path(ge=1), person: Person = Depends(admin_only)) -> dict:
+    ident = _editable_connection(identifier_id, None)
+    _make_primary(ident, person)
+    return _person_view(ident["user_id"])
+
+
 @router.post("/connections/{identifier_id}/mark-verified")
 async def admin_mark_verified(identifier_id: int = Path(ge=1), person: Person = Depends(admin_only)) -> dict:
     """Admin override, e.g. for a number the admin knows personally. Logged."""
@@ -333,6 +351,12 @@ async def start_own_verification(identifier_id: int = Path(ge=1), person: Person
 async def check_own_code(body: CodeCheck, identifier_id: int = Path(ge=1),
                          person: Person = Depends(current_person)) -> dict:
     return _check_code(_editable_connection(identifier_id, person.id), body.code)
+
+
+@router.post("/profile/connections/{identifier_id}/primary")
+async def make_own_primary(identifier_id: int = Path(ge=1), person: Person = Depends(current_person)) -> dict:
+    _make_primary(_editable_connection(identifier_id, person.id), person)
+    return await get_profile(person)
 
 
 @router.post("/profile/password")

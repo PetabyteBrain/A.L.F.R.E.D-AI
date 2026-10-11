@@ -103,9 +103,10 @@ def prune() -> None:
             f.unlink(missing_ok=True)
 
 
-def describe(up: Upload, caption: str = "") -> str:
+def describe(up: Upload, caption: str = "", via: str = "Telegram") -> str:
     """What the model is told about an upload (as part of the person's message)."""
-    return (f"[The person sent a file on Telegram: upload #{up.id}, \"{up.name}\", {up.size // 1024 or 1} KB."
+    how = "attached a file to the email" if via == "email" else f"sent a file on {via}"
+    return (f"[The person {how}: upload #{up.id}, \"{up.name}\", {up.size // 1024 or 1} KB."
             + (f" Caption: {caption}" if caption else " No caption.")
             + " To keep it, use nas_save_upload (ask where if they didn't say); for a receipt, log_receipt.]")
 

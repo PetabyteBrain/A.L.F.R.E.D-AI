@@ -19,14 +19,18 @@ PAGES: dict[str, tuple[str, str]] = {
                        "folder for admins; editor with Markdown preview and checklists, read-only previews of PDF, Word, Excel, "
                        "PowerPoint, pictures, audio and video, recent files; "
                        "Tidy up asks Alfred to propose a cleaner layout for your notes, applied only after you approve it."),
+    "mail": ("Mail", "Alfred's own mailbox: own mail (inbox, sent), and for admins/cofounders the company's "
+                     "inquiries and matters passed to the team (mark handled); text view and .eml download. "
+                     "Emails are sent by asking Alfred."),
     "activity": ("Log", "the event log of everything that happened; admins can export it."),
     "health": ("Systems", "health of the services, Pis, Jetson and backups; admins also see the monthly "
                          "update report (Check now; report only, nothing is installed)."),
     "people": ("Personnel", "admins: people, roles, connections, logins, access attempts, data requests."),
     "usage": ("Usage", "admins: API usage, costs and monthly budgets."),
     "settings": ("Settings", "admins: role permissions (e.g. n8n for cofounders), view as role, household "
-                             "quiet hours, call screening and blocked numbers."),
-    "profile": ("Profile", "own name, connections, password, two-factor sign-in, Google Calendar, quiet hours, "
+                             "quiet hours, how Alfred answers email from outside, call screening and blocked numbers."),
+    "profile": ("Profile", "own name, connections (several email addresses, each verified with an emailed "
+                           "code, one primary), password, two-factor sign-in, Google Calendar, quiet hours, "
                            "voice replies, morning briefing, memory notes, download or delete own data."),
 }
 ADMIN_ONLY = {"people", "usage", "settings"}

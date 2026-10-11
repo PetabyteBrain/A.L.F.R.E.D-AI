@@ -26,6 +26,7 @@ from dashboard.api.briefing import router as briefing_router
 from dashboard.api.memory import router as memory_router
 from dashboard.api.quiet import router as quiet_router
 from dashboard.api.meetings import router as meetings_router
+from dashboard.api.mail import router as mail_router
 from dashboard.api.google import router as google_router
 from dashboard.api.people import router as people_router
 from dashboard.api.twofa import router as twofa_router
@@ -42,8 +43,8 @@ from dashboard.api.continuity import router as continuity_router
 from dashboard.api.routes import router as dashboard_router
 from dashboard.api.security import SecurityMiddleware
 
-from . import (briefing, call_handler, db, health, homelab, n8n_callback, reminders, scheduler, sessions, tasks,
-               telegram_handler)
+from . import (briefing, call_handler, db, health, homelab, mail_inbound, n8n_callback, reminders, scheduler,
+               sessions, tasks, telegram_handler)
 from .config import settings
 from .identity import registry
 from .tools import registry as tool_registry
@@ -77,13 +78,14 @@ async def lifespan(app: FastAPI):
     brief = asyncio.create_task(briefing.background_loop())
     follow = asyncio.create_task(tasks.background_loop())
     lab = asyncio.create_task(homelab.background_loop())
-    log.info("%s up — telegram=%s phone=%s n8n=%s model=%s",
+    inbox = asyncio.create_task(mail_inbound.background_loop())
+    log.info("%s up — telegram=%s phone=%s email=%s n8n=%s model=%s",
              settings.assistant_name, settings.telegram_enabled, settings.twilio_enabled and settings.speech_enabled,
-             settings.n8n_enabled, settings.claude_model)
+             settings.mail_enabled, settings.n8n_enabled, settings.claude_model)
     try:
         yield
     finally:
-        for task in (bg, sched, remind, brief, follow, lab):
+        for task in (bg, sched, remind, brief, follow, lab, inbox):
             task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await task
@@ -156,7 +158,7 @@ def _page(path: Path, status_code: int = 200) -> HTMLResponse:
 
 
 # Machine endpoints keep JSON errors; any other unknown address gets the styled "page not found" page.
-_MACHINE_PATHS = ("/api/", "/twilio/", "/n8n/", "/internal/", "/healthz")
+_MACHINE_PATHS = ("/api/", "/twilio/", "/n8n/", "/mail/", "/internal/", "/healthz")
 
 
 @app.exception_handler(StarletteHTTPException)
@@ -200,6 +202,7 @@ async def watchdog(request: Request) -> Response:
 
 app.include_router(call_handler.router)
 app.include_router(n8n_callback.router)
+app.include_router(mail_inbound.router)
 app.include_router(dashboard_router)
 app.include_router(people_router)
 app.include_router(twofa_router)
@@ -220,6 +223,7 @@ app.include_router(briefing_router)
 app.include_router(memory_router)
 app.include_router(quiet_router)
 app.include_router(meetings_router)
+app.include_router(mail_router)
 def _legal(name: str) -> Response:
     path = WEB_DIR / "legal" / f"{name}.html"
     if not path.is_file():

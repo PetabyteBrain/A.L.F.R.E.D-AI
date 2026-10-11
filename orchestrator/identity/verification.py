@@ -1,10 +1,11 @@
-"""Confirmation codes for new phone numbers and Telegram IDs.
+"""Confirmation codes for new phone numbers, Telegram IDs and email addresses.
 
 A new (or changed) phone/Telegram connection doesn't count until its owner proves control of it:
 
 - phone: Alfred calls the number and reads out a 6-digit code, which is typed into the dashboard;
 - telegram: the dashboard shows a code, which is sent to the bot from that Telegram account
-  (a t.me deep link does it in one tap).
+  (a t.me deep link does it in one tap);
+- email: Alfred emails a 6-digit code to the address, which is typed into the dashboard.
 
 Codes are stored as HMACs, expire after 10 minutes and allow 5 wrong tries. Sending is rate
 limited per connection and per requester, because each code call costs money and rings a phone.
@@ -117,6 +118,12 @@ async def start(identifier_id: int, requester: Person) -> dict:
                                 "Try again then, or let them verify it themselves.")
     if ident["type"] == "phone":
         await _call_with_code(ident["value"], code)
+    elif ident["type"] == "email":
+        from .. import mail
+        try:
+            await mail.send_verification_code(ident["value"], code)
+        except mail.MailError as e:
+            raise RegistryError(str(e)) from e
     now = _now()
     with db.tx() as conn:
         conn.execute(
@@ -127,11 +134,13 @@ async def start(identifier_id: int, requester: Person) -> dict:
             (identifier_id, _hash(identifier_id, code), _iso(now + CODE_TTL), requester.id, _iso(now)))
         conn.execute("INSERT INTO verification_sends(identifier_value, requested_by, ts) VALUES (?,?,?)",
                      (ident["value"], requester.id, _iso(now)))
-    db.log_activity("access", f"Verification code {'called through' if ident['type'] == 'phone' else 'issued'} "
+    how = {"phone": "called through", "email": "emailed"}.get(ident["type"], "issued")
+    db.log_activity("access", f"Verification code {how} "
                     f"for a {ident['type']} of #{ident['user_id']} (by {requester.display_name})",
                     user_id=ident["user_id"])
 
-    out = {"method": "call" if ident["type"] == "phone" else "telegram", "expires_at": _iso(now + CODE_TTL)}
+    out = {"method": {"phone": "call", "email": "email"}.get(ident["type"], "telegram"),
+           "expires_at": _iso(now + CODE_TTL)}
     if ident["type"] == "telegram":
         # Shown on the dashboard; proving control means sending it *from* that Telegram account.
         from .. import telegram_handler
@@ -141,7 +150,7 @@ async def start(identifier_id: int, requester: Person) -> dict:
 
 
 def check(identifier_id: int, code: str) -> bool:
-    """Phone flow: the code typed into the dashboard."""
+    """Phone and email flow: the code typed into the dashboard."""
     code = (code or "").strip()
     if not pending(identifier_id):
         raise RegistryError("No valid code is pending. Request a new one.")

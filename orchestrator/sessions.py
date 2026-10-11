@@ -35,7 +35,7 @@ LIVE: dict[str, LiveState] = {}
 
 def new_session_id(channel: str) -> str:
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")
-    prefix = {"telegram": "tg", "call": "call", "web": "web"}.get(channel, channel)
+    prefix = {"telegram": "tg", "call": "call", "web": "web", "email": "mail"}.get(channel, channel)
     return f"{prefix}-{stamp}-{secrets.token_hex(3)}"
 
 
@@ -49,7 +49,7 @@ def start_session(user_id: int, channel: str, direction: str = "inbound", extern
     )
     LIVE[sid] = LiveState(session_id=sid, user_id=user_id, channel=channel)
     db.log_activity(channel if channel == "call" else "message",
-                    f"{ {'call': 'Call', 'telegram': 'Telegram session', 'web': 'Web chat'}.get(channel, channel)} "
+                    f"{ {'call': 'Call', 'telegram': 'Telegram session', 'web': 'Web chat', 'email': 'Email conversation'}.get(channel, channel)} "
                     f"started ({direction})",
                     user_id=user_id, session_id=sid)
     return sid
@@ -155,6 +155,16 @@ def web_session_for(user_id: int) -> str:
     return start_session(user_id, "web")
 
 
+def email_session_for(user_id: int, thread: str) -> str:
+    """Email: one session per mail conversation (thread = the first message's Message-ID)."""
+    row = db.query_one("SELECT id FROM sessions WHERE user_id = ? AND channel = 'email' AND external_id = ? "
+                       "ORDER BY started_at DESC LIMIT 1", (user_id, thread[:300]))
+    if row:
+        db.execute("UPDATE sessions SET status = 'active', ended_at = NULL WHERE id = ?", (row["id"],))
+        return row["id"]
+    return start_session(user_id, "email", external_id=thread[:300])
+
+
 def reset_context(user_id: int, channel: str) -> None:
     """Start a fresh conversation: earlier turns stay stored but are no longer sent to the model."""
     for row in db.query("SELECT id FROM sessions WHERE user_id = ? AND channel = ? AND status = 'active'",
@@ -171,7 +181,7 @@ def close_idle_sessions() -> None:
         timespec="seconds"
     )
     for row in db.query(
-        "SELECT id FROM sessions WHERE channel IN ('telegram', 'web') AND status = 'active' AND last_activity_at < ?",
+        "SELECT id FROM sessions WHERE channel IN ('telegram', 'web', 'email') AND status = 'active' AND last_activity_at < ?",
         (cutoff,)
     ):
         end_session(row["id"])

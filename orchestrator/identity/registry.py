@@ -22,10 +22,10 @@ log = logging.getLogger(__name__)
 IDENTIFIER_TYPES = ("telegram", "phone", "email", "dashboard")
 # Connections that let someone reach (or be reached by) the assistant only count once their
 # owner proved control of them with a confirmation code (identity/verification.py).
-VERIFY_TYPES = ("phone", "telegram")
+VERIFY_TYPES = ("phone", "telegram", "email")
 # The web chat lives in the dashboard, so it follows dashboard access.
 CHANNEL_PERMISSION = {"telegram": "can_telegram", "call": "can_call", "dashboard": "can_dashboard",
-                      "web": "can_dashboard"}
+                      "web": "can_dashboard", "email": "can_email"}
 DEFAULT_COUNTRY_CODE = os.environ.get("DEFAULT_COUNTRY_CODE", "41")
 
 _hasher = PasswordHasher()
@@ -138,6 +138,26 @@ def phone_for(user_id: int) -> str | None:
 def telegram_for(user_id: int) -> str | None:
     """The Telegram ID Alfred may message: verified ones only."""
     return _verified_value(user_id, "telegram")
+
+
+def email_for(user_id: int) -> str | None:
+    """The address Alfred writes to: the verified one marked primary, else the oldest verified one."""
+    row = db.query_one("SELECT value FROM user_identifiers WHERE user_id = ? AND type = 'email' "
+                       "AND verified_at IS NOT NULL ORDER BY preferred DESC, id LIMIT 1", (user_id,))
+    return row["value"] if row else None
+
+
+def set_preferred_email(identifier_id: int) -> dict:
+    ident = get_identifier(identifier_id)
+    if not ident or ident["type"] != "email":
+        raise RegistryError("That isn't an email connection.")
+    if not ident["verified_at"]:
+        raise RegistryError("Verify this address first.")
+    with db.tx() as conn:
+        conn.execute("UPDATE user_identifiers SET preferred = 0 WHERE user_id = ? AND type = 'email'",
+                     (ident["user_id"],))
+        conn.execute("UPDATE user_identifiers SET preferred = 1 WHERE id = ?", (identifier_id,))
+    return ident
 
 
 # --- dashboard passwords -----------------------------------------------------------------

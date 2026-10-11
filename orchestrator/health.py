@@ -82,6 +82,11 @@ async def _n8n() -> tuple[bool, str]:
     return await n8n_tool.health()
 
 
+async def _email() -> tuple[bool, str]:
+    from . import mail
+    return await mail.health()
+
+
 async def _google() -> tuple[bool, str]:
     from . import google_calendar
     return await google_calendar.health()
@@ -100,6 +105,7 @@ PROBES = {
     "searxng": _searxng,
     "nas": _nas,
     "n8n": _n8n,
+    "email": _email,
     "google": _google,
 }
 
@@ -134,6 +140,8 @@ async def background_loop() -> None:
             from . import budgets, recording_archive, retention
             retention.daily()
             await asyncio.to_thread(recording_archive.daily)
+            from . import mail
+            await asyncio.to_thread(mail.daily)     # archive retries + mail retention (once a day)
             from . import agenda
             await agenda.sync_all()             # reminders follow their calendar events
             await budgets.check()

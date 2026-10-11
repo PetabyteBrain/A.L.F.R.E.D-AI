@@ -247,7 +247,7 @@ class SecurityMiddleware(BaseHTTPMiddleware):
         # No AI training / dataset mining (EU TDM reservation + robots conventions; see robots.txt).
         h.setdefault("tdm-reservation", "1")
         h.setdefault("tdm-policy", f"{settings.public_base_url or ''}/terms-of-service")
-        private = path.startswith(("/api/", "/app", "/twilio/", "/n8n/", "/index.html"))
+        private = path.startswith(("/api/", "/app", "/twilio/", "/n8n/", "/mail/", "/index.html"))
         h.setdefault("X-Robots-Tag", "noindex, nofollow, noarchive, noai, noimageai" if private
                      else "noarchive, noai, noimageai")
         if path.startswith("/api/"):

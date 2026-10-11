@@ -16,6 +16,7 @@ working on the code are in [CLAUDE.md](../CLAUDE.md).
 | Telegram | Long polling; text, voice notes, files, photos; validated HTML formatting | `orchestrator/telegram_handler.py` |
 | Dashboard | React 19 + Vite, served by FastAPI; no router, tabs in `App.jsx` | `dashboard/web/`, `dashboard/api/` |
 | Storage | SQLite (WAL) + recordings on disk; files/notes on a NAS over SMB | `orchestrator/db.py`, `orchestrator/nas*.py` |
+| Email | Alfred's own address: SMTP out, provider webhook in, sender check, triage of outside mail, .eml archive | `orchestrator/mail*.py`, `orchestrator/escalation.py` |
 | Market analysis | Businesses in a radius (OpenStreetMap), website checks, web-search lookups (optional self-hosted SearXNG, then Claude), report in the company files | `orchestrator/market_analysis.py` |
 | Homelab operator | Status/logs/restarts of other machines through a forced-command SSH key | `orchestrator/homelab.py`, `infra/ops/` |
 
@@ -26,6 +27,7 @@ Phone ─► Twilio ─► /twilio/voice ─► identity ─► /twilio/stream (
 Telegram ─► long polling ─► identity ─► Agent Core ─► reply (text or voice note)
 Dashboard ─► /api/* (session cookie + CSRF header) ─► Agent Core (web chat, SSE) / data endpoints
 n8n ─► /n8n/callback (shared secret) ─► Agent Core ─► Telegram
+Email ─► provider ─► /mail/inbound/<token> (validated once) ─► sender check ─► Agent Core / triage ─► reply by email
 ```
 
 1. Every inbound event is resolved to a person first. Unknown or unpermitted senders get no reply
@@ -41,6 +43,7 @@ n8n ─► /n8n/callback (shared secret) ─► Agent Core ─► Telegram
 
 - `users`, `user_identifiers` (connections, verified flag), `roles`
 - `sessions`, `transcripts` (+ FTS5 index for conversation search), `recordings`
+- `emails` (log of every message; the .eml itself on the NAS), `escalations`
 - `reminders`, `tasks`, `scheduled_calls`, `external_calls`, `memories`, `meetings`, `api_usage`, `activity`, `health`, `app_settings`
 - Recordings: `data/storage/{user_id}/{date}/{session_id}/audio.wav`, moved to the NAS after 14 days.
 - New columns go in `db.ADDED_COLUMNS` and are applied on start.
@@ -51,7 +54,8 @@ n8n ─► /n8n/callback (shared secret) ─► Agent Core ─► Telegram
 - Dashboard: Argon2id passwords, server-side sessions (HMAC'd tokens), idle/absolute timeouts,
   2FA (TOTP or Telegram codes, backup codes), throttled logins, strict CSP (no inline scripts),
   CSRF header + origin check on every state-changing request.
-- New phone/Telegram connections count only after a verification code.
+- New phone/Telegram/email connections count only after a verification code. Mail is attributed to a registered
+  person only when the provider reports DMARC alignment; others are treated as outside senders (no tools).
 - Untrusted text (caller messages, files, web pages) is relayed as data, never as instructions.
 - File previews: documents are converted to PDF (LibreOffice) or to plain data; files are never
   rendered as HTML, and only a short list of media types is served inline.
@@ -72,5 +76,7 @@ n8n ─► /n8n/callback (shared secret) ─► Agent Core ─► Telegram
 |---|---|
 | `.env` | API keys, tokens, URLs, prices (template: `.env.example`) |
 | `orchestrator/homelab.yaml` | the hosts Alfred may check (template: `homelab.example.yaml`) |
+| `orchestrator/company_profile.md` | public company information Alfred answers outside email from (template: `company_profile.example.md`) |
+| `orchestrator/mail_assets/company-banner.png` | the company's email banner (make it with `make_banners.py`; neutral example tracked) |
 | `infra/backup.env` | `BACKUP_TARGET=user@backup-host` for the backup scripts |
 | `data/` | database, recordings, backups |

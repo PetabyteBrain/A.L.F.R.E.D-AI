@@ -7,7 +7,8 @@ inline by the browser.
 
 Word (.docx) and OpenDocument text (.odt): headings, paragraphs, list items and tables.
 Excel (.xlsx/.xlsm) and CSV: the first rows and columns of every sheet. PowerPoint (.pptx): each
-slide's title, text and speaker notes. Code and config files: plain text. Old binary Office formats
+slide's title, text and speaker notes. Code and config files: plain text. Archived email (.eml): the
+headers, attachment names and the text (never its HTML). Old binary Office formats
 (.doc/.xls/.ppt) can't be read here: download them.
 """
 from __future__ import annotations
@@ -58,7 +59,8 @@ def inline_type(name: str) -> str | None:
 
 
 def can_preview(name: str) -> bool:
-    return _ext(name) in (".docx", ".odt", ".xlsx", ".xlsm", ".csv", ".tsv", ".pptx") + TEXT or bool(inline_type(name))
+    return _ext(name) in (".docx", ".odt", ".xlsx", ".xlsm", ".csv", ".tsv", ".pptx", ".eml") + TEXT \
+        or bool(inline_type(name))
 
 
 def preview(name: str, data: bytes) -> dict:
@@ -74,6 +76,9 @@ def preview(name: str, data: bytes) -> dict:
             return {"kind": "sheets", "sheets": [_csv(data, "\t" if ext == ".tsv" else None)]}
         if ext == ".pptx":
             return {"kind": "slides", "slides": _pptx(data)}
+        if ext == ".eml":
+            text = _eml(data)
+            return {"kind": "text", "text": text[:MAX_TEXT], "truncated": len(text) > MAX_TEXT}
         if ext in TEXT:
             text = data.decode("utf-8", errors="replace")
             return {"kind": "text", "text": text[:MAX_TEXT], "truncated": len(text) > MAX_TEXT}
@@ -85,6 +90,17 @@ def preview(name: str, data: bytes) -> dict:
 
 
 # --- Word / OpenDocument -------------------------------------------------------------------------
+
+def _eml(data: bytes) -> str:
+    from email import message_from_bytes, policy
+    from .mail_inbound import parse
+    msg = message_from_bytes(data, policy=policy.default)
+    p = parse(data)
+    head = [f"{k}: {' '.join(str(msg.get(k, '')).split())}" for k in ("From", "To", "Cc", "Date", "Subject") if msg.get(k)]
+    if p.attachments:
+        head.append("Attachments: " + ", ".join(f"{n} ({len(d) // 1024 or 1} KB)" for n, d, _ in p.attachments))
+    return "\n".join(head) + "\n\n" + (p.text or "(no text)")
+
 
 def _w_text(el) -> str:
     out = []

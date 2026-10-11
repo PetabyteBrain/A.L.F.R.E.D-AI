@@ -4,8 +4,8 @@ Export: a ZIP with data.json (everything stored about the person, except other p
 private data and secrets such as password hashes or OAuth tokens) + their call recordings.
 
 Deletion is asked for by the person on Profile and carried out by an admin (People tab):
-- scope "history": conversations (transcripts, tool calls, recordings + audio files),
-  memories, reminders, tasks they own, meetings they organised, briefing, quiet hours, voice
+- scope "history": conversations (transcripts, tool calls, recordings + audio files), personal
+  email (company mail they were part of stays, without the link to them), memories, reminders, tasks they own, meetings they organised, briefing, quiet hours, voice
   mode, Google link (revoked at Google), activity lines and blocked-access lines with their
   numbers. Account and connections stay, so Alfred still knows them.
 - scope "account": all of that, then the person, their connections, 2FA and sessions.
@@ -73,6 +73,10 @@ def collect(user_id: int) -> dict:
                                  "WHERE target_user_id = ? OR requested_by = ?", (user_id, user_id)),
         "outside_calls": _rows("SELECT contact, number, task, share, status, result, run_at, created_at "
                                "FROM external_calls WHERE requested_by = ?", (user_id,)),
+        "emails": _rows("SELECT direction, kind, scope, from_addr, to_addrs, cc_addrs, subject, body_text, "
+                        "attachments, summary, created_at FROM emails WHERE user_id = ? ORDER BY id", (user_id,)),
+        "escalations": _rows("SELECT source, topic, summary, urgency, status, note, created_at, handled_at "
+                             "FROM escalations WHERE requester_id = ?", (user_id,)),
         "settings": {
             "briefing": db.query_one("SELECT * FROM briefings WHERE user_id = ?", (user_id,)),
             "quiet_hours": db.query_one("SELECT * FROM quiet_hours WHERE user_id = ?", (user_id,)),
@@ -217,6 +221,11 @@ async def erase(user_id: int, scope: str, *, by: Person) -> dict:
         recording_archive.erase_user(user_id)
     except Exception:  # noqa: BLE001
         log.warning("Couldn't delete the archived NAS recordings of #%s", user_id, exc_info=True)
+    try:                                             # their personal mail (the NAS copies go with the folder)
+        from . import mail
+        n["emails"] = mail.erase_user(user_id)
+    except Exception:  # noqa: BLE001
+        log.warning("Couldn't delete the mail of #%s", user_id, exc_info=True)
     try:                                             # their personal NAS folder
         from . import nas
         n["nas_folder"] = nas.erase_personal(user_id)
