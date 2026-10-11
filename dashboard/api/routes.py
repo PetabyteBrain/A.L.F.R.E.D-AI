@@ -184,7 +184,7 @@ async def active_sessions(person: Person = Depends(current_person)) -> list[dict
 async def list_sessions(
     person: Person = Depends(current_person),
     user_id: int | None = Query(default=None, ge=1),
-    channel: str | None = Query(default=None, pattern="^(call|telegram|web)$"),
+    channel: str | None = Query(default=None, pattern="^(call|telegram|web|email)$"),
     date: str | None = Query(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$"),
     date_from: str | None = Query(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$"),
     date_to: str | None = Query(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$"),
@@ -532,14 +532,21 @@ async def overview(person: Person = Depends(current_person)) -> dict:
     blocked = db.query_one(
         "SELECT COUNT(*) AS n FROM access_attempts WHERE resolved = 0 AND substr(ts,1,10) = ?", (today,)
     )
+    team = person.role in ("admin", "cofounder")       # emails received today: own, plus company mail for the team
+    emails = db.query_one(
+        "SELECT COUNT(*) AS n FROM emails WHERE direction = 'in' AND kind NOT IN ('spam','automated') "
+        "AND substr(created_at,1,10) = ? AND ((scope = 'personal' AND user_id = ?) OR (scope = 'company' AND ?))",
+        (today, person.id, int(team)))
     return {
         "active": counts.get("active") or 0,
         "calls_today": counts.get("calls_today") or 0,
         "chats_today": counts.get("chats_today") or 0,
+        "emails_today": (emails or {}).get("n", 0) if settings.mail_enabled else None,
         "blocked_today": (blocked or {}).get("n", 0) if person.is_admin else None,
         "channels": {
             "telegram": settings.telegram_enabled,
             "phone": settings.twilio_enabled and settings.speech_enabled,
+            "email": settings.mail_inbound_enabled,
             "n8n": settings.n8n_enabled,
             "google": settings.google_enabled,
         },

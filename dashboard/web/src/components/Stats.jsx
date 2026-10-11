@@ -12,6 +12,7 @@ export default function Stats() {
           <Gauge value={o.active} label="Active" max={Math.max(3, o.active)} />
           <Gauge value={o.calls_today} label="Calls today" />
           <Gauge value={o.chats_today} label="Chats today" />
+          {o.emails_today !== null && o.emails_today !== undefined && <Gauge value={o.emails_today} label="Emails today" />}
           {o.blocked_today !== null && <Gauge value={o.blocked_today} label="Blocked" tone="warn" />}
         </div>
       </Panel>

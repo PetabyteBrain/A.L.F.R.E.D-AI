@@ -101,6 +101,7 @@ function Filters({ filter, setFilter, people }) {
         <option value="call">phone</option>
         <option value="telegram">Telegram</option>
         <option value="web">web chat</option>
+        <option value="email">email</option>
       </select>
       <label className="date-range"><span>from</span><input type="date" value={filter.from} onChange={set("from")} /></label>
       <label className="date-range"><span>to</span><input type="date" value={filter.to} onChange={set("to")} /></label>
