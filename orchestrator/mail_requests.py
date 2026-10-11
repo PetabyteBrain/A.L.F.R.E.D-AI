@@ -152,7 +152,8 @@ async def prepare(person: Person, session_id: str | None, *, to: list | str | No
         subject = subject or t_subject
         body = body or t_body
     subject = " ".join(str(subject or "").split())[:200]
-    body = _clean_text(body, 20_000)
+    from .mail_templates import strip_signoff
+    body = strip_signoff(_clean_text(body, 20_000))      # the layout adds the signature
     if not subject:
         raise MailRequestError("What's the subject?")
     if len(body) < 2:

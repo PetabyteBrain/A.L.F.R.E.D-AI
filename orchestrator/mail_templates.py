@@ -263,11 +263,42 @@ def footer_lines(template) -> list[str]:
     return [x for x in lines if x]
 
 
+# A closing line the model sometimes adds although the layout signs the email ("Best regards," + name lines).
+_CLOSING = re.compile(
+    r"^[*_\s]*(?:"
+    r"(?:with\s+)?(?:(?:best|kind|kindest|warm|warmest|many|all\s+the\s+best)\s+)?(?:regards|wishes)"
+    r"|(?:yours\s+)?(?:sincerely|faithfully|truly|respectfully)(?:\s+yours)?"
+    r"|best|cheers|thanks(?:\s+again)?|thank\s+you|many\s+thanks|at\s+your\s+service"
+    r"|mit\s+freundlichen\s+gr(?:ü|ue)ssen|freundliche\s+gr(?:ü|ue)sse|liebe\s+gr(?:ü|ue)sse"
+    r")[*_\s]*[,.!]?[*_\s]*$", re.I)
+
+
+def strip_signoff(body_md: str) -> str:
+    """Drop a trailing sign-off the writer added ("Best regards,\nAlfred\nAI assistant"): the layout adds the real
+    signature. Only the last few short lines are looked at, so a "thanks" inside the text stays."""
+    lines = (body_md or "").rstrip().split("\n")
+    for i in range(len(lines) - 1, max(-1, len(lines) - 7), -1):
+        line = lines[i].strip()
+        if not line:
+            continue
+        if _CLOSING.match(line):
+            tail = [x.strip() for x in lines[i + 1:] if x.strip()]
+            if len(tail) <= 4 and all(len(x.split()) <= 8 for x in tail):
+                return "\n".join(lines[:i]).rstrip()
+            break
+        if len(line.split()) > 8:                    # a real sentence: no sign-off block below this point
+            break
+    return (body_md or "").rstrip()
+
+
 def render(template, body_md: str, *, subject: str = "", greeting: str = "", on_behalf_of: str = "",
            sign: bool = True) -> Rendered:
     lay = template if isinstance(template, Layout) else resolve(template)
     t = lay.theme
-    body = (f"{greeting}\n\n" if greeting else "") + (body_md or "").strip()
+    text = (body_md or "").strip()
+    if sign and lay.signature.strip():
+        text = strip_signoff(text)
+    body = (f"{greeting}\n\n" if greeting else "") + text
     if sign and lay.signature.strip():
         body += "\n\n" + signature(lay, on_behalf_of)
     cid = f"banner-{lay.key}@alfred"

@@ -5088,3 +5088,18 @@ async def test_template_preview_is_isolated(monkeypatch, tmp_path):
     assert "default-src 'none'" in page.headers["content-security-policy"]
     with pytest.raises(Exception):
         await api_t.preview_page(token, registry.lookup("telegram", "22222222"))  # someone else's preview
+
+
+def test_signoff_written_by_the_model_is_not_doubled():
+    from orchestrator import mail_templates as mt
+    for ending in ("Best regards,", "Kind regards,\nAlfred", "**Best regards,**\nAlfred\nAI assistant · Acme",
+                   "Warm regards,\nAlfred\non behalf of Max", "Sincerely,", "Thanks!", "Cheers,\nAlfred"):
+        body = f"Dear Ms Muster,\n\nThe offer is attached.\n\n{ending}"
+        assert mt.strip_signoff(body) == "Dear Ms Muster,\n\nThe offer is attached.", ending
+        text = mt.render("company", body, on_behalf_of="Max Mustermann").text
+        assert text.lower().count("regards") == 1 and text.count("Alfred") >= 1
+    # a sentence that merely ends with thanks, or thanks in the middle, stays
+    keep = "Dear Max,\n\nThanks for the documents, I'll file them under Clients/Acme today.\n\nPlease check the totals."
+    assert mt.strip_signoff(keep) == keep
+    keep2 = "Dear Max,\n\nBest regards from the whole team on your new office, and congratulations on the opening!"
+    assert mt.strip_signoff(keep2) == keep2
