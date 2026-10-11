@@ -426,6 +426,31 @@ CREATE INDEX IF NOT EXISTS idx_emails_msgid ON emails(message_id);
 CREATE INDEX IF NOT EXISTS idx_emails_user ON emails(user_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_emails_status ON emails(status, direction);
 
+-- Mail groups (an email is in at most one) and tags (any number), per person for personal mail and shared by
+-- the team for company mail; plus each viewer's own read / starred / archived state (orchestrator/mail_labels.py).
+CREATE TABLE IF NOT EXISTS mail_labels (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    kind       TEXT NOT NULL CHECK (kind IN ('group','tag')),
+    scope      TEXT NOT NULL CHECK (scope IN ('personal','company')),
+    user_id    INTEGER REFERENCES users(id) ON DELETE CASCADE,   -- owner of a personal label; NULL for company
+    name       TEXT NOT NULL,
+    color      TEXT NOT NULL DEFAULT 'slate',
+    created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS email_labels (
+    email_id INTEGER NOT NULL REFERENCES emails(id) ON DELETE CASCADE,
+    label_id INTEGER NOT NULL REFERENCES mail_labels(id) ON DELETE CASCADE,
+    PRIMARY KEY (email_id, label_id)
+);
+CREATE TABLE IF NOT EXISTS email_state (
+    email_id INTEGER NOT NULL REFERENCES emails(id) ON DELETE CASCADE,
+    user_id  INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    read_at  TEXT,
+    starred  INTEGER NOT NULL DEFAULT 0,
+    archived INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (email_id, user_id)
+);
+
 -- Matters Alfred can't or may not decide, passed to the admins and cofounders (orchestrator/escalation.py).
 CREATE TABLE IF NOT EXISTS escalations (
     id           INTEGER PRIMARY KEY AUTOINCREMENT,

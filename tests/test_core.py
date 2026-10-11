@@ -4782,3 +4782,65 @@ def test_sessions_table_migrates_to_email_channel(tmp_path, monkeypatch):
     conn.execute("INSERT INTO sessions(id, user_id, channel, started_at, last_activity_at) VALUES ('m', 1, 'email', 'x', 'x')")
     assert conn.execute("SELECT COUNT(*) FROM sessions").fetchone()[0] == 2
     conn.close()
+
+
+async def test_mail_groups_tags_and_state(monkeypatch, tmp_path):
+    import json as _json
+    from orchestrator import mail, mail_labels
+    from orchestrator.tools import registry as tools
+    _mail_on(monkeypatch, tmp_path)
+    db.execute("DELETE FROM mail_labels")
+    admin = registry.lookup("telegram", "111")
+    friend = registry.lookup("telegram", "22222222")
+    inquiry = mail.record(direction="in", kind="inquiry", status="done", scope="company", from_addr="a@x.example",
+                          subject="Shop quote")
+    mine = mail.record(direction="in", kind="request", status="done", scope="personal", user_id=admin.id,
+                       from_addr="boss@home.example", subject="Dentist")
+    theirs = mail.record(direction="in", kind="request", status="done", scope="personal", user_id=friend.id,
+                         from_addr="friend@home.example", subject="Private")
+    # labels: own personal ones for everyone, company ones for the team only
+    lead = mail_labels.create_label(admin, kind="tag", scope="company", name="Lead", color="green")
+    clients = mail_labels.create_label(admin, kind="group", scope="company", name="Clients")
+    health = mail_labels.create_label(admin, kind="tag", scope="personal", name="Health")
+    other = mail_labels.create_label(admin, kind="group", scope="company", name="Other")
+    with pytest.raises(mail_labels.LabelError):
+        mail_labels.create_label(friend, kind="tag", scope="company", name="Nope")
+    with pytest.raises(mail_labels.LabelError):
+        mail_labels.create_label(admin, kind="tag", scope="company", name="lead")         # duplicate name
+    with pytest.raises(mail_labels.LabelError):
+        mail_labels.get_label(friend, health["id"])                                      # not theirs
+    # assigning: tags add up, a group replaces the previous one, scopes must match
+    mail_labels.assign(admin, [inquiry], add_tags=[lead["id"]], group=clients["id"], set_group=True)
+    mail_labels.assign(admin, [inquiry], group=other["id"], set_group=True)
+    names = sorted(x["name"] for x in mail_labels.labels_for([inquiry])[inquiry])
+    assert names == ["Lead", "Other"]
+    with pytest.raises(mail_labels.LabelError):
+        mail_labels.assign(admin, [mine], add_tags=[lead["id"]])                          # company tag on personal mail
+    with pytest.raises(mail_labels.LabelError):
+        mail_labels.assign(admin, [inquiry], add_tags=[clients["id"]])                    # a group isn't a tag
+    with pytest.raises(mail_labels.LabelError):
+        mail_labels.assign(friend, [theirs], add_tags=[health["id"]])                     # someone else's tag
+    with pytest.raises(mail_labels.LabelError):
+        mail_labels.set_state(friend, [inquiry], starred=True)                            # can't read company mail
+    # boxes and per-viewer state
+    assert {e["id"] for e in mail_labels.search(admin, box="unread")["emails"]} >= {inquiry, mine}
+    mail_labels.mark_read(admin, inquiry)
+    assert inquiry not in {e["id"] for e in mail_labels.search(admin, box="unread")["emails"]}
+    mail_labels.set_state(admin, [mine], starred=True, archived=True)
+    assert mine not in {e["id"] for e in mail_labels.search(admin, box="inbox")["emails"]}
+    assert mine in {e["id"] for e in mail_labels.search(admin, box="archived")["emails"]}
+    assert [e["id"] for e in mail_labels.search(admin, box="starred")["emails"]] == [mine]
+    assert [e["id"] for e in mail_labels.search(admin, box="all", tag=lead["id"])["emails"]] == [inquiry]
+    assert theirs not in {e["id"] for e in mail_labels.search(admin, box="all")["emails"]}
+    assert mail_labels.list_labels(admin)[0]["total"] >= 0
+    # Alfred's tool works by name and creates what's missing in the emails' scope
+    out, err = await tools.execute("organize_email", {"email_ids": [mine], "group": "Doctors", "add_tags": ["Health"],
+                                   "archived": False}, tools.ToolContext(admin, None, "telegram"))
+    res = _json.loads(out)
+    assert not err and sorted(res["labels"][str(mine)]) == ["Doctors", "Health"]
+    assert mail_labels.find_label(admin, "group", "Doctors")["scope"] == "personal"
+    out, err = await tools.execute("list_emails", {"box": "all", "group": "Doctors"}, tools.ToolContext(admin, None, "telegram"))
+    listed = _json.loads(out)["emails"]
+    assert [e["email_id"] for e in listed] == [mine] and listed[0]["tags"] == ["Health"] and listed[0]["starred"]
+    mail_labels.delete_label(admin, lead["id"])
+    assert all(x["name"] != "Lead" for x in mail_labels.labels_for([inquiry])[inquiry])

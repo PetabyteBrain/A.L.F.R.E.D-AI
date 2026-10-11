@@ -790,14 +790,39 @@ tools:
     requires: mail
     description: >-
       List Alfred's email: box inbox (mail the person sent, or that was filed for them, e.g. replies to mail
-      sent for them), sent, inquiries (mail from outside to the company: admins/cofounders), or all.
-      Optional search words.
+      sent for them), unread, starred, sent, archived, inquiries (mail from outside to the company:
+      admins/cofounders), or all. Filter by a group or tag name, unread only, or search words.
     input_schema:
       type: object
       properties:
-        box: {type: string, enum: [inbox, sent, inquiries, all]}
+        box: {type: string, enum: [inbox, unread, starred, sent, archived, inquiries, all]}
         query: {type: string}
+        group: {type: string, description: "Group name (like a folder)."}
+        tag: {type: string}
+        unread_only: {type: boolean}
         limit: {type: integer, minimum: 1, maximum: 50}
+
+  - name: organize_email
+    kind: builtin
+    handler: organize_email
+    roles: ["*"]
+    requires: mail
+    description: >-
+      Organise stored emails by id: move into a group (like a folder; "" takes them out), add or remove tags,
+      mark read/unread, star, archive. Groups and tags that don't exist yet are created (the person's own for
+      their mail, the team's shared ones for company mail). Do it when asked ("tag the shop inquiry as lead",
+      "put Max's mails in the Clients group", "archive the newsletters").
+    input_schema:
+      type: object
+      properties:
+        email_ids: {type: array, items: {type: integer}}
+        group: {type: string}
+        add_tags: {type: array, items: {type: string}}
+        remove_tags: {type: array, items: {type: string}}
+        read: {type: boolean}
+        starred: {type: boolean}
+        archived: {type: boolean}
+      required: [email_ids]
 
   - name: read_email
     kind: builtin

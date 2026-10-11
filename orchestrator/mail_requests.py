@@ -234,32 +234,36 @@ def _view(row: dict, full: bool = False) -> dict:
     return out
 
 
-def list_for(person: Person, *, box: str = "inbox", query: str = "", limit: int = 15) -> dict:
-    limit = max(1, min(int(limit or 15), 50))
-    company = person.role in COMPANY_ROLES
-    where, params = [], []
-    own = "(scope = 'personal' AND user_id = ?)"
-    if box == "inquiries":
-        if not company:
-            raise MailRequestError("Only admins and cofounders see the company's mail.")
-        where.append("scope = 'company' AND direction = 'in' AND kind IN ('inquiry','reply')")
-    elif box == "sent":
-        where.append("direction = 'out' AND kind IN ('sent','reply','auto_reply')")
-        where.append(f"({own} OR (scope = 'company' AND ?))")
-        params += [person.id, int(company)]
-    elif box == "all":
-        where.append(f"({own} OR (scope = 'company' AND ?))")
-        params += [person.id, int(company)]
-    else:                                             # inbox: mail to Alfred from or for this person
-        where.append(f"direction = 'in' AND kind NOT IN ('spam','automated') AND ({own} OR (kind = 'reply' "
-                     "AND user_id = ?))")
-        params += [person.id, person.id]
-    if query:
-        where.append("(subject LIKE ? OR from_addr LIKE ? OR from_name LIKE ? OR own_text LIKE ? OR summary LIKE ?)")
-        like = f"%{query.strip()[:80]}%"
-        params += [like] * 5
-    rows = db.query(f"SELECT id FROM emails WHERE {' AND '.join(where)} ORDER BY id DESC LIMIT ?", (*params, limit))
-    return {"box": box, "emails": [_view(mail.get(r["id"])) for r in rows]}
+def list_for(person: Person, *, box: str = "inbox", query: str = "", group: str = "", tag: str = "",
+             unread_only: bool = False, limit: int = 15) -> dict:
+    from . import mail_labels
+    ids = {}
+    for kind, name in (("group", group), ("tag", tag)):
+        if name:
+            lab = mail_labels.find_label(person, kind, name)
+            if not lab:
+                raise MailRequestError(f"There is no {kind} called “{name}”.")
+            ids[kind] = lab["id"]
+    try:
+        res = mail_labels.search(person, box=box if box in mail_labels.BOXES else "inbox", group=ids.get("group"),
+                                 tag=ids.get("tag"), query=query, unread_only=unread_only,
+                                 limit=max(1, min(int(limit or 15), 50)))
+    except mail_labels.LabelError as e:
+        raise MailRequestError(str(e))
+    out = []
+    for r in res["emails"]:
+        v = _view(r)
+        labs = res["labels"].get(r["id"]) or []
+        st = res["state"].get(r["id"]) or {}
+        if labs:
+            v["group"] = next((x["name"] for x in labs if x["kind"] == "group"), None)
+            v["tags"] = [x["name"] for x in labs if x["kind"] == "tag"]
+        if r["direction"] == "in" and not st.get("read_at"):
+            v["unread"] = True
+        if st.get("starred"):
+            v["starred"] = True
+        out.append(v)
+    return {"box": box, "total": res["total"], "emails": out}
 
 
 def read(person: Person, email_id: int) -> dict:

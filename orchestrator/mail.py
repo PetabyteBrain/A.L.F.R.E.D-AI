@@ -456,6 +456,8 @@ def erase_user(user_id: int) -> int:
         conn.execute("DELETE FROM emails WHERE user_id = ? AND scope = 'personal'", (user_id,))
         conn.execute("UPDATE emails SET user_id = NULL WHERE user_id = ?", (user_id,))
         conn.execute("UPDATE escalations SET requester_id = NULL WHERE requester_id = ?", (user_id,))
+        conn.execute("DELETE FROM mail_labels WHERE user_id = ?", (user_id,))     # own groups and tags
+        conn.execute("DELETE FROM email_state WHERE user_id = ?", (user_id,))     # read / starred / archived
     return len(rows)
 
 

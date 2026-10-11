@@ -19,9 +19,11 @@ PAGES: dict[str, tuple[str, str]] = {
                        "folder for admins; editor with Markdown preview and checklists, read-only previews of PDF, Word, Excel, "
                        "PowerPoint, pictures, audio and video, recent files; "
                        "Tidy up asks Alfred to propose a cleaner layout for your notes, applied only after you approve it."),
-    "mail": ("Mail", "Alfred's own mailbox: own mail (inbox, sent), and for admins/cofounders the company's "
-                     "inquiries and matters passed to the team (mark handled); text view and .eml download. "
-                     "Emails are sent by asking Alfred."),
+    "mail": ("Mail", "Alfred's own mailbox: inbox, unread, starred, sent, archived, all; for admins/cofounders "
+                     "also inquiries and matters passed to the team (mark handled). Groups (like folders) and coloured "
+                     "tags in the sidebar (+ to add, pencil to rename/recolour/delete; own ones, plus shared team ones "
+                     "for company mail); tick emails for bulk read/unread, star, archive, group and tag; the reader "
+                     "shows the whole conversation; keys j/k, s, e, Esc. Emails are sent by asking Alfred."),
     "activity": ("Log", "the event log of everything that happened; admins can export it."),
     "health": ("Systems", "health of the services, Pis, Jetson and backups; admins also see the monthly "
                          "update report (Check now; report only, nothing is installed)."),

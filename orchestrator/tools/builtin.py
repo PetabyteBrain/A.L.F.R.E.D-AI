@@ -736,11 +736,25 @@ async def confirm_send_email(ctx) -> dict:
 
 
 @handler
-async def list_emails(ctx, box: str = "inbox", query: str = "", limit: int = 15) -> dict:
+async def list_emails(ctx, box: str = "inbox", query: str = "", group: str = "", tag: str = "",
+                      unread_only: bool = False, limit: int = 15) -> dict:
     from .. import mail_requests
     try:
-        return mail_requests.list_for(ctx.person, box=box, query=query, limit=limit)
+        return mail_requests.list_for(ctx.person, box=box, query=query, group=group, tag=tag,
+                                      unread_only=unread_only, limit=limit)
     except mail_requests.MailRequestError as e:
+        return {"error": str(e)}
+
+
+@handler
+async def organize_email(ctx, email_ids: list[int], group: str | None = None, add_tags: list[str] | None = None,
+                         remove_tags: list[str] | None = None, read: bool | None = None, starred: bool | None = None,
+                         archived: bool | None = None) -> dict:
+    from .. import mail_labels
+    try:
+        return mail_labels.organize(ctx.person, email_ids, group=group, add_tags=add_tags, remove_tags=remove_tags,
+                                    read=read, starred=starred, archived=archived)
+    except mail_labels.LabelError as e:
         return {"error": str(e)}
 
 
