@@ -129,7 +129,7 @@ class Settings:
     mail_inbound_token: str = field(default_factory=lambda: _env("MAIL_INBOUND_TOKEN"))
     # Hosts the inbound provider's validation/deletion links may point to (Maileroo).
     mail_provider_hosts: tuple = field(default_factory=lambda: tuple(
-        h.strip().lower() for h in _env("MAIL_PROVIDER_HOSTS", "maileroo.com").split(",") if h.strip()))
+        h.strip().lower() for h in _env("MAIL_PROVIDER_HOSTS", "maileroo.com,maileroo.net").split(",") if h.strip()))
     # Folder for the mail archive inside each personal folder and in the company share.
     mail_archive_folder: str = field(default_factory=lambda: _env("MAIL_ARCHIVE_FOLDER", "Mail"))
     # Personal mail is kept this many days; company mail (inquiries, mail sent for the company) longer,

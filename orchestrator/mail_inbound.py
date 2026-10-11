@@ -108,11 +108,17 @@ async def _download(url: str, limit: int) -> bytes:
 async def _validate(url: str) -> bool | None:
     """True/False = the provider confirmed/denied this webhook (its link works once); None = couldn't ask."""
     if not _provider_url(url):
+        log.warning("Mail webhook: validation link on %r, not an allowed provider host (MAIL_PROVIDER_HOSTS)",
+                    urlsplit(str(url or "")).hostname)
         return False
     try:
         async with httpx.AsyncClient(timeout=15, follow_redirects=False) as client:
             r = await client.post(url)
-        return bool(r.status_code == 200 and r.json().get("success") is True)
+        ok = bool(r.status_code == 200 and r.json().get("success") is True)
+        if not ok:
+            log.warning("Mail webhook: the provider did not confirm it (HTTP %s); a test webhook or a forged post",
+                        r.status_code)
+        return ok
     except (httpx.HTTPError, ValueError):
         return None
 

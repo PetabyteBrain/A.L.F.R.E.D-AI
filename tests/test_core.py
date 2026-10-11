@@ -4442,8 +4442,8 @@ def _payload(pid, raw, *, dmarc=True, spam=False, dkim=True, spf="pass"):
             "body": {"plaintext": "", "stripped_plaintext": "",
                      "raw_mime": {"url": f"https://s3.example/{pid}", "size": len(raw)}},
             "spf_result": spf, "dkim_result": dkim, "is_dmarc_aligned": dmarc, "is_spam": spam,
-            "validation_url": f"https://api.maileroo.com/validate/{pid}",
-            "deletion_url": f"https://api.maileroo.com/delete/{pid}"}
+            "validation_url": f"https://inbound-api.maileroo.net/validate-callback/{pid}",
+            "deletion_url": f"https://inbound-api.maileroo.net/email/{pid}"}
 
 
 def _webhook(monkeypatch, raws: dict, valid=True):
@@ -4558,6 +4558,7 @@ def test_mail_webhook_rejects_bad_token_and_forged_posts(monkeypatch, tmp_path):
     assert not mail_inbound._provider_url("http://api.maileroo.com/x")
     assert not mail_inbound._provider_url("https://maileroo.com.evil.example/x")
     assert mail_inbound._provider_url("https://api.maileroo.com/x")
+    assert mail_inbound._provider_url("https://inbound-api.maileroo.net/validate-callback/x")
 
 
 async def test_mail_from_registered_person_runs_agent_and_replies(monkeypatch, tmp_path):
