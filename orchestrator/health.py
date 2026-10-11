@@ -59,6 +59,11 @@ async def _backup_nas() -> tuple[bool, str]:
     return backup_nas.health_now()
 
 
+async def _searxng() -> tuple[bool, str]:
+    from . import market_analysis
+    return await market_analysis.searx_health()
+
+
 async def _updates() -> tuple[bool, str]:
     from . import update_check
     return update_check.health_now()
@@ -92,6 +97,7 @@ PROBES = {
     "backup_nas": _backup_nas,
     "restore_drill": _restore_drill,
     "updates": _updates,
+    "searxng": _searxng,
     "nas": _nas,
     "n8n": _n8n,
     "google": _google,

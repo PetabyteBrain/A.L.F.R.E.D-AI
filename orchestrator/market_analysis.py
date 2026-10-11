@@ -61,12 +61,15 @@ _running: set[int] = set()
 
 # How thorough: how many businesses are taken (closest first) and how many web searches look for websites
 # OpenStreetMap doesn't list. "complete" looks up every business without a listed website (up to the cap).
+# With a self-hosted SearXNG (SEARXNG_URL) lookups cost nothing, so every level looks up more.
 THOROUGHNESS = {
-    "quick": {"max_businesses": 150, "lookups": 0, "label": "quick (no web searches)"},
-    "standard": {"max_businesses": 300, "lookups": 15, "label": "standard"},
-    "thorough": {"max_businesses": 400, "lookups": 50, "label": "thorough"},
-    "complete": {"max_businesses": 500, "lookups": 250, "label": "complete (every missing website looked up)"},
+    "quick": {"max_businesses": 150, "lookups": 0, "searxng_lookups": 0, "label": "quick (no web searches)"},
+    "standard": {"max_businesses": 300, "lookups": 15, "searxng_lookups": 60, "label": "standard"},
+    "thorough": {"max_businesses": 400, "lookups": 50, "searxng_lookups": 150, "label": "thorough"},
+    "complete": {"max_businesses": 500, "lookups": 250, "searxng_lookups": 250,
+                 "label": "complete (every missing website looked up)"},
 }
+LOOKUP_METHODS = ("auto", "searxng", "claude")
 FOCUS = ("both", "no_website", "weak_website")
 SORTS = ("score", "distance", "name")
 
@@ -189,6 +192,8 @@ class Spec:
     thoroughness: str = "standard"
     max_businesses: int = 300
     lookups: int = 15
+    lookup_method: str = "claude"                                # resolved: searxng | claude
+    claude_lookups: int = 15                                     # paid Claude web searches (all, or the fallback)
     check_websites: bool = True
     focus: str = "both"
     min_score: int = 50
@@ -208,7 +213,7 @@ class Spec:
 
     @property
     def estimate_usd(self) -> float:
-        return round(self.lookups * LOOKUP_COST_USD, 2)
+        return round(self.claude_lookups * LOOKUP_COST_USD, 2)
 
 
 def resolve_industries(words: list[str]) -> tuple[list[str], list[str]]:
@@ -229,7 +234,7 @@ def build_spec(area: str, industries: list[str] | None = None, radius_km: float 
                name_keywords: list[str] | None = None, thoroughness: str = "standard", web_lookups: int | None = None,
                check_websites: bool = True, focus: str = "both", min_score: int = 50, exclude_chains: bool = True,
                shortlist: int = 40, sort: str = "score", report_format: str = "both", title: str = "",
-               notes: str = "") -> Spec:
+               notes: str = "", lookup_method: str = "auto", claude_fallback: int = 0) -> Spec:
     area = " ".join(str(area or "").split())[:80]
     if not area:
         raise MarketError("Which place should the analysis be around?")
@@ -260,9 +265,21 @@ def build_spec(area: str, industries: list[str] | None = None, radius_km: float 
     level = THOROUGHNESS.get(str(thoroughness or "standard").lower())
     if not level:
         raise MarketError(f"Thoroughness must be one of: {', '.join(THOROUGHNESS)}.")
-    lookups = level["lookups"] if web_lookups is None else int(web_lookups)
+    if lookup_method not in LOOKUP_METHODS:
+        raise MarketError(f"Lookup method must be one of: {', '.join(LOOKUP_METHODS)}.")
+    if lookup_method == "searxng" and not settings.searxng_url:
+        raise MarketError("The self-hosted search (SEARXNG_URL) isn't set up; use lookup_method claude or auto.")
+    method = "searxng" if lookup_method == "searxng" or (lookup_method == "auto" and settings.searxng_url) else "claude"
+    default = level["searxng_lookups"] if method == "searxng" else level["lookups"]
+    lookups = default if web_lookups is None else int(web_lookups)
     if not 0 <= lookups <= 250:
         raise MarketError("Web lookups must be between 0 and 250.")
+    if method == "claude":
+        claude_lookups = lookups
+    elif lookup_method == "auto":                 # self-hosted first, Claude for the rest (same cap as Claude-only)
+        claude_lookups = level["lookups"] if not claude_fallback else max(0, min(int(claude_fallback), 250))
+    else:                                         # "searxng": free only, unless a fallback is asked for
+        claude_lookups = max(0, min(int(claude_fallback or 0), 250))
     if focus not in FOCUS:
         raise MarketError(f"Focus must be one of: {', '.join(FOCUS)}.")
     if sort not in SORTS:
@@ -272,6 +289,7 @@ def build_spec(area: str, industries: list[str] | None = None, radius_km: float 
         raise MarketError("Report format must be markdown, excel or both.")
     return Spec(area=area, radius_km=radius_km, industries=known, osm_tags=tags, keywords=keywords,
                 thoroughness=str(thoroughness).lower(), max_businesses=level["max_businesses"], lookups=lookups,
+                lookup_method=method, claude_lookups=claude_lookups,
                 check_websites=bool(check_websites), focus=focus, min_score=max(0, min(int(min_score), 95)),
                 exclude_chains=bool(exclude_chains), shortlist=max(5, min(int(shortlist), 300)), sort=sort,
                 formats=formats, title=" ".join(str(title or "").split())[:120], notes=str(notes or "").strip()[:1500])
@@ -501,9 +519,156 @@ async def find_missing_websites(businesses: list[dict], limit: int, person: Pers
                 continue
             url = _norm_url(row.get("website"))
             if url and not any(d in url.lower() for d in DIRECTORIES):
-                b["website"], b["website_source"] = url, "web search"
+                b["website"], b["website_source"] = url, "Claude web search"
                 found += 1
     return len(todo), found
+
+
+# --- self-hosted search (SearXNG) for missing websites ------------------------------------------
+# Free lookups: query "<name> <town>", then pick the business's own site without the model. A result counts
+# only if its domain contains a word of the business name; directories and portals are skipped (known ones,
+# and any site that shows up for several different businesses in the same run).
+
+_LEGAL = {"gmbh", "ag", "sa", "sàrl", "sarl", "kg", "co", "und", "and", "the", "der", "die", "das", "le", "la",
+          "les", "et", "de", "du", "inh", "inhaber", "salon", "atelier", "shop"}
+_UMLAUT = str.maketrans({"ä": "ae", "ö": "oe", "ü": "ue", "é": "e", "è": "e", "ê": "e", "à": "a", "â": "a",
+                         "ç": "c", "ô": "o", "î": "i", "ß": "ss"})
+_PORTALS = DIRECTORIES + ("moneyhouse", "zefix", "help.ch", "firmen", "monetas", "cylex", "hotfrog", "kompass",
+                          "northdata", "easymonitoring", "swissfirms", "gelbeseiten", "11880", "linkedin", "xing",
+                          "wikipedia", "youtube", "pinterest", "trustpilot", "houzz", "renovero", "ofri", "gastroguide",
+                          "speisekarte", "restaurantguru", "falstaff", "booking", "airbnb", "booksy", "treatwell")
+SEARX_CONCURRENCY, SEARX_PAUSE_S = 1, 2.5      # one at a time, gently: engines suspend bursts from one IP
+
+
+# Words that say what a business is, not which one it is: they never count as a match on their own.
+_GENERIC = {"coiffeur", "coiffure", "coiffeuse", "friseur", "hair", "haar", "haarstudio", "barber", "barbershop",
+            "barbier", "beauty", "kosmetik", "nails", "nail", "studio", "store", "laden", "boutique", "cafe", "bar",
+            "bistro", "restaurant", "ristorante", "pizzeria", "trattoria", "brasserie", "hotel", "garage", "auto",
+            "carrosserie", "bodenbelaege", "bodenbelag", "parkett", "teppich", "teppiche", "fliesen", "platten", "maler",
+            "gipser", "sanitaer", "elektro", "schreinerei", "holzbau", "bau", "immobilien", "treuhand", "praxis",
+            "zahnarzt", "physiotherapie", "fitness", "center", "centre", "zentrum", "team", "haus", "house", "service",
+            "services", "swiss", "schweiz", "suisse", "international", "group", "gruppe", "company", "partner"}
+
+
+def _norm(text: str) -> str:
+    return text.lower().translate(_UMLAUT)
+
+
+def _name_tokens(name: str) -> list[str]:
+    return [_norm(w) for w in re.findall(r"[\w']+", name) if w.lower() not in _LEGAL]
+
+
+def _category_words(category: str) -> set[str]:
+    """Words that tell a page is about this kind of business (the industry and its synonyms)."""
+    ind = category.split(":")[0].split(" (")[0].strip()
+    words = {ind} | {syn for syn, target in SYNONYMS.items() if target == ind}
+    return {_norm(w) for phrase in words for w in phrase.split() if len(w) >= 3}
+
+
+def _host(url: str) -> str:
+    h = (urlsplit(url).hostname or "").lower()
+    return h[4:] if h.startswith("www.") else h
+
+
+def pick_website(name: str, results: list[dict], common_hosts: set[str] = frozenset(), town: str = "",
+                 category: str = "") -> str | None:
+    """The business's own site from search results (or a social page if that's all there is), else None.
+    Strict on purpose: every distinctive word of the name must be in the domain, and the page must mention
+    the town or the trade. Names made only of generic words aren't guessed."""
+    tokens = _name_tokens(name)
+    town_words = {_norm(w) for w in re.findall(r"[\w']+", town) if len(w) >= 3}
+    distinctive = [t for t in tokens if len(t) >= 4 and t not in _GENERIC and t not in town_words]
+    if not distinctive:
+        return None
+    context = town_words | _category_words(category) | {t for t in tokens if t in _GENERIC}
+    best, best_score, social = None, 0.0, None
+    for rank, r in enumerate(results[:10]):
+        url = r.get("url") or ""
+        title = _norm(r.get("title") or "")
+        text = f"{title} {_norm(r.get('content') or '')} {_norm(url)}"
+        host = _host(url)
+        if not host or not url.startswith(("http://", "https://")):
+            continue
+        if not any(t in title for t in distinctive):
+            continue
+        has_context = not context or any(c in text for c in context)
+        if _is_social(url):
+            if social is None and has_context and all(t in title for t in distinctive):
+                social = url
+            continue
+        if host in common_hosts or any(p in host for p in _PORTALS):
+            continue
+        core = host.rsplit(".", 1)[0].replace("-", "").replace(".", "")
+        if not all(t.replace("'", "") in core for t in distinctive) or not has_context:
+            continue
+        score_ = 2 + (0.3 if host.endswith((".ch", ".li")) else 0) + (0.3 if rank < 3 else 0) - 0.05 * len(core)
+        if score_ > best_score:
+            parts = urlsplit(url)
+            best, best_score = f"{parts.scheme}://{parts.hostname}/", score_
+    return best or social
+
+
+async def searx_search(client: httpx.AsyncClient, query: str) -> tuple[list[dict], str]:
+    """Results and a problem ('' if fine; 'blocked' when the engines throttle or refuse)."""
+    try:
+        r = await client.get(settings.searxng_url.rstrip("/") + "/search",
+                             params={"q": query, "format": "json", "language": "de-CH", "safesearch": 0})
+    except httpx.HTTPError as e:
+        return [], type(e).__name__
+    if r.status_code != 200:
+        return [], f"HTTP {r.status_code}"
+    data = r.json()
+    results = data.get("results") or []
+    refused = [e for e in data.get("unresponsive_engines") or []
+               if any(w in str(e).lower() for w in ("captcha", "too many", "access denied", "suspended"))]
+    return results, ("blocked" if not results and refused else "")
+
+
+async def searx_find_websites(businesses: list[dict], limit: int, area: str = "") -> tuple[int, int, str]:
+    """Look up businesses without a listed website on the self-hosted SearXNG. Returns (searched, found, note)."""
+    todo = [b for b in businesses if not b["website"]][:limit]
+    if not todo:
+        return 0, 0, ""
+    sem, collected, blocked = asyncio.Semaphore(SEARX_CONCURRENCY), {}, 0
+    async with httpx.AsyncClient(timeout=20, headers={"User-Agent": f"{settings.assistant_name}-assistant"}) as client:
+        async def one(b):
+            nonlocal blocked
+            if blocked >= 3:
+                return
+            async with sem:
+                results, problem = await searx_search(client, f"{b['name']} {b['town'] or area}".strip())
+                await asyncio.sleep(SEARX_PAUSE_S)
+            if problem == "blocked":
+                blocked += 1
+                return
+            blocked = 0
+            b["searx_tried"] = True
+            collected[id(b)] = (b, results)
+        await asyncio.gather(*(one(b) for b in todo))
+    hosts: dict[str, set] = {}
+    for key, (b, results) in collected.items():
+        for r in results[:10]:
+            hosts.setdefault(_host(r.get("url") or ""), set()).add(key)
+    common = {h for h, owners in hosts.items() if len(owners) >= 3} if len(collected) >= 5 else set()
+    found = 0
+    for b, results in collected.values():
+        url = pick_website(b["name"], results, common, b["town"] or area, b["category"])
+        if url:
+            b["website"], b["website_source"] = url, "SearXNG"
+            found += 1
+    note = "the search engines started refusing queries, so the rest weren't looked up" if blocked >= 3 else ""
+    return len(collected), found, note
+
+
+async def searx_health() -> tuple[bool, str]:
+    if not settings.searxng_url:
+        return False, "not configured"
+    try:
+        async with httpx.AsyncClient(timeout=10) as c:
+            r = await c.get(settings.searxng_url.rstrip("/") + "/healthz")
+        return r.status_code == 200, "reachable" if r.status_code == 200 else f"HTTP {r.status_code}"
+    except httpx.HTTPError as e:
+        return False, type(e).__name__
 
 
 # --- scoring and report -------------------------------------------------------------------------
@@ -512,6 +677,8 @@ def score(b: dict, year_now: int) -> tuple[int, list[str]]:
     if not b["website"]:
         if b.get("looked_up"):
             return 90, ["no website found (web search)"]
+        if b.get("searx_tried"):
+            return 72, ["no website found by the self-hosted search (not confirmed)"]
         return 70, ["no website listed on OpenStreetMap (not looked up)"]
     if _is_social(b["website"]):
         return 80, ["only a social media page"]
@@ -571,9 +738,13 @@ def build_markdown(spec: Spec, run: dict, businesses: list[dict]) -> str:
               f"- Businesses found: **{len(businesses)}** (OpenStreetMap{', chains left out' if spec.exclude_chains else ''})",
               f"- Fitting potential clients ({focus}, score ≥ {spec.min_score}): **{len(fit)}**",
               f"- No website, confirmed by web search: **{sum(1 for b in businesses if not b['website'] and b.get('looked_up'))}**",
-              f"- No website listed on OpenStreetMap, not looked up: {sum(1 for b in businesses if not b['website'] and not b.get('looked_up'))}"
+              f"- No website found by the self-hosted search only (not confirmed): "
+              f"{sum(1 for b in businesses if not b['website'] and b.get('searx_tried') and not b.get('looked_up'))}",
+              f"- No website listed on OpenStreetMap, not looked up: "
+              f"{sum(1 for b in businesses if not b['website'] and not b.get('looked_up') and not b.get('searx_tried'))}"
               + (" (a more thorough run checks them)" if spec.thoroughness != "complete" else ""),
-              f"- Websites found by web search: {run['found_by_search']} (of {run['lookups']} lookups)"]
+              f"- Websites found by web search: {run['found_by_search']} (of {run['lookups']} lookups, "
+              f"{run.get('method', 'web search')})" + (f"; {run['lookup_note']}" if run.get("lookup_note") else "")]
     if run.get("previous"):
         lines.append(f"- New since the last report for this search: **{sum(1 for b in businesses if b.get('new'))}**")
     lines += ["", "## Shortlist", "", "| # | Business | Category | Town | Contact | Website | Score | Why |",
@@ -592,8 +763,9 @@ def build_markdown(spec: Spec, run: dict, businesses: list[dict]) -> str:
               f"Businesses matching {spec.label} within {spec.radius_km:g} km of {run['area']} were taken from "
               "OpenStreetMap (name keywords match business names). Listed websites were opened once to check HTTPS, "
               "a mobile layout, loading time, the copyright year and online booking; for businesses without a listed "
-              "website, web searches looked for one. Scores: no website (confirmed) 90, unreachable 85, social media "
-              "only 80, no website listed but not looked up 70, otherwise 20 plus points per weakness (not "
+              "website, web searches looked for one (the self-hosted search first if set up; its misses count as "
+              "unconfirmed). Scores: no website (confirmed) 90, unreachable 85, social media only 80, not found by the "
+              "self-hosted search 72, no website listed but not looked up 70, otherwise 20 plus points per weakness (not "
               "mobile-friendly 30, outdated 20, no HTTPS 20, slow 10, no online booking 10).", "",
               "Only public business listings were used. Contacting businesses is up to you: in Switzerland, "
               "unsolicited advertising must respect the UWG (e.g. the 'no advertising' asterisk in the phone "
@@ -632,7 +804,7 @@ def build_excel(spec: Spec, run: dict, businesses: list[dict]) -> bytes:
                 ("Searched", spec.label), ("Thoroughness", spec.thoroughness), ("Focus", spec.focus),
                 ("Score threshold", spec.min_score), ("Chains", "left out" if spec.exclude_chains else "included"),
                 ("Date", run["date"]), ("Businesses", len(businesses)), ("Fitting", sum(1 for b in businesses if b["fit"])),
-                ("Web lookups", run["lookups"]), ("Notes", spec.notes),
+                ("Web lookups", run["lookups"]), ("Lookup method", run.get("method", "")), ("Notes", spec.notes),
                 ("Source", "© OpenStreetMap contributors (ODbL); web search for missing websites")):
         info.append(row)
     buf = io.BytesIO()
@@ -657,7 +829,18 @@ async def analyse(person: Person, spec: Spec) -> dict:
     businesses = await fetch_businesses(spec, place["lat"], place["lon"], swiss)
     if not businesses:
         raise MarketError(f"OpenStreetMap lists nothing for {spec.label} within {spec.radius_km:g} km of {place['location']}.")
-    searched, found = await find_missing_websites(businesses, spec.lookups, person)
+    note = ""
+    if spec.lookup_method == "searxng":
+        searched, found, note = await searx_find_websites(businesses, spec.lookups, place["location"].split(",")[0])
+        method = "self-hosted search (SearXNG)"
+        if spec.claude_lookups:                     # paid follow-up for what SearXNG couldn't resolve
+            rest = sorted((b for b in businesses if not b["website"]), key=lambda b: not b.get("searx_tried"))
+            s2, f2 = await find_missing_websites(rest, spec.claude_lookups, person)
+            found += f2
+            method += f" + Claude web search for {s2} unresolved"
+    else:
+        searched, found = await find_missing_websites(businesses, spec.lookups, person)
+        method = "Claude web search"
     if spec.check_websites:
         await check_sites(businesses)
     year = datetime.now(ZoneInfo(settings.timezone)).year
@@ -672,7 +855,8 @@ async def analyse(person: Person, spec: Spec) -> dict:
     seen[key] = [b["osm_id"] for b in businesses]
     db.set_setting(_SEEN_KEY, dict(list(seen.items())[-50:]))
     date = datetime.now(ZoneInfo(settings.timezone)).strftime("%Y-%m-%d")
-    run = {"area": place["location"], "date": date, "found_by_search": found, "lookups": searched, "previous": bool(previous)}
+    run = {"area": place["location"], "date": date, "found_by_search": found, "lookups": searched, "previous": bool(previous),
+           "method": method, "lookup_note": note}
     what = spec.title or f"{place['location'].split(',')[0]} {spec.radius_km:g}km {' '.join(spec.industries + spec.keywords) or 'tags'}"
     stem = f"{date} {what}"[:120]
     files = []
@@ -697,10 +881,10 @@ async def start(person: Person, spec: Spec, confirmed: bool = False) -> dict:
     nas.check_scope(person, "company")
     if not nas.enabled():
         raise MarketError("The NAS isn't connected, so there's nowhere to save the report.")
-    if spec.lookups > CONFIRM_ABOVE_LOOKUPS and not confirmed:
-        return {"started": False, "needs_confirmation": True, "web_lookups": spec.lookups,
+    if spec.claude_lookups > CONFIRM_ABOVE_LOOKUPS and not confirmed:
+        return {"started": False, "needs_confirmation": True, "web_lookups": spec.claude_lookups,
                 "estimated_cost_usd": spec.estimate_usd,
-                "note": f"This run does up to {spec.lookups} web searches (about ${spec.estimate_usd:.2f}). Tell the person "
+                "note": f"This run does up to {spec.claude_lookups} paid web searches (about ${spec.estimate_usd:.2f}). Tell the person "
                         "the estimate and start it with confirmed=true only after they agree in their own message."}
     if person.id in _running:
         raise MarketError("An analysis for you is already running; I'll report when it's done.")
@@ -730,8 +914,10 @@ async def start(person: Person, spec: Spec, confirmed: bool = False) -> dict:
             log.exception("Couldn't send the market analysis result")
 
     asyncio.get_running_loop().create_task(job())
-    minutes = "1-5" if spec.lookups <= 15 else "5-15" if spec.lookups <= 60 else "15-25"
+    minutes = (("1-5" if spec.lookups <= 60 else "5-10") if spec.lookup_method == "searxng"
+               else ("1-5" if spec.lookups <= 15 else "5-15" if spec.lookups <= 60 else "15-25"))
     return {"started": True, "searching": spec.label, "radius_km": spec.radius_km, "area": spec.area,
-            "thoroughness": spec.thoroughness, "web_lookups": spec.lookups, "estimated_cost_usd": spec.estimate_usd,
+            "thoroughness": spec.thoroughness, "web_lookups": spec.lookups, "lookup_method": spec.lookup_method,
+            "estimated_cost_usd": spec.estimate_usd,
             "note": f"Running in the background (about {minutes} minutes). The report goes to the company files under "
                     f"'{FOLDER}', and the person gets a Telegram message when it's ready. Tell them that briefly."}

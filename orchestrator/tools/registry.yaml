@@ -751,10 +751,12 @@ tools:
       health, food, hospitality and services are built in, English or German); for anything else also
       give `osm_tags` (OpenStreetMap key=value, e.g. craft=floorer, shop=flooring) and/or `name_keywords`
       in the local languages (e.g. ["boden", "parkett", "sol", "flooring"]); unknown industry words are
-      searched as name keywords. How thorough: quick (no web searches), standard (15), thorough (50),
-      complete (every business without a listed website, up to 250; ~1 ct per search); more than 50 web
-      searches return needs_confirmation with a cost estimate: tell the person and call again with
-      confirmed=true only after their yes. Ask which place and industries if they didn't say; default
+      searched as name keywords. How thorough: quick (no lookups), standard, thorough, complete (every
+      business without a listed website, up to 250). Website lookups use the self-hosted search when it's
+      set up (free: 60 / 150 / 250 lookups), otherwise Claude web search (15 / 50 / 250, ~1 ct each);
+      `claude_fallback` adds paid Claude lookups for businesses the self-hosted search couldn't resolve.
+      More than 50 paid searches return needs_confirmation with a cost estimate: tell the person and call
+      again with confirmed=true only after their yes. Ask which place and industries if they didn't say; default
       radius 5 km, standard. Only public business listings; never offer to contact the businesses yourself.
     input_schema:
       type: object
@@ -775,6 +777,8 @@ tools:
         report_format: {type: string, enum: [both, markdown, excel]}
         title: {type: string, description: "Own report title (also used in the file name)."}
         notes: {type: string, description: "Notes to put at the top of the report, e.g. the purpose or offer."}
+        lookup_method: {type: string, enum: [auto, searxng, claude], description: "auto = self-hosted search if set up, else Claude."}
+        claude_fallback: {type: integer, minimum: 0, maximum: 100, description: "Paid Claude lookups for businesses the self-hosted search couldn't resolve (default 0)."}
         confirmed: {type: boolean, description: "Only after the person agreed to the cost of a large run."}
       required: [area]
 

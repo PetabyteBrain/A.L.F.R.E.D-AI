@@ -276,11 +276,12 @@ async def market_analysis(ctx, area: str, industries: list[str] | None = None, r
                           thoroughness: str = "standard", web_lookups: int | None = None, check_websites: bool = True,
                           focus: str = "both", min_score: int = 50, exclude_chains: bool = True, shortlist: int = 40,
                           sort: str = "score", report_format: str = "both", title: str = "", notes: str = "",
-                          confirmed: bool = False) -> dict:
+                          lookup_method: str = "auto", claude_fallback: int = 0, confirmed: bool = False) -> dict:
     from .. import market_analysis as ma, nas
     try:
         spec = ma.build_spec(area, industries, radius_km, osm_tags, name_keywords, thoroughness, web_lookups,
-                             check_websites, focus, min_score, exclude_chains, shortlist, sort, report_format, title, notes)
+                             check_websites, focus, min_score, exclude_chains, shortlist, sort, report_format, title, notes,
+                             lookup_method, claude_fallback)
         return await ma.start(ctx.person, spec, confirmed)
     except (ma.MarketError, nas.NasError) as e:
         return {"error": str(e)}

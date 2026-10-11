@@ -4302,3 +4302,86 @@ async def test_market_analysis_tool_and_background_job(monkeypatch):
     await asyncio.wait_for(done.wait(), 5)
     assert sent[0][0] == admin.id and "5 of 12" in sent[0][1] and "Market analysis/x.xlsx" in sent[0][1] and sent[0][2] is False
     assert admin.id not in ma._running
+
+
+def test_searxng_picks_the_business_site():
+    from orchestrator import market_analysis as ma
+    res = [{"url": "https://www.firmen-ch.com/muster-bodenbelaege/", "title": "Muster Bodenbeläge GmbH - firmen-ch.com"},
+           {"url": "https://www.musterparkett.example/kontakt", "title": "Kontakt - Muster Bodenbeläge"},
+           {"url": "https://teppichmuster.example/produkte/", "title": "Muster AG | Bodenbeläge"}]
+    assert ma.pick_website("MUSTER Bodenbeläge GmbH", res) == "https://www.musterparkett.example/"
+    assert ma.pick_website("MUSTER Bodenbeläge GmbH", res, common_hosts={"musterparkett.example"}) == "https://teppichmuster.example/"
+    social = [{"url": "https://www.local.ch/de/d/x", "title": "Coiffeur Chantal"},
+              {"url": "https://www.facebook.com/coiffeurchantal", "title": "Coiffeur Chantal | Facebook"}]
+    assert ma.pick_website("Coiffeur Chantal", social) == "https://www.facebook.com/coiffeurchantal"
+    unrelated = [{"url": "https://www.example-news.example/article", "title": "Local news"}]
+    assert ma.pick_website("Café Zürich", unrelated) is None
+    assert ma.pick_website("Café Zürich", [{"url": "http://cafe-zuerich.example/menu", "title": "Café Zürich"}]) == "http://cafe-zuerich.example/"
+
+
+async def test_searxng_lookups_and_method(monkeypatch):
+    import dataclasses
+    from types import SimpleNamespace as NS
+    from orchestrator import market_analysis as ma
+    from orchestrator.config import settings
+    spec = ma.build_spec("Lucerne", ["cafe"], thoroughness="thorough")
+    assert spec.lookup_method == "claude" and spec.lookups == 50 and spec.claude_lookups == 50
+    try:
+        ma.build_spec("Lucerne", ["cafe"], lookup_method="searxng")
+        raise AssertionError("searxng without a URL")
+    except ma.MarketError as e:
+        assert "SEARXNG_URL" in str(e)
+    monkeypatch.setattr(ma, "settings", dataclasses.replace(settings, searxng_url="http://search.test:8888"))
+    spec = ma.build_spec("Lucerne", ["cafe"], thoroughness="complete", claude_fallback=10)
+    assert spec.lookup_method == "searxng" and spec.lookups == 250 and spec.claude_lookups == 10
+    assert spec.estimate_usd == 0.12                                   # only the paid fallback costs money
+    assert ma.build_spec("Lucerne", ["cafe"], lookup_method="claude").claude_lookups == 15
+    auto = ma.build_spec("Lucerne", ["cafe"], thoroughness="thorough")      # auto: self-hosted first, then Claude
+    assert auto.lookup_method == "searxng" and auto.lookups == 150 and auto.claude_lookups == 50
+    free = ma.build_spec("Lucerne", ["cafe"], lookup_method="searxng")
+    assert free.claude_lookups == 0 and free.estimate_usd == 0
+    assert ma.score({"website": None, "searx_tried": True, "category": "cafe"}, 2026) ==         (72, ["no website found by the self-hosted search (not confirmed)"])
+
+    pages = {"Café Eins Lucerne": [{"url": "https://cafe-eins.example/", "title": "Café Eins"},
+                                   {"url": "https://portal.test/eins", "title": "Café Eins - Portal"}],
+             "Café Zwei Lucerne": [{"url": "https://portal.test/zwei", "title": "Café Zwei - Portal"}],
+             "Café Drei Lucerne": [{"url": "https://portal.test/drei", "title": "Café Drei - Portal"}],
+             "Café Vier Lucerne": [{"url": "https://portal.test/vier", "title": "Café Vier"}],
+             "Café Fünf Lucerne": [{"url": "https://www.cafe-fuenf.example/", "title": "Café Fünf"}]}
+    queries = []
+
+    class Client:
+        def __init__(self, **kw):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *exc):
+            return False
+
+        async def get(self, url, params):
+            queries.append(params["q"])
+            assert url == "http://search.test:8888/search" and params["format"] == "json"
+            return NS(status_code=200, json=lambda: {"results": pages.get(params["q"], []), "unresponsive_engines": []})
+    monkeypatch.setattr(ma.httpx, "AsyncClient", Client)
+    monkeypatch.setattr(ma, "SEARX_PAUSE_S", 0)
+    names = ["Café Eins", "Café Zwei", "Café Drei", "Café Vier", "Café Fünf", "Café Sechs"]
+    bs = [{"name": n, "town": "Lucerne", "category": "cafe", "website": None, "website_source": "OpenStreetMap"} for n in names]
+    bs.append({"name": "Has Site", "town": "Lucerne", "category": "cafe", "website": "https://has.example", "website_source": "OpenStreetMap"})
+    searched, found, note = await ma.searx_find_websites(bs, 5)
+    assert searched == 5 and found == 2 and note == "" and len(queries) == 5      # limit respected, listed site skipped
+    by = {b["name"]: b for b in bs}
+    assert by["Café Eins"]["website"] == "https://cafe-eins.example/" and by["Café Eins"]["website_source"] == "SearXNG"
+    assert by["Café Vier"]["website"] is None                     # portal.test shows up for 4 businesses: a directory
+    assert by["Café Sechs"].get("looked_up") is None               # over the limit: not looked up
+
+    class Throttled(Client):
+        async def get(self, url, params):
+            queries.append(params["q"])
+            return NS(status_code=200, json=lambda: {"results": [], "unresponsive_engines": [["duckduckgo", "CAPTCHA"]]})
+    monkeypatch.setattr(ma.httpx, "AsyncClient", Throttled)
+    monkeypatch.setattr(ma, "SEARX_CONCURRENCY", 1)
+    fresh = [{"name": f"Shop {i}", "town": "", "category": "shop", "website": None, "website_source": "OpenStreetMap"} for i in range(10)]
+    searched, found, note = await ma.searx_find_websites(fresh, 10)
+    assert searched == 0 and "refusing" in note and not any(b.get("looked_up") for b in fresh)

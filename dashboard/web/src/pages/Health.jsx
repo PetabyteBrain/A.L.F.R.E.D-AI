@@ -20,6 +20,7 @@ const ALFRED = {
   backup_nas: "Backups · NAS",
   restore_drill: "Restore test (monthly)",
   nas: "NAS (files, notes, lists)",
+  searxng: "Self-hosted search (SearXNG)",
 };
 const order = (s) => {
   const i = Object.keys(ALFRED).indexOf(s);

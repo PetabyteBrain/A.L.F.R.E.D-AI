@@ -16,7 +16,7 @@ working on the code are in [CLAUDE.md](../CLAUDE.md).
 | Telegram | Long polling; text, voice notes, files, photos; validated HTML formatting | `orchestrator/telegram_handler.py` |
 | Dashboard | React 19 + Vite, served by FastAPI; no router, tabs in `App.jsx` | `dashboard/web/`, `dashboard/api/` |
 | Storage | SQLite (WAL) + recordings on disk; files/notes on a NAS over SMB | `orchestrator/db.py`, `orchestrator/nas*.py` |
-| Market analysis | Businesses in a radius (OpenStreetMap), website checks, web-search lookups, report in the company files | `orchestrator/market_analysis.py` |
+| Market analysis | Businesses in a radius (OpenStreetMap), website checks, web-search lookups (optional self-hosted SearXNG, then Claude), report in the company files | `orchestrator/market_analysis.py` |
 | Homelab operator | Status/logs/restarts of other machines through a forced-command SSH key | `orchestrator/homelab.py`, `infra/ops/` |
 
 ## Request flow

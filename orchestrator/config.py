@@ -62,6 +62,8 @@ class Settings:
 
     # --- n8n ---
     n8n_base_url: str = field(default_factory=lambda: _env("N8N_BASE_URL").rstrip("/"))
+    # Self-hosted SearXNG for market-analysis website lookups (empty = Claude web search instead).
+    searxng_url: str = field(default_factory=lambda: _env("SEARXNG_URL").rstrip("/"))
     n8n_api_key: str = field(default_factory=lambda: _env("N8N_API_KEY"))
     n8n_callback_secret: str = field(default_factory=lambda: _env("N8N_CALLBACK_SECRET"))
 
