@@ -2,8 +2,9 @@
 (orchestrator/mail_labels.py), escalations (orchestrator/escalation.py) and the admin switch for how much
 Alfred answers mail from outside (mail_inbound.mode).
 
-Everyone with dashboard access sees their own mail; admins and cofounders also the company's (inquiries,
-mail sent in the company's name). Mail text is returned as plain text, never as HTML.
+The tab is for admins and cofounders only (every route checks it), whatever role has dashboard access. Each sees
+their own mail and the company's (inquiries, mail sent in the company's name), never the other's personal mail.
+Other roles reach their own mail through Alfred (tools). Mail text is returned as plain text, never as HTML.
 """
 from __future__ import annotations
 
@@ -19,8 +20,16 @@ from orchestrator.identity.registry import Person
 
 from .routes import admin_only, current_person
 
-router = APIRouter(prefix="/api/mail")
 TEAM = ("admin", "cofounder")
+
+
+def team_only(person: Person = Depends(current_person)) -> Person:
+    if person.role not in TEAM:
+        raise HTTPException(status_code=403, detail="The mailbox is for admins and cofounders.")
+    return person
+
+
+router = APIRouter(prefix="/api/mail", dependencies=[Depends(team_only)])
 
 
 class Strict(BaseModel):

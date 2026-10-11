@@ -4844,3 +4844,16 @@ async def test_mail_groups_tags_and_state(monkeypatch, tmp_path):
     assert [e["email_id"] for e in listed] == [mine] and listed[0]["tags"] == ["Health"] and listed[0]["starred"]
     mail_labels.delete_label(admin, lead["id"])
     assert all(x["name"] != "Lead" for x in mail_labels.labels_for([inquiry])[inquiry])
+
+
+def test_mail_tab_is_for_admins_and_cofounders_only():
+    from fastapi import HTTPException
+    from dashboard.api import mail as mail_api
+    friend = registry.lookup("telegram", "22222222")
+    admin = registry.lookup("telegram", "111")
+    with pytest.raises(HTTPException) as e:
+        mail_api.team_only(friend)
+    assert e.value.status_code == 403
+    assert mail_api.team_only(admin) is admin
+    # every route of the Mail API carries the check
+    assert all(any(d.dependency is mail_api.team_only for d in r.dependencies) for r in mail_api.router.routes)

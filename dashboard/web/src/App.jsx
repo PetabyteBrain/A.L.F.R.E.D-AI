@@ -29,7 +29,7 @@ const TABS = [
   { id: "history", label: "Archive", title: "Archive", kicker: "Recordings & transcripts", Page: Recordings },
   { id: "tasks", label: "Tasks", title: "Tasks & calls", kicker: "Reminders, calls & tasks", Page: Tasks },
   { id: "notes", label: "Files", title: "Notes & files", kicker: "On the NAS", Page: Notes },
-  { id: "mail", label: "Mail", title: "Mail", kicker: "Alfred's mailbox", Page: Mail },
+  { id: "mail", label: "Mail", title: "Mail", kicker: "Alfred's mailbox", Page: Mail, team: true },
   { id: "activity", label: "Log", title: "Event log", kicker: "Everything that happened", Page: Activity },
   { id: "health", label: "Systems", title: "Systems", kicker: "Diagnostics", Page: Health },
   { id: "people", label: "Personnel", title: "Personnel", kicker: "Registry & access", Page: People, admin: true },
@@ -133,7 +133,9 @@ export default function App() {
 
   const isAdmin = me.role === "admin";
   // Previewing a role without dashboard access: only the chat (to test what Alfred lets them do).
-  const tabs = TABS.filter((t) => (!t.admin || isAdmin) && (me.role_has_dashboard !== false || t.id === "chat"));
+  const isTeam = isAdmin || me.role === "cofounder";
+  const tabs = TABS.filter((t) => (!t.admin || isAdmin) && (!t.team || isTeam)
+    && (me.role_has_dashboard !== false || t.id === "chat"));
   const refreshMe = () => api("/me").then(setMe).catch(() => {});
   const stopViewAs = () => api("/view-as", { method: "DELETE" }).then(refreshMe).catch(() => {});
   const active = tabs.find((t) => t.id === tab) || tabs[0];
