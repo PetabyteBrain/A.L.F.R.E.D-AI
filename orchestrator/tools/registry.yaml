@@ -738,6 +738,27 @@ tools:
         upload_id: {type: integer}
       required: [scope, date, shop, amount]
 
+  - name: market_analysis
+    kind: builtin
+    handler: market_analysis
+    roles: [admin, cofounder]
+    description: >-
+      Find potential clients for the company in an area: businesses of the given industries within a
+      radius (OpenStreetMap), each checked for a missing or weak website (no HTTPS, not mobile-friendly,
+      slow, outdated, no online booking), scored, and written as a report (Markdown summary + Excel
+      list) into the company files under "Market analysis". Runs in the background for a few minutes;
+      the person gets a Telegram message when it's ready. Ask which industries and which place if they
+      didn't say; default radius 5 km. Only public business listings are used; never offer to contact
+      the businesses yourself.
+    input_schema:
+      type: object
+      properties:
+        area: {type: string, description: "Town or place the radius is around, e.g. 'Lucerne' or 'Bern Bümpliz'."}
+        industries: {type: array, items: {type: string}, description: "Industries in plain words, e.g. ['restaurants', 'hairdressers', 'garages']."}
+        radius_km: {type: number, minimum: 0.5, maximum: 30}
+        web_lookups: {type: integer, minimum: 0, maximum: 40, description: "Web searches for businesses without a listed website (cost about 1 cent each). Default 15."}
+      required: [area, industries]
+
   - name: company_todo
     kind: builtin
     handler: company_todo

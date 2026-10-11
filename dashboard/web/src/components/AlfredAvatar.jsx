@@ -33,6 +33,7 @@ const greetingWord = (h) => (h < 5 || h >= 18 ? "Good evening" : h < 12 ? "Good 
 function toolLabel(name) {
   if (name === "web_search") return "Searching the web";
   if (name.startsWith("calendar_")) return "Consulting the calendar";
+  if (name === "market_analysis") return "Starting a market analysis";
   if (name.startsWith("nas_") || name.includes("company")) return "Looking through the files";
   if (/call/.test(name)) return "Arranging the call";
   if (name.includes("task") || name.includes("reminder")) return "Checking the task list";

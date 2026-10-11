@@ -96,6 +96,9 @@ docs and the real homelab map are git-ignored (`docs/PROJECT_PLAN.md`, `CLAUDE.l
 - Files tab previews: office files -> PDF via LibreOffice (`orchestrator/office_pdf.py`, in the image);
   `orchestrator/file_preview.py` returns plain data (Quick view); never render HTML from a file and only
   serve inline types from `INLINE` (no SVG/HTML). `/api/nas/view` honours byte ranges (video).
+- Market analysis (`orchestrator/market_analysis.py`, tool market_analysis, admins/cofounders): OpenStreetMap
+  (Overpass) + website checks + limited web-search lookups -> report in the company files; runs as a background
+  task and reports on Telegram. Website checks must stay behind `_public_host` (no private/tailnet addresses).
 - Agenda (`orchestrator/agenda.py`): reminders tied to calendar events + categories; any code that
   changes or deletes a calendar event should call `agenda.on_event_changed`.
 

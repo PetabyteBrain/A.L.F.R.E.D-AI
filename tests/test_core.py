@@ -4121,3 +4121,127 @@ def test_public_pages_filled_from_env(monkeypatch):
         assert r.status_code == 308 and r.headers["location"] == "/privacy-policy"
         assert "alfred.example.org" in c.get("/robots.txt").text and "hello@example.org" in c.get("/ai.txt").text
         assert c.get("/.well-known/tdmrep.json").json()[0]["tdm-policy"] == "https://alfred.example.org/terms-of-service"
+
+
+_OSM = {"elements": [
+    {"type": "node", "id": 1, "lat": 47.051, "lon": 8.301, "tags": {"name": "Ristorante Uno", "amenity": "restaurant",
+                                                                    "addr:street": "Seestrasse", "addr:housenumber": "1", "addr:city": "Lucerne"}},
+    {"type": "node", "id": 2, "lat": 47.052, "lon": 8.302, "tags": {"name": "Café Zwei", "amenity": "cafe", "addr:city": "Lucerne",
+                                                                    "website": "www.cafe-zwei.example"}},
+    {"type": "way", "id": 3, "center": {"lat": 47.06, "lon": 8.31}, "tags": {"name": "Bar Drei", "amenity": "bar",
+                                                                             "contact:website": "https://facebook.com/bardrei", "addr:city": "Kriens"}},
+    {"type": "node", "id": 4, "lat": 47.07, "lon": 8.32, "tags": {"name": "Modern Vier", "amenity": "restaurant",
+                                                                  "website": "https://modern-vier.example", "addr:city": "Emmen"}},
+    {"type": "node", "id": 5, "lat": 47.07, "lon": 8.32, "tags": {"amenity": "restaurant"}},           # no name: skipped
+]}
+
+
+def test_market_analysis_parse_and_score():
+    from orchestrator import market_analysis as ma
+    known, unknown = ma.resolve_industries(["Restaurants", "café", "Bars", "spaceships"])
+    assert known == ["bar", "cafe", "restaurant"] and unknown == ["spaceships"]
+    q = ma._overpass_query([("amenity", "restaurant"), ("shop", "*")], 47.05, 8.3, 5000)
+    assert 'nwr["amenity"="restaurant"]["name"](around:5000,' in q and 'nwr["shop"]["name"]' in q
+    bs = ma.parse_businesses(_OSM, known, 47.05, 8.3)
+    assert [b["name"] for b in bs] == ["Ristorante Uno", "Café Zwei", "Bar Drei", "Modern Vier"]       # by distance
+    assert bs[1]["website"] == "https://www.cafe-zwei.example" and bs[0]["category"] == "restaurant"
+    bs[1]["site"] = {"reachable": True, "https": False, "mobile": False, "seconds": 4.2, "copyright_year": 2019, "booking": False}
+    bs[3]["site"] = {"reachable": True, "https": True, "mobile": True, "seconds": 0.8, "copyright_year": 2026, "booking": True}
+    assert ma.score(bs[0], 2026) == (90, ["no website found"])
+    assert ma.score(bs[2], 2026) == (80, ["only a social media page"])
+    s, why = ma.score(bs[1], 2026)
+    assert s == 95 and "no HTTPS" in why and "not mobile-friendly" in why and "looks outdated (© 2019)" in why
+    assert ma.score(bs[3], 2026) == (20, ["website looks fine"])
+
+
+async def test_market_analysis_site_check_never_reaches_private_addresses():
+    from orchestrator import market_analysis as ma
+    for url in ("http://127.0.0.1:8000/", "http://localhost/", "http://192.168.1.1/", "http://100.64.0.1/",
+                "http://[::1]/", "ftp://example.org/", "http://169.254.169.254/latest/meta-data"):
+        out = await ma.check_site(url)
+        assert not out["reachable"] and out["error"] == "not a public web address", url
+
+
+async def test_market_analysis_full_run(monkeypatch, tmp_path):
+    import dataclasses, io
+    import openpyxl
+    from orchestrator import briefing, market_analysis as ma, nas
+    from orchestrator.config import settings
+    import orchestrator.nas_files as nf
+    fake = _FakeSMB(tmp_path)
+    monkeypatch.setattr(nas, "settings", dataclasses.replace(settings, nas_host="nas", nas_user="u", nas_password="p",
+                                                             nas_share_company="company", nas_share_personal="Alfred_Personal"))
+    monkeypatch.setattr(nas, "_smb", lambda: fake)
+    monkeypatch.setattr(nf, "_smb", lambda: fake)
+    (tmp_path / "company").mkdir()
+    db.execute("DELETE FROM app_settings WHERE key = 'market_analysis_seen'")
+
+    async def geocode(place):
+        return {"location": "Lucerne, Lucerne, Switzerland", "lat": 47.05, "lon": 8.3}
+    elements = list(_OSM["elements"])
+
+    async def fetch(industries, lat, lon, radius_km):
+        return ma.parse_businesses({"elements": elements}, industries, lat, lon)
+
+    async def lookups(businesses, limit, person):
+        for b in businesses:
+            if b["name"] == "Ristorante Uno":
+                b["website"], b["website_source"] = "https://uno.example", "web search"
+        return 1, 1
+
+    async def sites(businesses):
+        for b in businesses:
+            if b["website"] and "facebook" not in b["website"]:
+                b["site"] = {"reachable": b["name"] != "Ristorante Uno", "https": True, "mobile": b["name"] != "Café Zwei",
+                             "seconds": 1.0, "copyright_year": 2026, "booking": True, "error": "ConnectError"}
+    monkeypatch.setattr(briefing, "geocode", geocode)
+    monkeypatch.setattr(ma, "fetch_businesses", fetch)
+    monkeypatch.setattr(ma, "find_missing_websites", lookups)
+    monkeypatch.setattr(ma, "check_sites", sites)
+    admin = registry.lookup("telegram", "111")
+    res = await ma.analyse(admin, "Lucerne", 5, ["bar", "cafe", "restaurant"], 15)
+    assert res["businesses"] == 4 and res["fitting"] == 3 and res["new"] == 0
+    md_path, xl_path = res["files"]
+    assert md_path.startswith("Market analysis/") and md_path.endswith(".md") and xl_path.endswith(".xlsx")
+    md = (tmp_path / "company" / md_path).read_text(encoding="utf-8")
+    assert "Ristorante Uno" in md and "website not reachable" in md and "© OpenStreetMap contributors" in md
+    assert "Modern Vier" not in md.split("## Shortlist")[1].split("## Where")[0]          # fine website: not shortlisted
+    wb = openpyxl.load_workbook(io.BytesIO((tmp_path / "company" / xl_path).read_bytes()))
+    rows = list(wb["Businesses"].iter_rows(values_only=True))
+    assert rows[0][:4] == ("Fit", "Score", "Why", "Name") and len(rows) == 5
+    # second run: one business more -> marked new
+    elements.append({"type": "node", "id": 6, "lat": 47.08, "lon": 8.33, "tags": {"name": "Neu Sechs", "amenity": "cafe"}})
+    res2 = await ma.analyse(admin, "Lucerne", 5, ["bar", "cafe", "restaurant"], 15)
+    assert res2["new"] == 1
+    md2 = (tmp_path / "company" / res2["files"][0]).read_text(encoding="utf-8")
+    assert "Neu Sechs 🆕" in md2 and "New since the last report" in md2
+
+
+async def test_market_analysis_tool_and_background_job(monkeypatch):
+    import asyncio
+    from orchestrator import market_analysis as ma, nas, telegram_handler
+    from orchestrator.tools import builtin
+    friend = registry.lookup("telegram", "22222222")
+    admin = registry.lookup("telegram", "111")
+    ctx = lambda p: type("C", (), {"person": p, "session_id": None, "channel": "telegram"})()  # noqa: E731
+    out = await builtin.HANDLERS["market_analysis"](ctx(friend), area="Lucerne", industries=["restaurants"])
+    assert "only for admins and cofounders" in out["error"]
+    monkeypatch.setattr(nas, "enabled", lambda: True)
+    out = await builtin.HANDLERS["market_analysis"](ctx(admin), area="Lucerne", industries=["spaceships"])
+    assert "can't search for: spaceships" in out["error"]
+    sent, done = [], asyncio.Event()
+
+    async def fake_analyse(person, area, radius_km, industries, lookups, check_websites=True):
+        return {"area": "Lucerne", "businesses": 12, "fitting": 5, "no_website": 3, "new": 0,
+                "top": ["Ristorante Uno (Lucerne): no website found"], "files": ["Market analysis/x.md", "Market analysis/x.xlsx"]}
+
+    async def fake_send(user_id, text, note=None, silent=None, **kw):
+        sent.append((user_id, text, silent))
+        done.set()
+    monkeypatch.setattr(ma, "analyse", fake_analyse)
+    monkeypatch.setattr(telegram_handler, "send_to_user", fake_send)
+    out = await builtin.HANDLERS["market_analysis"](ctx(admin), area="Lucerne", industries=["restaurants"], radius_km=8)
+    assert out["started"] and out["industries"] == ["restaurant"] and "Telegram" in out["note"]
+    await asyncio.wait_for(done.wait(), 5)
+    assert sent[0][0] == admin.id and "5 of 12" in sent[0][1] and "Market analysis/x.xlsx" in sent[0][1] and sent[0][2] is False
+    assert admin.id not in ma._running

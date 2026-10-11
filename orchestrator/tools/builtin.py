@@ -271,6 +271,16 @@ async def log_receipt(ctx, scope: str, date: str, shop: str, amount: float, curr
 
 
 @handler
+async def market_analysis(ctx, area: str, industries: list[str] | None = None, radius_km: float = 5,
+                          web_lookups: int = 15) -> dict:
+    from .. import market_analysis as ma, nas
+    try:
+        return await ma.start(ctx.person, area, radius_km, industries, web_lookups)
+    except (ma.MarketError, nas.NasError) as e:
+        return {"error": str(e)}
+
+
+@handler
 async def company_todo(ctx, action: str, description: str = "", todo: str = "", importance: int | None = None,
                       section: str = "current", status: str | None = None, to: str = "") -> dict:
     import asyncio
