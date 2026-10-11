@@ -66,7 +66,7 @@ function Sheets({ sheets }) {
       {sheets.length > 1 && (
         <div className="seg pv-sheets" role="tablist" aria-label="Sheets">
           {sheets.map((x, i) => (
-            <button key={i} role="tab" aria-selected={i === at} className={i === at ? "active" : ""} onClick={() => setAt(i)}>{x.name || `Sheet ${i + 1}`}</button>
+            <button key={i} role="tab" aria-selected={i === at} className={i === at ? "active" : ""} onClick={() => setAt(i)} title={x.name || `Sheet ${i + 1}`}>{x.name || `Sheet ${i + 1}`}</button>
           ))}
         </div>
       )}

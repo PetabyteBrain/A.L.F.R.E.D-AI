@@ -856,6 +856,10 @@ main > .legal-links { margin-top: 8px; }
 
 /* Notes & files: explorer + tabbed editor */
 .files-grid { display: grid; grid-template-columns: minmax(240px, 1fr) minmax(0, 2fr); gap: 20px; align-items: start; }
+/* Grid and flex children default to min-width: auto and grow to fit a long file name, pushing it over the
+   editor column. Let every level shrink so the names truncate with an ellipsis instead. */
+.files-grid > *, .files-side, .explorer, .file-list, .file-list > *, .file-row, .recent-files, .recent-files > *,
+.editor-col, .file-tabs, .file-tab, .file-editor, .file-preview { min-width: 0; }
 @media (max-width: 900px) { .files-grid { grid-template-columns: minmax(0, 1fr); } }
 .crumbs { font: 400 13px var(--font-mono); margin-bottom: 8px; overflow-wrap: anywhere; }
 .link { background: none; border: 0; color: inherit; text-decoration: underline; cursor: pointer; padding: 0; font: inherit; }
@@ -870,6 +874,7 @@ main > .legal-links { margin-top: 8px; }
 .file-actions button, .file-actions a { background: none; border: 0; color: inherit; cursor: pointer; text-decoration: none; padding: 2px 4px; }
 .recent-files { margin-top: 18px; display: grid; gap: 6px; }
 .recent-files .file-name { display: block; width: 100%; font-size: 13px; }
+.crumbs button.link { overflow-wrap: anywhere; text-align: left; }
 .file-tabs { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 8px; border-bottom: 1px solid var(--line); }
 .file-tab { display: inline-flex; align-items: center; border: 1px solid var(--line); border-bottom: 0; }
 .file-tab.active { background: rgb(var(--accent-rgb) / .12); }
@@ -1367,7 +1372,8 @@ main[hidden], [hidden] { display: none !important; }
   white-space: pre-wrap; max-width: 320px; overflow-wrap: anywhere; }
 .pv-table thead th { position: sticky; top: 0; background: var(--panel, var(--bg)); }
 .pv-doc p { white-space: pre-wrap; }
-.pv-sheets { margin-bottom: 4px; flex-wrap: wrap; }
+.pv-sheets { margin-bottom: 4px; flex-wrap: wrap; max-width: 100%; }
+.pv-sheets button { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pv-slides { display: grid; gap: 10px; }
 .pv-slide { border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px; }
 .pv-slide h4 { margin: 4px 0 6px; }

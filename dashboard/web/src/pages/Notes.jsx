@@ -101,7 +101,7 @@ function Explorer({ scope, path, setPath, onOpen, refreshKey, onChanged }) {
               </form>
             ) : (
               <>
-                <button className="file-name" onClick={() => (it.dir ? setPath(join(path, it.name)) : onOpen({ scope, path: join(path, it.name) }))}>
+                <button className="file-name" title={it.name} onClick={() => (it.dir ? setPath(join(path, it.name)) : onOpen({ scope, path: join(path, it.name) }))}>
                   <span aria-hidden="true">{it.dir ? "📁" : /\.md$/i.test(it.name) ? "📝" : "📄"}</span> {it.name}
                 </button>
                 <span className="muted tiny">{it.dir ? "" : fmtSize(it.size)} {it.modified}</span>
@@ -131,7 +131,7 @@ function Recent({ data, onOpen, scopes }) {
           <div className="note-folder">Recently {k}</div>
           {show(data?.[k]).length === 0 && <p className="muted tiny">Nothing yet.</p>}
           {show(data?.[k]).map((r) => (
-            <button key={r.scope + r.path} className="file-name" onClick={() => onOpen({ scope: r.scope, path: r.path })}>
+            <button key={r.scope + r.path} className="file-name" title={r.path} onClick={() => onOpen({ scope: r.scope, path: r.path })}>
               <span className="muted tiny">{SCOPE_LABEL[r.scope]}</span> {r.path.split("/").pop()}
             </button>
           ))}
