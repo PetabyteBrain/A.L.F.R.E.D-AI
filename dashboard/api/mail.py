@@ -10,11 +10,13 @@ from __future__ import annotations
 
 import asyncio
 
-from fastapi import APIRouter, Depends, HTTPException, Path, Query
+from urllib.parse import quote
+
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request
 from fastapi.responses import Response
 from pydantic import BaseModel, ConfigDict, Field
 
-from orchestrator import db, escalation, mail, mail_inbound, mail_labels
+from orchestrator import db, escalation, mail, mail_attachments, mail_inbound, mail_labels
 from orchestrator.config import settings
 from orchestrator.identity.registry import Person
 
@@ -56,6 +58,16 @@ class LabelUpdate(Strict):
     color: str | None = Field(default=None, max_length=20)
 
 
+class SaveBody(Strict):
+    scope: str = Field(pattern="^(personal|company)$")
+    folder: str = Field(default="", max_length=400)
+    filename: str = Field(default="", max_length=120)
+
+
+class AutofileBody(Strict):
+    on: bool
+
+
 class Bulk(Strict):
     ids: list[int] = Field(min_length=1, max_length=500)
     read: bool | None = None
@@ -71,12 +83,15 @@ def _fail(e: Exception) -> HTTPException:
     return HTTPException(status_code=400, detail=str(e))
 
 
-def _row_view(r: dict, labels: list | None = None, state: dict | None = None) -> dict:
+def _row_view(r: dict, labels: list | None = None, state: dict | None = None, files: list | None = None) -> dict:
     state = state or {}
     return {"id": r["id"], "direction": r["direction"], "kind": r["kind"], "status": r["status"], "scope": r["scope"],
             "from_addr": r["from_addr"], "from_name": r["from_name"], "to": r["to_addrs"], "cc": r["cc_addrs"],
             "subject": r["subject"], "summary": r["summary"], "created_at": r["created_at"],
-            "attachments": [a.get("name") for a in r["attachments"]], "archived_nas": bool(r["nas_path"]),
+            "attachments": files if files is not None else [{"idx": i, "name": a.get("name"), "size": a.get("size", 0),
+                                                              "flagged": "", "saved_to": ""}
+                                                             for i, a in enumerate(r["attachments"], start=1)],
+            "archived_nas": bool(r["nas_path"]),
             "thread_id": r["thread_id"], "labels": labels or [],
             "read": r["direction"] == "out" or bool(state.get("read_at")),
             "starred": bool(state.get("starred")), "archived": bool(state.get("archived"))}
@@ -89,6 +104,7 @@ async def status(person: Person = Depends(current_person)) -> dict:
            "counts": mail_labels.counts(person), "colors": list(mail_labels.COLORS)}
     if person.is_admin:
         out["stranger_mode"] = mail_inbound.mode()
+        out["inquiry_autofile"] = mail_attachments.autofile_on()
         out["retention_days"] = {"personal": settings.mail_retention_days,
                                  "company": settings.mail_company_retention_days}
     if person.role in TEAM:
@@ -106,8 +122,10 @@ async def list_mail(person: Person = Depends(current_person), box: str = Query(d
                                  limit=limit)
     except mail_labels.LabelError as e:
         raise _fail(e)
+    files = mail_attachments.lists_for([r["id"] for r in res["emails"]])
     return {"box": res["box"], "total": res["total"], "offset": res["offset"],
-            "emails": [_row_view(r, res["labels"].get(r["id"]), res["state"].get(r["id"])) for r in res["emails"]]}
+            "emails": [_row_view(r, res["labels"].get(r["id"]), res["state"].get(r["id"]), files.get(r["id"]))
+                       for r in res["emails"]]}
 
 
 # --- groups & tags ---------------------------------------------------------------------------------
@@ -175,6 +193,11 @@ async def close_escalation(body: CloseBody, esc_id: int = Path(ge=1), person: Pe
         raise _fail(e)
 
 
+@router.put("/inquiry-autofile")
+async def set_inquiry_autofile(body: AutofileBody, person: Person = Depends(admin_only)) -> dict:
+    return {"inquiry_autofile": mail_attachments.set_autofile(body.on, person)}
+
+
 @router.put("/stranger-mode")
 async def set_stranger_mode(body: ModeBody, person: Person = Depends(admin_only)) -> dict:
     mail_inbound.set_mode(body.mode, person)
@@ -200,13 +223,14 @@ async def get_mail(email_id: int = Path(ge=1), person: Person = Depends(current_
     thread = [t for t in thread if t and mail.may_read(t, person)]
     ids = [t["id"] for t in thread] or [row["id"]]
     labs, state = mail_labels.labels_for(ids), mail_labels.state_for(person, ids)
+    files = mail_attachments.lists_for(ids)
     esc = db.query_one("SELECT id, status, urgency, topic FROM escalations WHERE email_id IN (?, ?) ORDER BY id DESC "
                        "LIMIT 1", (row["id"], row["thread_id"] or row["id"]))
-    return {**_row_view(row, labs.get(row["id"]), state.get(row["id"])), "text": row["body_text"],
+    return {**_row_view(row, labs.get(row["id"]), state.get(row["id"]), files.get(row["id"], [])), "text": row["body_text"],
             "own_text": row["own_text"],
             "auth": {k: row["auth"].get(k) for k in ("spf", "dkim", "dmarc", "spam")} if row["direction"] == "in" else None,
             "error": row["error"], "escalation": esc,
-            "thread": [{**_row_view(t, labs.get(t["id"]), state.get(t["id"])),
+            "thread": [{**_row_view(t, labs.get(t["id"]), state.get(t["id"]), files.get(t["id"], [])),
                         "text": (t["own_text"] or t["body_text"])[:20_000]} for t in thread]}
 
 
@@ -222,3 +246,83 @@ async def raw_mail(email_id: int = Path(ge=1), person: Person = Depends(current_
     return Response(data, media_type="message/rfc822",
                     headers={"Content-Disposition": f'attachment; filename="email-{row["id"]}.eml"',
                              "X-Content-Type-Options": "nosniff"})
+
+
+# --- attachments (orchestrator/mail_attachments.py) ------------------------------------------------------
+
+async def _attachment(person: Person, email_id: int, idx: int) -> tuple[dict, bytes]:
+    try:
+        return await asyncio.to_thread(mail_attachments.content, person, email_id, idx)
+    except mail_attachments.AttachmentError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+def _safe(meta: dict) -> None:
+    if meta["flagged"]:
+        raise HTTPException(status_code=400, detail=f"Not previewed: {meta['flagged']}. Download it only if you trust "
+                                                    "the sender.")
+
+
+@router.get("/{email_id}/attachments/{idx}")
+async def download_attachment(email_id: int = Path(ge=1), idx: int = Path(ge=1),
+                              person: Person = Depends(current_person)) -> Response:
+    meta, data = await _attachment(person, email_id, idx)
+    return Response(data, media_type="application/octet-stream", headers={
+        "Content-Disposition": f"attachment; filename*=UTF-8''{quote(meta['name'])}", "Cache-Control": "private, no-store"})
+
+
+@router.get("/{email_id}/attachments/{idx}/view")
+async def view_attachment(request: Request, email_id: int = Path(ge=1), idx: int = Path(ge=1),
+                          as_: str = Query(default="", alias="as"), person: Person = Depends(current_person)) -> Response:
+    """Shown by the browser itself (PDF, pictures, audio, video) or, with as=pdf, an office document as PDF.
+    Same fixed types and headers as the Files tab; risky files never."""
+    from orchestrator import file_preview, office_pdf
+    from .notes import _ranged
+    meta, data = await _attachment(person, email_id, idx)
+    _safe(meta)
+    if as_ == "pdf":
+        try:
+            pdf = await office_pdf.pdf_of(meta["name"], data)
+        except office_pdf.ConvertError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        name = meta["name"].rsplit(".", 1)[0] + ".pdf"
+        return _ranged(request, len(pdf), lambda s_, n: pdf[s_:s_ + n], name, "application/pdf")
+    kind = file_preview.inline_type(meta["name"])
+    if not kind:
+        raise HTTPException(status_code=400, detail="This file type isn't shown inline. Download it instead.")
+    return _ranged(request, len(data), lambda s_, n: data[s_:s_ + n], meta["name"], kind)
+
+
+@router.post("/{email_id}/attachments/{idx}/prepare")
+async def prepare_attachment(email_id: int = Path(ge=1), idx: int = Path(ge=1),
+                             person: Person = Depends(current_person)) -> dict:
+    from orchestrator import office_pdf
+    meta, data = await _attachment(person, email_id, idx)
+    _safe(meta)
+    try:
+        pdf = await office_pdf.pdf_of(meta["name"], data)
+    except office_pdf.ConvertError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return {"ok": True, "bytes": len(pdf)}
+
+
+@router.get("/{email_id}/attachments/{idx}/preview")
+async def preview_attachment(email_id: int = Path(ge=1), idx: int = Path(ge=1),
+                             person: Person = Depends(current_person)) -> dict:
+    from orchestrator import file_preview
+    meta, data = await _attachment(person, email_id, idx)
+    _safe(meta)
+    try:
+        return await asyncio.to_thread(file_preview.preview, meta["name"], data)
+    except file_preview.PreviewError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/{email_id}/attachments/{idx}/save")
+async def save_attachment(body: SaveBody, email_id: int = Path(ge=1), idx: int = Path(ge=1),
+                          person: Person = Depends(current_person)) -> dict:
+    try:
+        return await asyncio.to_thread(mail_attachments.save, person, email_id, idx, body.scope, body.folder,
+                                       body.filename)
+    except mail_attachments.AttachmentError as e:
+        raise HTTPException(status_code=400, detail=str(e))

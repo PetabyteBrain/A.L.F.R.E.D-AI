@@ -749,11 +749,12 @@ tools:
       it goes out straight away. To anyone else it only prepares the email and returns `ask`: show that text
       and wait for a yes, then call confirm_send_email. Recipients: "me", a registered person's name, or an
       email address. Write the body in Markdown starting with a greeting line ("Dear Ms Muster,"); a banner,
-      the signature and the footer are added automatically, so don't sign it. template "company" is the
-      formal layout in the company's name (admins/cofounders, for clients and outside contacts); "alfred"
-      (default) for personal mail. To answer a stored email (e.g. an escalated inquiry) pass reply_to_email
-      with its id: recipient and subject are filled in and the thread is kept. attachments: files from the
-      NAS ({scope, path}).
+      the signature and the footer are added automatically, so don't sign it. template = the layout: "company"
+      (formal, in the company's name: admins/cofounders, for clients and outside contacts), "alfred" (default,
+      personal) or another active layout's name. text_template = an active reusable text (list_email_templates)
+      with its fields (e.g. {"name": "Ms Muster", "offer_date": "3 October"}); subject and body then come from it
+      unless given. To answer a stored email (e.g. an escalated inquiry) pass reply_to_email with its id:
+      recipient and subject are filled in and the thread is kept. attachments: files from the NAS ({scope, path}).
     input_schema:
       type: object
       properties:
@@ -761,7 +762,9 @@ tools:
         subject: {type: string}
         body: {type: string, description: "Markdown body with a greeting line, no signature."}
         cc: {type: array, items: {type: string}}
-        template: {type: string, enum: [alfred, company]}
+        template: {type: string, description: "Layout: alfred, company or another active layout's name."}
+        text_template: {type: string, description: "Name of an active text template."}
+        fields: {type: object, description: "Values for the text template's {fields}."}
         reply_to_email: {type: integer, description: "Id of the stored email this answers."}
         attachments:
           type: array
@@ -771,7 +774,20 @@ tools:
               scope: {type: string, enum: [personal, company]}
               path: {type: string}
             required: [path]
-      required: [body]
+      required: []
+
+  - name: list_email_templates
+    kind: builtin
+    handler: list_email_templates
+    roles: ["*"]
+    requires: mail
+    description: >-
+      The active email layouts and reusable text templates (with the fields each text needs), as managed on the
+      Mail tab's Template manager. Check it when someone asks to send "the usual" email, an offer follow-up, a thank
+      you for an inquiry, or names a template.
+    input_schema:
+      type: object
+      properties: {}
 
   - name: confirm_send_email
     kind: builtin
@@ -837,6 +853,26 @@ tools:
       properties:
         email_id: {type: integer}
       required: [email_id]
+
+  - name: file_email_attachment
+    kind: builtin
+    handler: file_email_attachment
+    roles: ["*"]
+    requires: mail
+    description: >-
+      File an attachment of a stored email on the NAS, now or any time later ("file the PDF from Max's email under
+      Clients/Acme"): scope personal (the person's own folder) or company (admins/cofounders), a folder, and which
+      attachment (its number from the list, or part of its name; may be left out if there is only one). Risky files
+      are refused. Never overwrites: an existing name gets " (2)".
+    input_schema:
+      type: object
+      properties:
+        email_id: {type: integer}
+        attachment: {type: string, description: "Number (1, 2, ...) or part of the file name."}
+        scope: {type: string, enum: [personal, company]}
+        folder: {type: string, description: "e.g. Clients/Acme/Offers"}
+        filename: {type: string, description: "Optional new name (keep the extension)."}
+      required: [email_id, scope]
 
   - name: escalate_to_team
     kind: builtin

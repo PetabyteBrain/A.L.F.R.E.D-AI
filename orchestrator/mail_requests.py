@@ -108,13 +108,17 @@ def _clean_text(value: str, limit: int) -> str:
 
 
 async def prepare(person: Person, session_id: str | None, *, to: list | str | None = None, subject: str = "",
-                  body: str = "", cc: list | None = None, template: str = "alfred", reply_to_email: int | None = None,
-                  attachments: list | None = None) -> dict:
+                  body: str = "", cc: list | None = None, template: str = "", reply_to_email: int | None = None,
+                  attachments: list | None = None, text_template: str = "", fields: dict | None = None) -> dict:
     if not mail.enabled():
         raise MailRequestError("Email isn't set up yet.")
-    template = template if template in ("alfred", "company") else "alfred"
-    if template == "company" and person.role not in COMPANY_ROLES:
-        raise MailRequestError(f"Only admins and cofounders can write in {settings.company_name}'s name.")
+    from . import email_templates
+    tpl = None
+    if text_template:
+        tpl = email_templates.find("text", text_template)
+        if not tpl or tpl["builtin"] == "inquiry_ack":
+            names = ", ".join(t["name"] for t in email_templates.catalogue(person)["texts"]) or "none"
+            raise MailRequestError(f"There is no active text template called “{text_template}”. Active: {names}.")
     parent = None
     if reply_to_email:
         parent = mail.get(int(reply_to_email))
@@ -125,18 +129,34 @@ async def prepare(person: Person, session_id: str | None, *, to: list | str | No
         if not subject:
             subject = parent["subject"] if re.match(r"(?i)^re\s*:", parent["subject"] or "") \
                 else f"Re: {parent['subject']}"
-        if parent["scope"] == "company" and person.role in COMPANY_ROLES and template == "alfred":
+        if parent["scope"] == "company" and person.role in COMPANY_ROLES and not template:
             template = "company"
     refs = [to] if isinstance(to, str) else list(to or [])
-    subject = " ".join(str(subject or "").split())[:200]
-    body = _clean_text(body, 20_000)
     if not refs:
         raise MailRequestError("Who should it go to?")
+    recipients = [_recipient(person, r) for r in refs]
+    layout = email_templates.find("layout", template or (tpl and tpl["layout_id"]) or "alfred")
+    if not layout:
+        names = ", ".join(x["name"] for x in email_templates.catalogue(person)["layouts"])
+        raise MailRequestError(f"There is no active layout called “{template}”. Active: {names}.")
+    if layout["company"] and person.role not in COMPANY_ROLES:
+        raise MailRequestError(f"Only admins and cofounders can write in {settings.company_name}'s name.")
+    if tpl:
+        first = registry.get_person(recipients[0][2]) if recipients[0][2] else None
+        values = {"sender": person.display_name, **({"name": first.display_name} if first else {}),
+                  **{str(k): v for k, v in (fields or {}).items()}}
+        t_subject, t_body, missing = email_templates.apply_text(tpl, values)
+        if missing and not (body and subject):
+            raise MailRequestError(f"The template “{tpl['name']}” needs: {', '.join(missing)}. Ask the person for "
+                                   "them and pass them in `fields`.")
+        subject = subject or t_subject
+        body = body or t_body
+    subject = " ".join(str(subject or "").split())[:200]
+    body = _clean_text(body, 20_000)
     if not subject:
         raise MailRequestError("What's the subject?")
     if len(body) < 2:
         raise MailRequestError("What should the email say?")
-    recipients = [_recipient(person, r) for r in refs]
     copies = [_recipient(person, r) for r in (cc or [])]
     only_self = all(uid == person.id for _, _, uid in recipients + copies)
     if not only_self and person.role not in COMPANY_ROLES:
@@ -145,8 +165,9 @@ async def prepare(person: Person, session_id: str | None, *, to: list | str | No
         raise MailRequestError(f"That's the limit of {PER_PERSON_PER_DAY} emails a day.")
     files = await asyncio.to_thread(_load_attachments, person, attachments or [])
     draft = {"at": time.monotonic(), "user_turn": _last_user_turn(session_id), "to": recipients, "cc": copies,
-             "subject": subject, "body": body, "template": template, "parent_id": parent["id"] if parent else None,
-             "files": files}
+             "subject": subject, "body": body, "template": layout["id"], "company": layout["company"],
+             "layout_name": layout["name"], "template_id": tpl["id"] if tpl else None,
+             "parent_id": parent["id"] if parent else None, "files": files}
     if only_self:
         row = await _send(person, draft)
         return {"sent": True, "email_id": row["id"], "to": row["to_addrs"], "subject": row["subject"]}
@@ -160,7 +181,8 @@ async def prepare(person: Person, session_id: str | None, *, to: list | str | No
     return {"prepared": True, "sent": False,
             "ask": (f"Send this email from {settings.mail_address} as “{person.display_name} via "
                     f"{settings.assistant_name}”"
-                    + (f" in {settings.company_name}'s layout" if template == "company" else "")
+                    + f" in the “{layout['name']}” layout"
+                    + (f" (text template “{tpl['name']}”)" if tpl else "")
                     + f"? To: {names}"
                     + (f"; Cc: {', '.join(a for a, _, _ in copies)}" if copies else "") + f"; {copy_note}. "
                     f"Subject: {subject}."
@@ -195,7 +217,8 @@ async def _send(person: Person, draft: dict) -> dict:
     try:
         row = await mail.send(
             to=to, cc=cc, subject=draft["subject"], body_md=draft["body"], template=draft["template"],
-            user_id=person.id, scope="company" if draft["template"] == "company" else "personal", kind="sent",
+            user_id=person.id, scope="company" if draft["company"] else "personal", kind="sent",
+            template_id=draft["template_id"],
             on_behalf_of="" if only_self else person.display_name,
             from_name="" if only_self else f"{person.display_name} via {settings.assistant_name}",
             parent=parent, attachments=draft["files"])
@@ -214,11 +237,20 @@ async def _send(person: Person, draft: dict) -> dict:
 
 # --- reading ---------------------------------------------------------------------------------------
 
+def _attachments(row: dict) -> list:
+    from . import mail_attachments
+    items = mail_attachments.list_for(row["id"])
+    if not items:
+        return [a["name"] for a in row["attachments"]]
+    return [f"{a['idx']}. {a['name']} ({max(1, a['size'] // 1024)} KB)" + (f", RISKY: {a['flagged']}" if a["flagged"]
+            else "") + (f", filed at {a['saved_to']}" if a["saved_to"] else "") for a in items]
+
+
 def _view(row: dict, full: bool = False) -> dict:
     out = {"email_id": row["id"], "direction": row["direction"], "kind": row["kind"], "scope": row["scope"],
            "from": f"{row['from_name']} <{row['from_addr']}>" if row["from_name"] else row["from_addr"],
            "to": row["to_addrs"], "subject": row["subject"], "at_local_time": mail.local_time(row["created_at"]),
-           "summary": row["summary"], "attachments": [a["name"] for a in row["attachments"]]}
+           "summary": row["summary"], "attachments": _attachments(row)}
     if row["cc_addrs"]:
         out["cc"] = row["cc_addrs"]
     if full:

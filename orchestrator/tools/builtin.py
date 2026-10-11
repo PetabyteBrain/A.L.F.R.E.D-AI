@@ -715,15 +715,22 @@ async def calendar_delete_event(ctx, event_id: str, confirmed_by_user: bool = Fa
 # --- email (orchestrator/mail_requests.py, escalation.py) ----------------------------------------
 
 @handler
-async def send_email(ctx, body: str, to: list[str] | str | None = None, subject: str = "", cc: list[str] | None = None,
-                     template: str = "alfred", reply_to_email: int | None = None,
-                     attachments: list[dict] | None = None) -> dict:
+async def send_email(ctx, body: str = "", to: list[str] | str | None = None, subject: str = "",
+                     cc: list[str] | None = None, template: str = "", reply_to_email: int | None = None,
+                     attachments: list[dict] | None = None, text_template: str = "", fields: dict | None = None) -> dict:
     from .. import mail_requests
     try:
         return await mail_requests.prepare(ctx.person, ctx.session_id, to=to, subject=subject, body=body, cc=cc,
-                                           template=template, reply_to_email=reply_to_email, attachments=attachments)
+                                           template=template, reply_to_email=reply_to_email, attachments=attachments,
+                                           text_template=text_template, fields=fields)
     except mail_requests.MailRequestError as e:
         return {"error": str(e)}
+
+
+@handler
+async def list_email_templates(ctx) -> dict:
+    from .. import email_templates
+    return email_templates.catalogue(ctx.person)
 
 
 @handler
@@ -764,6 +771,19 @@ async def read_email(ctx, email_id: int) -> dict:
     try:
         return mail_requests.read(ctx.person, email_id)
     except mail_requests.MailRequestError as e:
+        return {"error": str(e)}
+
+
+@handler
+async def file_email_attachment(ctx, email_id: int, scope: str, folder: str = "", attachment: str = "",
+                                filename: str = "") -> dict:
+    import asyncio
+    from .. import mail_attachments
+    try:
+        meta = mail_attachments.pick(int(email_id), attachment)
+        return await asyncio.to_thread(mail_attachments.save, ctx.person, int(email_id), meta["idx"], scope, folder,
+                                       filename)
+    except mail_attachments.AttachmentError as e:
         return {"error": str(e)}
 
 

@@ -224,6 +224,27 @@ def fake_mail() -> None:
     if not co:                                       # a second dashboard login without 2FA, for previews
         cid = reg.add_user("Max Cofounder", "cofounder", notes="dev preview")
         reg.upsert_identifier(cid, "dashboard", "cofounder", reg.hash_password("devpassword123"))
+    if not db.query_one("SELECT 1 FROM email_attachments LIMIT 1"):   # an inquiry with real attachments
+        from email.message import EmailMessage
+        from orchestrator import mail_attachments
+        m = EmailMessage()
+        m["From"], m["To"], m["Subject"] = "Anna Beispiel <anna@shop.example>", "alfred@mail.example.test", "Plans for our shop"
+        m.set_content("Good day,\n\nAttached are the floor plan and our logo. Could you build the shop by May?\n\nAnna")
+        m.add_attachment(b"%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj 2 0 obj<</Type/Pages/Count 0/Kids[]>>endobj\n"
+                         b"trailer<</Root 1 0 R>>\n%%EOF", maintype="application", subtype="pdf", filename="floor-plan.pdf")
+        m.add_attachment("Item,Price\nShelf,120\nCounter,900\n".encode(), maintype="text", subtype="csv",
+                         filename="furniture.csv")
+        m.add_attachment(b"MZ\x90\x00fake", maintype="application", subtype="octet-stream", filename="viewer.exe")
+        rid = mail.record(direction="in", kind="inquiry", status="done", scope="company", from_addr="anna@shop.example",
+                          from_name="Anna Beispiel", to=["alfred@mail.example.test"], subject="Plans for our shop",
+                          body_text="Attached are the floor plan and our logo. Could you build the shop by May?",
+                          own_text="Attached are the floor plan and our logo. Could you build the shop by May?",
+                          auth={"spf": "pass", "dkim": True, "dmarc": True, "spam": False},
+                          summary="passed to Erika Mustermann: Wants an online shop by May; sent a floor plan.")
+        raw = m.as_bytes()
+        mail.spool(rid, raw)
+        from orchestrator.mail_inbound import parse
+        mail_attachments.index(rid, parse(raw).attachments)
     if db.query_one("SELECT 1 FROM emails LIMIT 1"):
         return
     admin = db.query_one("SELECT id FROM users WHERE role='admin'")["id"]

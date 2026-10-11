@@ -2,11 +2,13 @@
 
 Two templates, each with a banner image sent inline (Content-ID, so it shows without loading
 anything from the web):
-- "company": formal mail in the company's name (inquiries, mail sent for the company). Banner from
+- Layouts come from the Template manager (orchestrator/email_templates.py): colours, font, signature, footer and
+  banner per layout; the built-in "company" and "alfred" layouts start as the original designs below.
+- "company": formal mail in the company's name (inquiries, mail sent for the company). Built-in banner from
   mail_assets/company-banner.png, which is git-ignored (it carries the real company's logo); the
   neutral company-banner.example.png is used when it's missing.
 - "alfred": Alfred's own, personal mail (replies to registered people, reminders, codes, mail sent for
-  someone personally). Banner mail_assets/alfred-banner.png.
+  someone personally). Built-in banner mail_assets/alfred-banner.png.
 
 Model text is escaped first and only a small Markdown subset becomes markup (bold, italic, code,
 https/mailto links, headings, lists, quotes, rules), so nothing in a reply can inject HTML.
@@ -67,6 +69,7 @@ class Rendered:
     html: str
     text: str
     images: list[tuple[str, bytes, str]] = field(default_factory=list)   # (content-id, data, subtype)
+    layout: object = None
 
 
 def banner(template: str) -> tuple[bytes, str] | None:
@@ -193,51 +196,91 @@ def md_to_text(md: str) -> str:
 
 # --- the email -----------------------------------------------------------------------------------
 
-def signature(template: str, on_behalf_of: str = "") -> str:
-    name = settings.assistant_name
-    if template == "company":
-        lines = ["Kind regards,", f"**{name}**", f"AI assistant · {settings.company_name}"]
-    else:
-        lines = ["At your service,", f"**{name}**"]
+SERIF_HEAD = "'Cormorant Garamond', Garamond, Georgia, 'Times New Roman', serif"
+SERIF_BODY = "Georgia, 'Times New Roman', serif"
+SANS = "'Helvetica Neue', Helvetica, Arial, sans-serif"
+
+
+@dataclass
+class Layout:
+    """What render() needs from a layout (orchestrator/email_templates.py, or the built-in fallback)."""
+    id: int | None
+    key: str
+    theme: Theme
+    signature: str
+    footer: str
+    from_name: str = ""
+    company: bool = False
+    banner: tuple[bytes, str] | None = None
+
+
+def _fallback(key: str) -> Layout:
+    from . import email_templates as et
+    k = "company" if key == "company" else "alfred"
+    img = banner(k)
+    return Layout(None, k, THEMES[k], et.BUILTIN_SIGNATURE[k], et.BUILTIN_FOOTER[k], company=k == "company",
+                  banner=(img[0], "png") if img else None)
+
+
+def resolve(template) -> Layout:
+    """A layout by id / built-in key / name (inactive or missing ones fall back as email_templates.layout_for)."""
+    from . import email_templates as et
+    try:
+        lay = et.layout_for(template)
+    except Exception:  # noqa: BLE001 — no database (yet): the original designs
+        return _fallback(str(template))
+    st = lay["style"]
+    sans = st.get("font") == "sans"
+    theme = Theme(page=st["page"], card=st["card"], ink=st["ink"], muted=st["muted"], accent=st["accent"],
+                  foot_bg=st["foot_bg"], foot_ink=st["foot_ink"], foot_muted=st["foot_muted"],
+                  head_font=SANS if sans else SERIF_HEAD, body_font=SANS if sans else SERIF_BODY)
+    return Layout(lay["id"], lay.get("builtin") or str(lay["id"]), theme, lay["signature_md"], lay["footer_md"],
+                  lay["from_name"], lay["company"], et.banner_bytes(lay["id"]))
+
+
+def _layout_values() -> dict:
+    return {"assistant": settings.assistant_name, "company": settings.company_name,
+            "website": settings.company_website, "tagline": settings.company_tagline}
+
+
+def _fill_blank(text: str) -> str:
+    """Layout fields; unknown or empty ones vanish (a footer without a tagline just loses that line)."""
+    vals = _layout_values()
+    return re.sub(r"\{([a-z_]+)\}", lambda m: str(vals.get(m.group(1)) or ""), text or "")
+
+
+def signature(template, on_behalf_of: str = "") -> str:
+    lay = template if isinstance(template, Layout) else resolve(template)
+    sig = _fill_blank(lay.signature).strip()
     if on_behalf_of:
-        lines.insert(2, f"on behalf of {on_behalf_of}")
-    return "\n".join(lines)
+        sig += f"\non behalf of {on_behalf_of}"
+    return sig
 
 
-def footer_lines(template: str) -> list[str]:
-    name = settings.assistant_name
-    if template == "company":
-        lines = [settings.company_name.upper()]
-        if settings.company_tagline:
-            lines.append(settings.company_tagline)
-        if settings.company_website:
-            lines.append(settings.company_website)
-        lines.append(f"This message was written by {name}, an AI assistant. Replies are read by {name} and passed "
-                     "to the team where needed.")
-    else:
-        lines = [f"{name.upper()} · PERSONAL ASSISTANT",
-                 f"Sent by {name}, an AI assistant. Reply to this email to answer {name}."]
-    return lines
+def footer_lines(template) -> list[str]:
+    lay = template if isinstance(template, Layout) else resolve(template)
+    lines = [x.strip() for x in _fill_blank(lay.footer).split("\n")]
+    return [x for x in lines if x]
 
 
-def render(template: str, body_md: str, *, subject: str = "", greeting: str = "", on_behalf_of: str = "",
+def render(template, body_md: str, *, subject: str = "", greeting: str = "", on_behalf_of: str = "",
            sign: bool = True) -> Rendered:
-    template = template if template in TEMPLATES else "alfred"
-    t = THEMES[template]
+    lay = template if isinstance(template, Layout) else resolve(template)
+    t = lay.theme
     body = (f"{greeting}\n\n" if greeting else "") + (body_md or "").strip()
-    if sign:
-        body += "\n\n" + signature(template, on_behalf_of)
-    img = banner(template)
-    cid = f"banner-{template}@alfred"
-    alt = settings.company_name if template == "company" else settings.assistant_name
+    if sign and lay.signature.strip():
+        body += "\n\n" + signature(lay, on_behalf_of)
+    cid = f"banner-{lay.key}@alfred"
+    alt = settings.company_name if lay.company else settings.assistant_name
     head = (f'<img src="cid:{cid}" width="600" alt="{html.escape(alt)}" style="display:block;width:100%;'
-            f'max-width:600px;height:auto;border:0">' if img else
+            f'max-width:600px;height:auto;border:0">' if lay.banner else
             f'<div style="padding:28px 32px;background:{t.foot_bg};color:{t.foot_ink};font-family:{t.head_font};'
             f'font-size:26px;letter-spacing:.18em">{html.escape(alt.upper())}</div>')
-    foot = footer_lines(template)
+    foot = footer_lines(lay)
     foot_html = "".join(
         f'<div style="margin:0 0 6px;font-family:{t.body_font};font-size:{"12px;letter-spacing:.22em" if i == 0 else "12px"};'
-        f'line-height:1.5;color:{t.foot_ink if i == 0 else t.foot_muted}">{_inline(line, t) if i else html.escape(line)}</div>'
+        f'line-height:1.5;color:{t.foot_ink if i == 0 else t.foot_muted}">'
+        f'{html.escape(line.upper()) if i == 0 else _inline(line, t)}</div>'
         for i, line in enumerate(foot))
     page = f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -255,5 +298,16 @@ def render(template: str, body_md: str, *, subject: str = "", greeting: str = ""
 </table>
 </td></tr></table>
 </body></html>"""
-    text = md_to_text(body) + "\n\n-- \n" + "\n".join(md_to_text(x) for x in foot)
-    return Rendered(html=page, text=text, images=[(cid, img[0], "png")] if img else [])
+    text = md_to_text(body) + ("\n\n-- \n" + "\n".join(md_to_text(x) for x in foot) if foot else "")
+    out = Rendered(html=page, text=text, images=[(cid, lay.banner[0], lay.banner[1])] if lay.banner else [])
+    out.layout = lay
+    return out
+
+
+def preview_html(r: Rendered) -> str:
+    """The HTML with the inline banner as a data: URL, for showing in the browser (Template manager)."""
+    import base64
+    page = r.html
+    for cid, data, subtype in r.images:
+        page = page.replace(f"cid:{cid}", f"data:image/{subtype};base64,{base64.b64encode(data).decode()}")
+    return page

@@ -426,6 +426,45 @@ CREATE INDEX IF NOT EXISTS idx_emails_msgid ON emails(message_id);
 CREATE INDEX IF NOT EXISTS idx_emails_user ON emails(user_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_emails_status ON emails(status, direction);
 
+-- Email templates (orchestrator/email_templates.py): layouts (banner, colours, signature, footer) and reusable texts.
+CREATE TABLE IF NOT EXISTS mail_templates (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    kind         TEXT NOT NULL CHECK (kind IN ('layout','text')),
+    name         TEXT NOT NULL,
+    description  TEXT NOT NULL DEFAULT '',
+    active       INTEGER NOT NULL DEFAULT 1,
+    archived     INTEGER NOT NULL DEFAULT 0,
+    builtin      TEXT,                       -- company | alfred | inquiry_ack for the seeded ones
+    company      INTEGER NOT NULL DEFAULT 0, -- layout: mail in the company's name (admins/cofounders, company mail)
+    style        TEXT NOT NULL DEFAULT '{}', -- layout colours and font (JSON)
+    from_name    TEXT NOT NULL DEFAULT '',
+    signature_md TEXT NOT NULL DEFAULT '',
+    footer_md    TEXT NOT NULL DEFAULT '',
+    banner       BLOB,                       -- uploaded banner (PNG/JPEG); NULL = built-in file or none
+    banner_type  TEXT,
+    subject      TEXT NOT NULL DEFAULT '',   -- text templates
+    body_md      TEXT NOT NULL DEFAULT '',
+    layout_id    INTEGER REFERENCES mail_templates(id) ON DELETE SET NULL,
+    created_by   INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    updated_by   INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    created_at   TEXT NOT NULL,
+    updated_at   TEXT NOT NULL
+);
+
+-- Attachments of stored emails (orchestrator/mail_attachments.py). The content stays inside the archived .eml
+-- (same retention as the mail); this is the index: order, name, type, size, checksum, risk flag.
+CREATE TABLE IF NOT EXISTS email_attachments (
+    email_id   INTEGER NOT NULL REFERENCES emails(id) ON DELETE CASCADE,
+    idx        INTEGER NOT NULL,             -- 1-based, order in the message
+    name       TEXT NOT NULL,
+    mime       TEXT NOT NULL DEFAULT '',
+    size       INTEGER NOT NULL DEFAULT 0,
+    sha256     TEXT NOT NULL DEFAULT '',
+    flagged    TEXT NOT NULL DEFAULT '',     -- why it's risky ('' = fine): never previewed or filed
+    saved_to   TEXT NOT NULL DEFAULT '',     -- last place it was filed (scope:path)
+    PRIMARY KEY (email_id, idx)
+);
+
 -- Mail groups (an email is in at most one) and tags (any number), per person for personal mail and shared by
 -- the team for company mail; plus each viewer's own read / starred / archived state (orchestrator/mail_labels.py).
 CREATE TABLE IF NOT EXISTS mail_labels (
@@ -588,6 +627,8 @@ ADDED_COLUMNS = [
     ("dashboard_sessions", "view_as", "TEXT"),   # admin previewing the dashboard as another role
     ("roles", "can_email", "INTEGER NOT NULL DEFAULT 1"),                # may write to Alfred by email
     ("user_identifiers", "preferred", "INTEGER NOT NULL DEFAULT 0"),     # the email address Alfred writes to
+    ("emails", "layout_id", "INTEGER"),                                  # email_templates: layout and text used
+    ("emails", "template_id", "INTEGER"),
 ]
 
 

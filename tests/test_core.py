@@ -4396,7 +4396,8 @@ async def test_searxng_lookups_and_method(monkeypatch):
 def _mail_on(monkeypatch, tmp_path, *, nas_on=True):
     """Email configured, a recording transport instead of SMTP, and the fake NAS. Returns the sent list."""
     import dataclasses
-    from orchestrator import escalation, mail, mail_inbound, mail_requests, mail_templates, nas
+    from orchestrator import (email_templates, escalation, mail, mail_attachments, mail_inbound, mail_requests,
+                              mail_templates, nas)
     from orchestrator.config import settings
     from orchestrator.identity import verification
     from orchestrator.tools import registry as tools
@@ -4406,7 +4407,8 @@ def _mail_on(monkeypatch, tmp_path, *, nas_on=True):
                                nas_host="nas" if nas_on else "", nas_user="alfred-ai" if nas_on else "",
                                nas_password="x" if nas_on else "", nas_share_company="company",
                                nas_share_personal="Alfred_Personal")
-    for mod in (mail, mail_inbound, mail_requests, mail_templates, escalation, tools, nas, verification):
+    for mod in (mail, mail_inbound, mail_requests, mail_templates, escalation, tools, nas, verification,
+                mail_attachments, email_templates):
         monkeypatch.setattr(mod, "settings", fake)
     smb = _FakeSMB(tmp_path / "nas")
     monkeypatch.setattr(nas, "_smb", lambda: smb)
@@ -4638,7 +4640,7 @@ async def test_mail_inquiry_answered_or_escalated(monkeypatch, tmp_path):
          "topic": "Call back", "summary": "Wants a call.", "reply": "Good day"},
     ])
 
-    async def triage(p, own, thread):
+    async def triage(p, own, thread, files=None):
         return next(verdicts)
     monkeypatch.setattr(mail_inbound, "triage", triage)
     from orchestrator import ai_config
@@ -4857,3 +4859,232 @@ def test_mail_tab_is_for_admins_and_cofounders_only():
     assert mail_api.team_only(admin) is admin
     # every route of the Mail API carries the check
     assert all(any(d.dependency is mail_api.team_only for d in r.dependencies) for r in mail_api.router.routes)
+
+
+# --- #56 email attachments ----------------------------------------------------------------------------------
+
+def _raw_with_files(frm, subject, body, files, msg_id=None):
+    from email.message import EmailMessage
+    m = EmailMessage()
+    m["From"], m["To"], m["Subject"] = frm, "alfred@mail.example.test", subject
+    m["Message-ID"] = msg_id or f"<{abs(hash((frm, subject)))}@sender.example>"
+    m.set_content(body)
+    for name, data, mime in files:
+        maintype, subtype = mime.split("/")
+        m.add_attachment(data, maintype=maintype, subtype=subtype, filename=name)
+    return m.as_bytes()
+
+
+def test_attachment_risk_flags():
+    import io
+    import zipfile
+    from orchestrator import mail_attachments as ma
+    assert ma.flag_reason("offer.pdf", b"%PDF-1.4 ok") == ""
+    assert ma.flag_reason("photo.jpg", b"\xff\xd8\xff\xe0 ok") == ""
+    assert "program" in ma.flag_reason("setup.exe", b"MZ...")
+    assert ma.flag_reason("invoice.pdf.exe", b"MZ") != ""
+    assert ma.flag_reason("invoice.pdf", b"MZ\x90\x00") != ""                     # a program with a pdf name
+    assert "doesn't match" in ma.flag_reason("scan.pdf", b"<html>")
+    assert ma.flag_reason("sheet.xlsm", b"PK") != ""
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as z:
+        z.writestr("readme.txt", "hi")
+        z.writestr("run.js", "x")
+    assert "programs" in ma.flag_reason("files.zip", buf.getvalue())
+
+
+async def test_inquiry_attachments_indexed_previewed_and_saved(monkeypatch, tmp_path):
+    import json as _json
+    from orchestrator import mail, mail_attachments, mail_inbound
+    from orchestrator.tools import registry as tools
+    from dashboard.api import mail as mail_api
+    sent = _mail_on(monkeypatch, tmp_path)
+    admin = registry.lookup("telegram", "111")
+    friend = registry.lookup("telegram", "22222222")
+    seen = {}
+
+    async def triage(p, own, thread, files=None):
+        seen["files"] = files
+        return {"category": "inquiry", "answered_fully": False, "needs_human": True, "urgency": "normal",
+                "topic": "Plans", "summary": "Sent plans for a shop.", "reply": "Good day,\n\nPassed to the team."}
+    monkeypatch.setattr(mail_inbound, "triage", triage)
+    from orchestrator import ai_config
+    monkeypatch.setattr(ai_config, "configured", lambda: True)
+    raw = _raw_with_files("client@outside.example", "Plans", "See the attached plans.",
+                          [("plans.pdf", b"%PDF-1.4 plans", "application/pdf"), ("tool.exe", b"MZ\x90", "application/octet-stream")])
+    _webhook(monkeypatch, {"p-att": raw})
+    await mail_inbound.receive(_payload("p-att", raw))
+    rid = db.query_one("SELECT id FROM emails WHERE provider_id = 'p-att'")["id"]
+    await mail_inbound.process(rid)
+    items = mail_attachments.list_for(rid)
+    assert [(a["idx"], a["name"], bool(a["flagged"])) for a in items] == [(1, "plans.pdf", False), (2, "tool.exe", True)]
+    assert [f["name"] for f in seen["files"]] == ["plans.pdf", "tool.exe"]
+    esc_msg = sent[-2][0].get_body(("plain",)).get_content() if len(sent) > 1 else ""
+    assert "plans.pdf" in esc_msg or db.query_one("SELECT 1 FROM escalations WHERE email_id = ?", (rid,))
+    # read back from the archived .eml
+    meta, data = mail_attachments.content(admin, rid, 1)
+    assert data == b"%PDF-1.4 plans"
+    with pytest.raises(mail_attachments.AttachmentError):
+        mail_attachments.content(friend, rid, 1)                                   # not company mail for friends
+    # preview: inline for the PDF, never for the risky one
+    resp = await mail_api.view_attachment(_FakeRequest(), rid, 1, "", admin)
+    assert resp.media_type == "application/pdf"
+    with pytest.raises(Exception):
+        await mail_api.view_attachment(_FakeRequest(), rid, 2, "", admin)
+    # save to Files (dashboard) and with the tool (by name), never overwriting; risky ones refused
+    out = await mail_api.save_attachment(mail_api.SaveBody(scope="company", folder="Clients/Acme"), rid, 1, admin)
+    assert out["saved"] == "Clients/Acme/plans.pdf"
+    res, err = await tools.execute("file_email_attachment", {"email_id": rid, "attachment": "plans", "scope": "company",
+                                   "folder": "Clients/Acme"}, tools.ToolContext(admin, None, "telegram"))
+    assert _json.loads(res)["saved"] == "Clients/Acme/plans (2).pdf"
+    assert (tmp_path / "nas" / "company" / "Clients" / "Acme" / "plans.pdf").read_bytes() == b"%PDF-1.4 plans"
+    res, err = await tools.execute("file_email_attachment", {"email_id": rid, "attachment": "2", "scope": "company"},
+                                   tools.ToolContext(admin, None, "telegram"))
+    assert "risky" in _json.loads(res)["error"]
+    assert mail_attachments.list_for(rid)[0]["saved_to"].startswith("company:Clients/Acme/")
+    # the optional rule files safe inquiry attachments automatically
+    mail_attachments.set_autofile(True, admin)
+    try:
+        raw2 = _raw_with_files("other@outside.example", "Logo", "Our logo.", [("logo.png", b"\x89PNG\r\n\x1a\nxx", "image/png")])
+        _webhook(monkeypatch, {"p-auto2": raw2})
+        await mail_inbound.receive(_payload("p-auto2", raw2))
+        await mail_inbound.process(db.query_one("SELECT id FROM emails WHERE provider_id = 'p-auto2'")["id"])
+        assert list((tmp_path / "nas" / "company" / "Mail" / "Attachments").rglob("logo.png"))
+    finally:
+        mail_attachments.set_autofile(False, admin)
+
+
+class _FakeRequest:
+    headers = {}
+
+
+async def test_registered_mail_lists_attachments_for_alfred(monkeypatch, tmp_path):
+    from types import SimpleNamespace as NS
+    from orchestrator import agent_core, mail_inbound
+    from orchestrator.config import settings
+    _mail_on(monkeypatch, tmp_path)
+    admin = registry.lookup("telegram", "111")
+    if not registry.lookup("email", "boss@home.example"):
+        registry.add_identifier(admin.id, "email", "boss@home.example", verified=True)
+    seen = []
+
+    class FakeMessages:
+        async def create(self, **kw):
+            seen.append(kw)
+            return NS(stop_reason="end_turn", content=[NS(type="text", text="Dear Boss,\n\nFiled.")])
+    monkeypatch.setattr(agent_core, "_client", NS(messages=FakeMessages()))
+    monkeypatch.setattr(type(settings), "anthropic_api_key", property(lambda self: "sk-test"), raising=False)
+    files = [(f"doc{i}.txt", f"text {i}".encode(), "text/plain") for i in range(1, 8)]
+    raw = _raw_with_files("boss@home.example", "File these", "File them under Admin/Docs.", files)
+    _webhook(monkeypatch, {"p-many": raw})
+    await mail_inbound.receive(_payload("p-many", raw))
+    rid = db.query_one("SELECT id FROM emails WHERE provider_id = 'p-many'")["id"]
+    await mail_inbound.process(rid)
+    prompt = seen[0]["messages"][-1]["content"]
+    prompt = prompt if isinstance(prompt, str) else prompt[-1]["text"]
+    assert f"Attachments of email #{rid}" in prompt and "7. doc7.txt" in prompt and "file_email_attachment" in prompt
+    assert "file_email_attachment" in {t["name"] for t in seen[0]["tools"]}
+
+
+# --- #55 email templates ------------------------------------------------------------------------------------
+
+def test_template_store_builtins_rules_and_rendering(monkeypatch, tmp_path):
+    from orchestrator import email_templates as et, mail_templates
+    _mail_on(monkeypatch, tmp_path)
+    admin = registry.lookup("telegram", "111")
+    friend = registry.lookup("telegram", "22222222")
+    et.ensure_builtin()
+    et.ensure_builtin()                                                           # idempotent
+    names = {(t["kind"], t["name"]) for t in et.list_all()}
+    assert {("layout", "Company"), ("layout", "Alfred"), ("text", "Inquiry acknowledgement")} <= names
+    company = et.find("layout", "company")
+    assert company["company"] and company["has_banner"]
+    with pytest.raises(et.TemplateError):
+        et.save(friend, {"kind": "text", "name": "x", "body_md": "y"})            # team only
+    # editing a layout changes how mail looks
+    et.save(admin, {"style": {"accent": "#ff0055"}}, company["id"])
+    assert "#ff0055" in mail_templates.render("company", "Hello").html
+    with pytest.raises(et.TemplateError):
+        et.save(admin, {"style": {"accent": "red;background:url(x)"}}, company["id"])
+    et.save(admin, {"style": {"accent": "#1f7a46"}}, company["id"])
+    # at least one layout stays active
+    alfred = et.find("layout", "alfred")
+    et.set_active(admin, company["id"], False)
+    with pytest.raises(et.TemplateError):
+        et.set_active(admin, alfred["id"], False)
+    assert mail_templates.resolve("company").key == "alfred"                       # falls back to an active layout
+    et.set_active(admin, company["id"], True)
+    # duplicate (inactive copy with the banner), archive, restore
+    copy = et.duplicate(admin, company["id"])
+    assert copy["name"] == "Company (copy)" and not copy["active"] and copy["custom_banner"]
+    et.set_archived(admin, copy["id"], True)
+    assert copy["id"] not in {t["id"] for t in et.list_all()}
+    assert copy["id"] in {t["id"] for t in et.list_all(archived=True)}
+    # banners: PNG/JPEG only
+    with pytest.raises(et.TemplateError):
+        et.set_banner(admin, company["id"], b"<svg onload=alert(1)>")
+    # a text template with fields
+    t = et.save(admin, {"kind": "text", "name": "Visit", "subject": "Visit on {day}", "layout_id": company["id"],
+                        "body_md": "Dear {name},\n\nSee you on {day} at {company}."})
+    subj, body, missing = et.apply_text(t, {"name": "Ms Muster"})
+    assert missing == ["day"] and "{day}" in subj
+    subj, body, missing = et.apply_text(t, {"name": "Ms Muster", "day": "Friday"})
+    assert not missing and subj == "Visit on Friday" and "Acme" in body
+    with pytest.raises(et.TemplateError):
+        et.save(admin, {"kind": "text", "name": "visit", "body_md": "dup"})       # same name
+
+
+async def test_send_email_with_text_template_and_usage(monkeypatch, tmp_path):
+    import json as _json
+    from orchestrator import email_templates as et, mail
+    from orchestrator.tools import registry as tools
+    sent = _mail_on(monkeypatch, tmp_path)
+    admin = registry.lookup("telegram", "111")
+    if not registry.lookup("email", "boss@home.example"):
+        registry.add_identifier(admin.id, "email", "boss@home.example", verified=True)
+    et.ensure_builtin()
+    sid = sessions.telegram_session_for(admin.id, "111")
+
+    async def run(name, args):
+        out, err = await tools.execute(name, args, tools.ToolContext(admin, sid, "telegram"))
+        return _json.loads(out)
+    cat = await run("list_email_templates", {})
+    assert "Offer follow-up" in {t["name"] for t in cat["texts"]}
+    assert "Inquiry acknowledgement" not in {t["name"] for t in cat["texts"]}
+    r = await run("send_email", {"to": ["client@outside.example"], "text_template": "Offer follow-up",
+                                 "fields": {"name": "Ms Muster"}})
+    assert "offer_date" in r["error"]
+    r = await run("send_email", {"to": ["client@outside.example"], "text_template": "Offer follow-up",
+                                 "fields": {"name": "Ms Muster", "offer_date": "3 October"}})
+    assert r["prepared"] and "Our offer of 3 October" in r["ask"] and "Company" in r["ask"]
+    sessions.add_turn(sid, "user", "yes")
+    r = await run("confirm_send_email", {})
+    row = mail.get(r["email_id"])
+    tpl = et.find("text", "Offer follow-up")
+    assert row["template_id"] == tpl["id"] and row["scope"] == "company" and row["layout_id"] == et.find("layout", "company")["id"]
+    assert "Dear Ms Muster" in sent[-1][0].get_body(("plain",)).get_content()
+    assert et.get(tpl["id"])["used"] >= 1
+    # inactive templates aren't offered
+    et.set_active(admin, tpl["id"], False)
+    r = await run("send_email", {"to": ["client@outside.example"], "text_template": "Offer follow-up",
+                                 "fields": {"name": "x", "offer_date": "y"}})
+    assert "no active text template" in r["error"]
+    et.set_active(admin, tpl["id"], True)
+
+
+async def test_template_preview_is_isolated(monkeypatch, tmp_path):
+    from orchestrator import email_templates as et
+    from dashboard.api import mail_templates as api_t
+    _mail_on(monkeypatch, tmp_path)
+    admin = registry.lookup("telegram", "111")
+    et.ensure_builtin()
+    out = await api_t.preview(api_t.PreviewBody(kind="text", subject="Hi {name}", body_md="Dear {name}, <script>x</script> {missing}",
+                                                layout_id=et.find("layout", "alfred")["id"]), admin)
+    assert out["subject"] == "Hi Erika Muster" and "[missing]" in out["text"]
+    token = out["url"].rsplit("/", 1)[-1]
+    page = await api_t.preview_page(token, admin)
+    body = page.body.decode()
+    assert "<script>" not in body and "data:image/png;base64," in body
+    assert "default-src 'none'" in page.headers["content-security-policy"]
+    with pytest.raises(Exception):
+        await api_t.preview_page(token, registry.lookup("telegram", "22222222"))  # someone else's preview

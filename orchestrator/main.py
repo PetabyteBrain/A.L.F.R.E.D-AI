@@ -26,6 +26,7 @@ from dashboard.api.briefing import router as briefing_router
 from dashboard.api.memory import router as memory_router
 from dashboard.api.quiet import router as quiet_router
 from dashboard.api.meetings import router as meetings_router
+from dashboard.api.mail_templates import router as mail_templates_router
 from dashboard.api.mail import router as mail_router
 from dashboard.api.google import router as google_router
 from dashboard.api.people import router as people_router
@@ -64,6 +65,8 @@ async def lifespan(app: FastAPI):
     registry.bootstrap_admin()
     sessions.mark_orphans_on_startup()
     tool_registry.load()
+    from . import email_templates
+    email_templates.ensure_builtin()
     db.log_activity("system", f"{settings.assistant_name} started")
 
     if settings.twilio_enabled and not settings.twilio_validate_signature:
@@ -223,6 +226,7 @@ app.include_router(briefing_router)
 app.include_router(memory_router)
 app.include_router(quiet_router)
 app.include_router(meetings_router)
+app.include_router(mail_templates_router)     # before mail_router: /api/mail/templates vs /api/mail/{email_id}
 app.include_router(mail_router)
 def _legal(name: str) -> Response:
     path = WEB_DIR / "legal" / f"{name}.html"

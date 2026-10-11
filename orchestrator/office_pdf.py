@@ -87,6 +87,28 @@ def _convert(name: str, data: bytes) -> bytes:
         return out.read_bytes()
 
 
+async def pdf_of(name: str, data: bytes) -> bytes:
+    """PDF of an office document given as bytes (email attachments), cached by content."""
+    if not supported(name):
+        raise ConvertError("No document view for this file type.")
+    if len(data) > MAX_SOURCE_BYTES:
+        raise ConvertError("This document is too big to preview. Download it to open it.")
+    key = hashlib.sha256(data).hexdigest()[:32] + "-b"
+    cached = _cache_dir() / f"{key}.pdf"
+    if cached.exists():
+        os.utime(cached)
+        return cached.read_bytes()
+    async with _lock:
+        if cached.exists():
+            return cached.read_bytes()
+        pdf = await asyncio.to_thread(_convert, name, data)
+        tmp = cached.with_suffix(".part")
+        tmp.write_bytes(pdf)
+        tmp.replace(cached)
+        await asyncio.to_thread(_trim_cache)
+        return pdf
+
+
 async def pdf_for(person: Person, scope: str, path: str) -> bytes:
     """PDF of an office document the person may open (access is checked by nas_files)."""
     info = await asyncio.to_thread(nas_files.stat_file, person, scope, path)

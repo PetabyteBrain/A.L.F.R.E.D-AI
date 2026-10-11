@@ -5,6 +5,8 @@ import { usePageActive, usePoll, useStoredState } from "../hooks.js";
 import { Empty, ErrorNote, Tag } from "../components/common.jsx";
 import { Panel } from "../components/hud.jsx";
 import { Icon } from "../components/icons.jsx";
+import MailAttachments from "../components/MailAttachments.jsx";
+import TemplateManager from "../components/TemplateManager.jsx";
 
 const PAGE = 50;
 const KIND_LABEL = {
@@ -214,8 +216,8 @@ function Reader({ id, team, labels, onBack, onPrev, onNext, onChanged }) {
               {isOpen ? (
                 <>
                   {t.cc?.length > 0 && <div className="meta">Cc {t.cc.join(", ")}</div>}
-                  {t.attachments?.length > 0 && <div className="meta">Attachments: {t.attachments.join(", ")}</div>}
                   <pre className="mail-text">{t.text || "(no text)"}</pre>
+                  <MailAttachments emailId={t.id} items={t.attachments} team={team} onChanged={reload} />
                 </>
               ) : <div className="meta mail-snippet">{(t.text || "").slice(0, 140)}</div>}
             </div>
@@ -273,6 +275,7 @@ export default function Mail({ assistant }) {
   const [sel, setSel] = useState(() => new Set());
   const [err, setErr] = useState("");
   const [showLabels, setShowLabels] = useState(false);       // phones: groups & tags folded away
+  const [templates, setTemplates] = useState(false);         // the Template manager instead of the mailbox
   const team = !!st?.team;
   const colors = st?.colors || ["slate"];
   const allLabels = labels || [];
@@ -330,7 +333,13 @@ export default function Mail({ assistant }) {
     : view.box === "team" ? "For the team" : BOXES.find((b) => b.id === view.box)?.label || "Mail";
 
   return (
-    <Panel code="12" title="Mail">
+    <Panel code="12" title={templates ? "Template manager" : "Mail"}
+           actions={st?.enabled && (
+             <button className="btn small" onClick={() => setTemplates(!templates)}>
+               <Icon name={templates ? "inbox" : "folder"} className="btn-ico" />{templates ? "Back to mail" : "Template manager"}
+             </button>
+           )}>
+      {templates ? <TemplateManager onBack={() => setTemplates(false)} /> : <>
       {st && !st.enabled && <Empty>{assistant}'s email isn't set up yet (MAIL_ADDRESS and SMTP_* in .env).</Empty>}
       {st?.enabled && (
         <p className="muted small mail-intro">
@@ -445,6 +454,7 @@ export default function Mail({ assistant }) {
           )}
         </section>
       </div>
+      </>}
     </Panel>
   );
 }

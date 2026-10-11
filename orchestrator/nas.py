@@ -113,8 +113,10 @@ def personal_folder(person: Person) -> str:
     base = _slug(person.display_name.split()[0])
     taken = {r["folder"] for r in db.query("SELECT folder FROM nas_folders")}
     folder = base if base not in taken else f"{base}-{person.id}"
-    db.execute("INSERT INTO nas_folders(user_id, folder, created_at) VALUES (?,?,?)", (person.id, folder, db.now_iso()))
-    return folder
+    # Two jobs (e.g. mail archiving in a thread) may get here at once: the first insert wins, both use its row.
+    db.execute("INSERT OR IGNORE INTO nas_folders(user_id, folder, created_at) VALUES (?,?,?)",
+               (person.id, folder, db.now_iso()))
+    return db.query_one("SELECT folder FROM nas_folders WHERE user_id = ?", (person.id,))["folder"]
 
 
 def check_scope(person: Person, scope: str) -> None:

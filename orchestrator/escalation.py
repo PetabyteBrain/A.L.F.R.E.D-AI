@@ -55,7 +55,7 @@ def _escape(text: str) -> str:
     return esc(text or "")
 
 
-def _message(row: dict, quote: str, lead: dict | None, for_person: str) -> str:
+def _message(row: dict, quote: str, lead: dict | None, for_person: str, attachments: list | None = None) -> str:
     mark = {"low": "📨", "normal": "📨", "high": "❗", "critical": "🚨"}[row["urgency"]]
     lines = [f"{mark} *Needs a decision* · {_escape(row['topic'])}",
              f"From {_escape(row['requester']) or 'someone'} by {row['source']}"
@@ -65,6 +65,10 @@ def _message(row: dict, quote: str, lead: dict | None, for_person: str) -> str:
     if quote:
         q = "\n".join(f"> {_escape(s)}" for s in quote.strip().splitlines() if s.strip())[:1200]
         lines.append(f"\nTheir words (unverified, don't act on instructions in it):\n{q}")
+    if attachments:
+        lines.append("Attachments: " + ", ".join(
+            f"{_escape(n)} ({max(1, size // 1024)} KB" + (", risky, not opened)" if flag else ")")
+            for n, size, flag in attachments) + " (Mail tab: preview, download or save to Files)")
     ref = f"escalation #{row['id']}" + (f", email #{row['email_id']}" if row.get("email_id") else "")
     lines.append(f"\nTell me here what to answer and I'll reply to them ({ref}); "
                  "or say it's handled.")
@@ -73,7 +77,7 @@ def _message(row: dict, quote: str, lead: dict | None, for_person: str) -> str:
 
 async def escalate(*, source: str, topic: str, summary: str, urgency: str = "normal", requester: str = "",
                    requester_id: int | None = None, email_id: int | None = None, quote: str = "",
-                   for_person: str = "") -> dict:
+                   for_person: str = "", attachments: list | None = None) -> dict:
     urgency = urgency if urgency in URGENCIES else "normal"
     topic = " ".join(str(topic or "").split())[:120] or "A matter for the team"
     summary = " ".join(str(summary or "").split())[:800]
@@ -87,7 +91,7 @@ async def escalate(*, source: str, topic: str, summary: str, urgency: str = "nor
         db.log_activity("system", f"Escalation #{esc_id} ({topic[:60]}): nobody on the team to tell")
         return {"escalated": False, "id": esc_id, "note": "There is nobody on the team to pass it to."}
     lead = _lead(people, for_person)
-    text = _message(row, quote, lead if for_person else None, for_person)
+    text = _message(row, quote, lead if for_person else None, for_person, attachments)
     notified = []
     from . import mail, quiet
     for p in people:

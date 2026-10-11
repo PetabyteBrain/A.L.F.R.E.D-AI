@@ -69,7 +69,7 @@ def _now() -> datetime:
 
 # --- building and sending ------------------------------------------------------------------------
 
-def build_message(*, to: list[str], subject: str, body_md: str, template: str = "alfred", cc: list[str] = (),
+def build_message(*, to: list[str], subject: str, body_md: str, template="alfred", cc: list[str] = (),
                   from_name: str = "", reply_to: str = "", in_reply_to: str = "", references: str = "",
                   attachments: list[tuple[str, bytes, str]] = (), auto: str = "", greeting: str = "",
                   on_behalf_of: str = "", sign: bool = True) -> EmailMessage:
@@ -78,7 +78,9 @@ def build_message(*, to: list[str], subject: str, body_md: str, template: str = 
     r = mail_templates.render(template, body_md, subject=subject, greeting=greeting, on_behalf_of=on_behalf_of,
                               sign=sign)
     msg = EmailMessage()
-    msg["From"] = formataddr((from_name or settings.mail_from_name or settings.assistant_name, settings.mail_address))
+    lay_from = getattr(r.layout, "from_name", "") if r.layout else ""
+    msg["From"] = formataddr((from_name or lay_from or settings.mail_from_name or settings.assistant_name,
+                              settings.mail_address))
     msg["To"] = ", ".join(to)
     if cc:
         msg["Cc"] = ", ".join(cc)
@@ -127,12 +129,13 @@ def _smtp_send(msg: EmailMessage, recipients: list[str]) -> None:
 transport = _smtp_send
 
 
-async def send(*, to: list[str], subject: str, body_md: str, template: str = "alfred", cc: list[str] = (),
+async def send(*, to: list[str], subject: str, body_md: str, template="alfred", cc: list[str] = (),
                user_id: int | None = None, scope: str = "personal", kind: str = "sent", on_behalf_of: str = "",
                from_name: str = "", reply_to: str = "", parent: dict | None = None,
                attachments: list[tuple[str, bytes, str]] = (), auto: str = "", greeting: str = "",
-               sign: bool = True, summary: str = "") -> dict:
-    """Send one email and log + archive it. `parent`: the email row this answers (threading).
+               sign: bool = True, summary: str = "", template_id: int | None = None) -> dict:
+    """Send one email and log + archive it. `template`: a layout (built-in key "alfred"/"company", id or name);
+    `template_id`: the text template it was written from (usage counts). `parent`: the email row this answers (threading).
     Raises MailError (nothing logged as sent) if it couldn't go out."""
     if not enabled():
         raise MailError("Email isn't set up yet (MAIL_ADDRESS / SMTP_* in .env).")
@@ -150,7 +153,8 @@ async def send(*, to: list[str], subject: str, body_md: str, template: str = "al
     if parent:
         in_reply_to = parent.get("message_id") or ""
         references = await asyncio.to_thread(_references_of, parent)
-    msg = build_message(to=to, cc=cc, subject=subject, body_md=body_md, template=template, from_name=from_name,
+    layout = mail_templates.resolve(template)
+    msg = build_message(to=to, cc=cc, subject=subject, body_md=body_md, template=layout, from_name=from_name,
                         reply_to=reply_to, in_reply_to=in_reply_to, references=references, attachments=attachments,
                         auto=auto, greeting=greeting, on_behalf_of=on_behalf_of, sign=sign)
     try:
@@ -168,7 +172,12 @@ async def send(*, to: list[str], subject: str, body_md: str, template: str = "al
                     body_text=mail_templates.md_to_text(body_md), summary=summary,
                     attachments=[{"name": n, "size": len(d), "type": m} for n, d, m in attachments],
                     thread_id=(parent or {}).get("thread_id") or (parent or {}).get("id"))
+    update(row_id, layout_id=layout.id, template_id=template_id)
     spool(row_id, msg.as_bytes())
+    if attachments:                                   # indexed from the message itself, so the order matches
+        from . import mail_attachments
+        from .mail_inbound import parse
+        mail_attachments.index(row_id, parse(msg.as_bytes()).attachments)
     asyncio.get_running_loop().run_in_executor(None, _archive_quietly, row_id)
     db.log_activity("message", f"Email sent to {', '.join(to)[:120]}: {msg['Subject'][:80]}", user_id=user_id)
     return get(row_id)

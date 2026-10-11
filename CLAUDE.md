@@ -112,6 +112,15 @@ docs and the real homelab map are git-ignored (`docs/PROJECT_PLAN.md`, `CLAUDE.l
   Email connections need a code too (`verification`, method email); `registry.email_for` = primary verified address.
   Groups/tags and per-viewer read/star/archive: `mail_labels.py` (personal labels for own mail, shared company labels
   for company mail; `search` is the single listing for the Mail tab and list_emails; tool organize_email).
+  Attachments (#56): `mail_attachments.py` indexes them per email (order, sha256, risk flag); the bytes stay in the
+  archived .eml and are read back on demand (same retention). Flagged files: never previewed, filed or shown to the
+  model. Tool file_email_attachment; Mail tab preview reuses FilePreview with `urls`; optional auto-filing of inquiry
+  attachments (setting mail_inquiry_autofile). Keep attachment numbering = `mail_inbound.parse` order (Alfred's own
+  inline banner, Content-ID ...@alfred, is skipped).
+  Templates (#55): `email_templates.py` (layouts + texts, builtins company/alfred/inquiry_ack seeded at start, at least
+  one active layout, archive instead of delete, usage from emails.layout_id/template_id); `mail_templates.render`
+  resolves layouts from it (fallback: the original designs). Template manager UI `components/TemplateManager.jsx`,
+  API `dashboard/api/mail_templates.py` (registered before the mail router); its preview page has its own CSP.
 - Agenda (`orchestrator/agenda.py`): reminders tied to calendar events + categories; any code that
   changes or deletes a calendar event should call `agenda.on_event_changed`.
 

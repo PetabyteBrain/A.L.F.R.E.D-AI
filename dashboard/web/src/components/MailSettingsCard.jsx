@@ -16,6 +16,13 @@ export default function MailSettingsCard({ assistant }) {
   const [err, setErr] = useState("");
   if (!s) return <ErrorNote error={error} />;
 
+  async function toggleAutofile(on) {
+    setBusy(true);
+    setErr("");
+    try { await api("/mail/inquiry-autofile", { method: "PUT", body: { on } }); await reload(); }
+    catch (e) { setErr(e.message); } finally { setBusy(false); }
+  }
+
   async function setMode(mode) {
     setBusy(true);
     setErr("");
@@ -47,6 +54,13 @@ export default function MailSettingsCard({ assistant }) {
           spam and automated mail 30 days (MAIL_RETENTION_DAYS, MAIL_COMPANY_RETENTION_DAYS).
         </p>
       )}
+      <label className="mode-opt">
+        <input type="checkbox" checked={!!s.inquiry_autofile} disabled={busy}
+               onChange={(e) => toggleAutofile(e.target.checked)} />
+        <span><b>File inquiry attachments automatically</b><span className="muted tiny">Safe attachments of outside
+          inquiries go to the company files under Mail/Attachments/&lt;year&gt;/&lt;sender&gt;. Off: they stay with the
+          email on the Mail tab, one click from “Save to Files”.</span></span>
+      </label>
       <ErrorNote error={err} />
     </section>
   );

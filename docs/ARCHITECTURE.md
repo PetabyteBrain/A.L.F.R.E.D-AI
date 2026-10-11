@@ -43,7 +43,9 @@ Email ─► provider ─► /mail/inbound/<token> (validated once) ─► sende
 
 - `users`, `user_identifiers` (connections, verified flag), `roles`
 - `sessions`, `transcripts` (+ FTS5 index for conversation search), `recordings`
-- `emails` (log of every message; the .eml itself on the NAS), `escalations`
+- `emails` (log of every message; the .eml itself on the NAS), `email_attachments` (index; bytes stay in the .eml),
+  `mail_labels` / `email_labels` / `email_state` (groups, tags, per-viewer read/star/archive), `mail_templates`
+  (layouts and texts), `escalations`
 - `reminders`, `tasks`, `scheduled_calls`, `external_calls`, `memories`, `meetings`, `api_usage`, `activity`, `health`, `app_settings`
 - Recordings: `data/storage/{user_id}/{date}/{session_id}/audio.wav`, moved to the NAS after 14 days.
 - New columns go in `db.ADDED_COLUMNS` and are applied on start.
