@@ -271,6 +271,8 @@ async def find_missing_websites(businesses: list[dict], limit: int, person: Pers
         return 0, 0
     from .agent_core import client
     todo = [b for b in businesses if not b["website"]][:limit]
+    for b in todo:
+        b["looked_up"] = True
     found = 0
     for i in range(0, len(todo), 8):
         batch = todo[i:i + 8]
@@ -311,7 +313,9 @@ async def find_missing_websites(businesses: list[dict], limit: int, person: Pers
 
 def score(b: dict, year_now: int) -> tuple[int, list[str]]:
     if not b["website"]:
-        return 90, ["no website found"]
+        if b.get("looked_up"):
+            return 90, ["no website found (web search)"]
+        return 70, ["no website listed on OpenStreetMap (not looked up)"]
     if _is_social(b["website"]):
         return 80, ["only a social media page"]
     site = b.get("site") or {}
@@ -351,7 +355,9 @@ def build_markdown(run: dict, businesses: list[dict]) -> str:
              "## Summary", "",
              f"- Businesses found: **{len(businesses)}** (OpenStreetMap)",
              f"- Fitting potential clients (score ≥ {FIT_SCORE}): **{len(fit)}**",
-             f"- Without any website: **{sum(1 for b in businesses if not b['website'])}**",
+             f"- No website, confirmed by web search: **{sum(1 for b in businesses if not b['website'] and b.get('looked_up'))}**",
+             f"- No website listed on OpenStreetMap, not looked up yet: {sum(1 for b in businesses if not b['website'] and not b.get('looked_up'))}"
+             " (ask for more web lookups to check them)",
              f"- Websites found by web search: {run['found_by_search']} (of {run['lookups']} lookups)"]
     if run.get("previous"):
         lines.append(f"- New since the last report for this area: **{sum(1 for b in businesses if b.get('new'))}**")
@@ -368,7 +374,8 @@ def build_markdown(run: dict, businesses: list[dict]) -> str:
               f"Businesses tagged as {', '.join(run['industries'])} within {run['radius_km']:g} km of {run['area']} "
               "were taken from OpenStreetMap. Listed websites were opened once to check HTTPS, a mobile layout, "
               "loading time, the copyright year and online booking; for businesses without a listed website a "
-              "limited number of web searches looked for one. Scores: no website 90, social media only 80, "
+              "limited number of web searches looked for one. Scores: no website (confirmed) 90, no website listed "
+              "but not looked up 70, social media only 80, "
               "unreachable 85, otherwise 20 plus points per weakness (not mobile-friendly 30, outdated 20, "
               "no HTTPS 20, slow 10, no online booking 10).", "",
               "Only public business listings were used. Contacting businesses is up to you: in Switzerland, "

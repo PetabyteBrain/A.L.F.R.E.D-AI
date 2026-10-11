@@ -4147,7 +4147,9 @@ def test_market_analysis_parse_and_score():
     assert bs[1]["website"] == "https://www.cafe-zwei.example" and bs[0]["category"] == "restaurant"
     bs[1]["site"] = {"reachable": True, "https": False, "mobile": False, "seconds": 4.2, "copyright_year": 2019, "booking": False}
     bs[3]["site"] = {"reachable": True, "https": True, "mobile": True, "seconds": 0.8, "copyright_year": 2026, "booking": True}
-    assert ma.score(bs[0], 2026) == (90, ["no website found"])
+    assert ma.score(bs[0], 2026) == (70, ["no website listed on OpenStreetMap (not looked up)"])
+    bs[0]["looked_up"] = True
+    assert ma.score(bs[0], 2026) == (90, ["no website found (web search)"])
     assert ma.score(bs[2], 2026) == (80, ["only a social media page"])
     s, why = ma.score(bs[1], 2026)
     assert s == 95 and "no HTTPS" in why and "not mobile-friendly" in why and "looks outdated (© 2019)" in why
