@@ -4766,7 +4766,8 @@ def test_sessions_table_migrates_to_email_channel(tmp_path, monkeypatch):
     path = tmp_path / "old.db"
     conn = sqlite3.connect(path)
     conn.execute("CREATE TABLE users (id INTEGER PRIMARY KEY)")
-    conn.execute("CREATE TABLE sessions (id TEXT PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id), "
+    # an earlier rebuild left the name quoted in sqlite_master, as SQLite does after ALTER TABLE ... RENAME
+    conn.execute('CREATE TABLE "sessions" (id TEXT PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id), '
                  "channel TEXT NOT NULL CHECK (channel IN ('call','telegram','web')), direction TEXT NOT NULL DEFAULT "
                  "'inbound', external_id TEXT, started_at TEXT NOT NULL, last_activity_at TEXT NOT NULL, ended_at TEXT, "
                  "status TEXT NOT NULL DEFAULT 'active')")

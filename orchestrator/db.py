@@ -499,7 +499,7 @@ def _migrate_sessions_channel_check() -> None:
         conn.execute("PRAGMA foreign_keys = OFF")
         conn.execute("BEGIN")
         conn.execute(re.sub(r"CHECK \(channel IN \([^)]*\)\)", "CHECK (channel IN ('call','telegram','web','email'))",
-                            row[0].replace("CREATE TABLE sessions", "CREATE TABLE sessions_new", 1)))
+                            re.sub(r'CREATE TABLE\s+["`]?sessions["`]?', "CREATE TABLE sessions_new", row[0], count=1)))
         conn.execute("INSERT INTO sessions_new SELECT * FROM sessions")
         conn.execute("DROP TABLE sessions")
         conn.execute("ALTER TABLE sessions_new RENAME TO sessions")
