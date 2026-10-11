@@ -272,10 +272,16 @@ async def log_receipt(ctx, scope: str, date: str, shop: str, amount: float, curr
 
 @handler
 async def market_analysis(ctx, area: str, industries: list[str] | None = None, radius_km: float = 5,
-                          web_lookups: int = 15) -> dict:
+                          osm_tags: list[str] | None = None, name_keywords: list[str] | None = None,
+                          thoroughness: str = "standard", web_lookups: int | None = None, check_websites: bool = True,
+                          focus: str = "both", min_score: int = 50, exclude_chains: bool = True, shortlist: int = 40,
+                          sort: str = "score", report_format: str = "both", title: str = "", notes: str = "",
+                          confirmed: bool = False) -> dict:
     from .. import market_analysis as ma, nas
     try:
-        return await ma.start(ctx.person, area, radius_km, industries, web_lookups)
+        spec = ma.build_spec(area, industries, radius_km, osm_tags, name_keywords, thoroughness, web_lookups,
+                             check_websites, focus, min_score, exclude_chains, shortlist, sort, report_format, title, notes)
+        return await ma.start(ctx.person, spec, confirmed)
     except (ma.MarketError, nas.NasError) as e:
         return {"error": str(e)}
 

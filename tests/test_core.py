@@ -4133,17 +4133,33 @@ _OSM = {"elements": [
     {"type": "node", "id": 4, "lat": 47.07, "lon": 8.32, "tags": {"name": "Modern Vier", "amenity": "restaurant",
                                                                   "website": "https://modern-vier.example", "addr:city": "Emmen"}},
     {"type": "node", "id": 5, "lat": 47.07, "lon": 8.32, "tags": {"amenity": "restaurant"}},           # no name: skipped
+    {"type": "node", "id": 7, "lat": 47.071, "lon": 8.321, "tags": {"name": "BigChain Burger", "amenity": "restaurant",
+                                                                    "brand": "BigChain", "brand:wikidata": "Q1"}},
 ]}
 
 
-def test_market_analysis_parse_and_score():
+def test_market_analysis_spec_and_parsing():
     from orchestrator import market_analysis as ma
-    known, unknown = ma.resolve_industries(["Restaurants", "café", "Bars", "spaceships"])
-    assert known == ["bar", "cafe", "restaurant"] and unknown == ["spaceships"]
-    q = ma._overpass_query([("amenity", "restaurant"), ("shop", "*")], 47.05, 8.3, 5000)
-    assert 'nwr["amenity"="restaurant"]["name"](around:5000,' in q and 'nwr["shop"]["name"]' in q
-    bs = ma.parse_businesses(_OSM, known, 47.05, 8.3)
-    assert [b["name"] for b in bs] == ["Ristorante Uno", "Café Zwei", "Bar Drei", "Modern Vier"]       # by distance
+    known, unknown = ma.resolve_industries(["Restaurants", "café", "Bars", "Bodenleger", "floor layers", "spaceships"])
+    assert known == ["bar", "cafe", "flooring", "restaurant"] and unknown == ["spaceships"]
+    spec = ma.build_spec("Bern", ["floor layers", "rare trade"], 10, ["craft=floorer", "shop=*"], ["Parkett"], "thorough")
+    assert spec.industries == ["flooring"] and ("craft", "floorer") in spec.osm_tags and spec.keywords == ["parkett", "rare trade"]
+    assert spec.lookups == 50 and spec.max_businesses == 400 and spec.estimate_usd == 0.6
+    q = ma._overpass_query(spec, 46.95, 7.44)
+    assert q.count('nwr["craft"="floorer"]') == 1 and 'nwr["shop"]["name"](around:10000,' in q
+    assert 'nwr["craft"]["name"~"parkett|rare trade",i]' in q
+    for bad in (dict(area=""), dict(area="Bern", industries=[]), dict(area="Bern", industries=["x"], radius_km=99),
+                dict(area="Bern", industries=["cafe"], osm_tags=["name=evil\"]"]), dict(area="Bern", industries=["cafe"], focus="all"),
+                dict(area="Bern", industries=["cafe"], thoroughness="extreme"), dict(area="Bern", name_keywords=['a"];out;'])):
+        try:
+            ma.build_spec(**bad)
+            raise AssertionError(bad)
+        except ma.MarketError:
+            pass
+    spec = ma.build_spec("Lucerne", ["restaurants", "cafes", "bars"])
+    bs = ma.parse_businesses(_OSM, spec, 47.05, 8.3)
+    assert [b["name"] for b in bs] == ["Ristorante Uno", "Café Zwei", "Bar Drei", "Modern Vier"]       # chain left out
+    assert len(ma.parse_businesses(_OSM, ma.build_spec("Lucerne", ["restaurant"], exclude_chains=False), 47.05, 8.3)) == 5
     assert bs[1]["website"] == "https://www.cafe-zwei.example" and bs[0]["category"] == "restaurant"
     bs[1]["site"] = {"reachable": True, "https": False, "mobile": False, "seconds": 4.2, "copyright_year": 2019, "booking": False}
     bs[3]["site"] = {"reachable": True, "https": True, "mobile": True, "seconds": 0.8, "copyright_year": 2026, "booking": True}
@@ -4154,6 +4170,8 @@ def test_market_analysis_parse_and_score():
     s, why = ma.score(bs[1], 2026)
     assert s == 95 and "no HTTPS" in why and "not mobile-friendly" in why and "looks outdated (© 2019)" in why
     assert ma.score(bs[3], 2026) == (20, ["website looks fine"])
+    assert ma._matches_focus(bs[0], "no_website") and not ma._matches_focus(bs[1], "no_website")
+    assert ma._matches_focus(bs[1], "weak_website") and not ma._matches_focus(bs[2], "weak_website")
 
 
 async def test_market_analysis_site_check_never_reaches_private_addresses():
@@ -4162,6 +4180,31 @@ async def test_market_analysis_site_check_never_reaches_private_addresses():
                 "http://[::1]/", "ftp://example.org/", "http://169.254.169.254/latest/meta-data"):
         out = await ma.check_site(url)
         assert not out["reachable"] and out["error"] == "not a public web address", url
+
+
+async def test_market_analysis_overpass_falls_back(monkeypatch):
+    from types import SimpleNamespace as NS
+    from orchestrator import market_analysis as ma
+    tried = []
+
+    class Client:
+        def __init__(self, **kw):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *exc):
+            return False
+
+        async def post(self, url, data, headers):
+            tried.append(url)
+            if len(tried) < 3:
+                return NS(status_code=504, headers={"content-type": "text/html"}, json=lambda: {})
+            return NS(status_code=200, headers={"content-type": "application/json"}, json=lambda: _OSM)
+    monkeypatch.setattr(ma.httpx, "AsyncClient", Client)
+    bs = await ma.fetch_businesses(ma.build_spec("Lucerne", ["restaurant", "cafe", "bar"]), 47.05, 8.3, swiss=True)
+    assert len(bs) == 4 and tried == [ma.OVERPASS_CH, *ma.OVERPASS_URLS[:2]]           # Swiss server first
 
 
 async def test_market_analysis_full_run(monkeypatch, tmp_path):
@@ -4182,8 +4225,8 @@ async def test_market_analysis_full_run(monkeypatch, tmp_path):
         return {"location": "Lucerne, Lucerne, Switzerland", "lat": 47.05, "lon": 8.3}
     elements = list(_OSM["elements"])
 
-    async def fetch(industries, lat, lon, radius_km):
-        return ma.parse_businesses({"elements": elements}, industries, lat, lon)
+    async def fetch(spec, lat, lon, swiss=False):
+        return ma.parse_businesses({"elements": elements}, spec, lat, lon)
 
     async def lookups(businesses, limit, person):
         for b in businesses:
@@ -4201,22 +4244,32 @@ async def test_market_analysis_full_run(monkeypatch, tmp_path):
     monkeypatch.setattr(ma, "find_missing_websites", lookups)
     monkeypatch.setattr(ma, "check_sites", sites)
     admin = registry.lookup("telegram", "111")
-    res = await ma.analyse(admin, "Lucerne", 5, ["bar", "cafe", "restaurant"], 15)
+    spec = ma.build_spec("Lucerne", ["bar", "cafe", "restaurant"], notes="Offer: website package")
+    res = await ma.analyse(admin, spec)
     assert res["businesses"] == 4 and res["fitting"] == 3 and res["new"] == 0
     md_path, xl_path = res["files"]
     assert md_path.startswith("Market analysis/") and md_path.endswith(".md") and xl_path.endswith(".xlsx")
     md = (tmp_path / "company" / md_path).read_text(encoding="utf-8")
     assert "Ristorante Uno" in md and "website not reachable" in md and "© OpenStreetMap contributors" in md
+    assert "Offer: website package" in md and "chains left out" in md
     assert "Modern Vier" not in md.split("## Shortlist")[1].split("## Where")[0]          # fine website: not shortlisted
     wb = openpyxl.load_workbook(io.BytesIO((tmp_path / "company" / xl_path).read_bytes()))
     rows = list(wb["Businesses"].iter_rows(values_only=True))
     assert rows[0][:4] == ("Fit", "Score", "Why", "Name") and len(rows) == 5
     # second run: one business more -> marked new
     elements.append({"type": "node", "id": 6, "lat": 47.08, "lon": 8.33, "tags": {"name": "Neu Sechs", "amenity": "cafe"}})
-    res2 = await ma.analyse(admin, "Lucerne", 5, ["bar", "cafe", "restaurant"], 15)
+    res2 = await ma.analyse(admin, spec)
     assert res2["new"] == 1
     md2 = (tmp_path / "company" / res2["files"][0]).read_text(encoding="utf-8")
     assert "Neu Sechs 🆕" in md2 and "New since the last report" in md2
+    # report options: only businesses without a website, Markdown only, own title, by name
+    spec3 = ma.build_spec("Lucerne", ["bar", "cafe", "restaurant"], focus="no_website", report_format="markdown",
+                          title="Lucerne gastro leads", sort="name")
+    res3 = await ma.analyse(admin, spec3)
+    assert len(res3["files"]) == 1 and res3["files"][0].endswith("Lucerne gastro leads.md")
+    md3 = (tmp_path / "company" / res3["files"][0]).read_text(encoding="utf-8")
+    short = md3.split("## Shortlist")[1].split("## Where")[0]
+    assert md3.startswith("# Lucerne gastro leads") and "Bar Drei" in short and "Café Zwei" not in short
 
 
 async def test_market_analysis_tool_and_background_job(monkeypatch):
@@ -4229,11 +4282,13 @@ async def test_market_analysis_tool_and_background_job(monkeypatch):
     out = await builtin.HANDLERS["market_analysis"](ctx(friend), area="Lucerne", industries=["restaurants"])
     assert "only for admins and cofounders" in out["error"]
     monkeypatch.setattr(nas, "enabled", lambda: True)
-    out = await builtin.HANDLERS["market_analysis"](ctx(admin), area="Lucerne", industries=["spaceships"])
-    assert "can't search for: spaceships" in out["error"]
+    out = await builtin.HANDLERS["market_analysis"](ctx(admin), area="Lucerne", industries=["cafe"], osm_tags=["bad tag"])
+    assert "isn't an OpenStreetMap tag" in out["error"]
+    out = await builtin.HANDLERS["market_analysis"](ctx(admin), area="Lucerne", industries=["cafe"], thoroughness="complete")
+    assert out["needs_confirmation"] and out["estimated_cost_usd"] == 3.0 and not out["started"]   # big run: ask first
     sent, done = [], asyncio.Event()
 
-    async def fake_analyse(person, area, radius_km, industries, lookups, check_websites=True):
+    async def fake_analyse(person, spec):
         return {"area": "Lucerne", "businesses": 12, "fitting": 5, "no_website": 3, "new": 0,
                 "top": ["Ristorante Uno (Lucerne): no website found"], "files": ["Market analysis/x.md", "Market analysis/x.xlsx"]}
 
@@ -4242,8 +4297,8 @@ async def test_market_analysis_tool_and_background_job(monkeypatch):
         done.set()
     monkeypatch.setattr(ma, "analyse", fake_analyse)
     monkeypatch.setattr(telegram_handler, "send_to_user", fake_send)
-    out = await builtin.HANDLERS["market_analysis"](ctx(admin), area="Lucerne", industries=["restaurants"], radius_km=8)
-    assert out["started"] and out["industries"] == ["restaurant"] and "Telegram" in out["note"]
+    out = await builtin.HANDLERS["market_analysis"](ctx(admin), area="Lucerne", industries=["floor layers"], radius_km=8)
+    assert out["started"] and out["searching"] == "flooring" and "Telegram" in out["note"]
     await asyncio.wait_for(done.wait(), 5)
     assert sent[0][0] == admin.id and "5 of 12" in sent[0][1] and "Market analysis/x.xlsx" in sent[0][1] and sent[0][2] is False
     assert admin.id not in ma._running

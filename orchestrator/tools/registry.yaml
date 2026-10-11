@@ -743,21 +743,40 @@ tools:
     handler: market_analysis
     roles: [admin, cofounder]
     description: >-
-      Find potential clients for the company in an area: businesses of the given industries within a
-      radius (OpenStreetMap), each checked for a missing or weak website (no HTTPS, not mobile-friendly,
-      slow, outdated, no online booking), scored, and written as a report (Markdown summary + Excel
-      list) into the company files under "Market analysis". Runs in the background for a few minutes;
-      the person gets a Telegram message when it's ready. Ask which industries and which place if they
-      didn't say; default radius 5 km. Only public business listings are used; never offer to contact
-      the businesses yourself.
+      Find potential clients for the company in an area: businesses within a radius (OpenStreetMap),
+      each checked for a missing or weak website (no HTTPS, not mobile-friendly, slow, outdated, no
+      online booking), scored, and written as a report (Markdown summary and/or Excel list) into the
+      company files under "Market analysis". Runs in the background; the person gets a Telegram message
+      when it's ready. What to search: `industries` in plain words (about 150 trades, shops, offices,
+      health, food, hospitality and services are built in, English or German); for anything else also
+      give `osm_tags` (OpenStreetMap key=value, e.g. craft=floorer, shop=flooring) and/or `name_keywords`
+      in the local languages (e.g. ["boden", "parkett", "sol", "flooring"]); unknown industry words are
+      searched as name keywords. How thorough: quick (no web searches), standard (15), thorough (50),
+      complete (every business without a listed website, up to 250; ~1 ct per search); more than 50 web
+      searches return needs_confirmation with a cost estimate: tell the person and call again with
+      confirmed=true only after their yes. Ask which place and industries if they didn't say; default
+      radius 5 km, standard. Only public business listings; never offer to contact the businesses yourself.
     input_schema:
       type: object
       properties:
         area: {type: string, description: "Town or place the radius is around, e.g. 'Lucerne' or 'Bern Bümpliz'."}
-        industries: {type: array, items: {type: string}, description: "Industries in plain words, e.g. ['restaurants', 'hairdressers', 'garages']."}
+        industries: {type: array, items: {type: string}, description: "Industries in plain words, e.g. ['restaurants', 'hairdressers', 'floor layers']."}
+        osm_tags: {type: array, items: {type: string}, description: "Extra OpenStreetMap tags key=value (keys: shop, craft, office, amenity, healthcare, tourism, leisure, club, industrial)."}
+        name_keywords: {type: array, items: {type: string}, description: "Words matched in business names (case-insensitive), in German/French/English as fits the area."}
         radius_km: {type: number, minimum: 0.5, maximum: 30}
-        web_lookups: {type: integer, minimum: 0, maximum: 40, description: "Web searches for businesses without a listed website (cost about 1 cent each). Default 15."}
-      required: [area, industries]
+        thoroughness: {type: string, enum: [quick, standard, thorough, complete]}
+        web_lookups: {type: integer, minimum: 0, maximum: 250, description: "Override the number of web searches for missing websites."}
+        check_websites: {type: boolean, description: "Open each listed website to check it (default true)."}
+        focus: {type: string, enum: [both, no_website, weak_website], description: "Which businesses count as fitting (default both)."}
+        min_score: {type: integer, minimum: 0, maximum: 95, description: "Fit threshold (default 50; higher = stricter)."}
+        exclude_chains: {type: boolean, description: "Leave out chains/brands (default true)."}
+        shortlist: {type: integer, minimum: 5, maximum: 300, description: "Businesses listed in the summary (default 40)."}
+        sort: {type: string, enum: [score, distance, name]}
+        report_format: {type: string, enum: [both, markdown, excel]}
+        title: {type: string, description: "Own report title (also used in the file name)."}
+        notes: {type: string, description: "Notes to put at the top of the report, e.g. the purpose or offer."}
+        confirmed: {type: boolean, description: "Only after the person agreed to the cost of a large run."}
+      required: [area]
 
   - name: company_todo
     kind: builtin
