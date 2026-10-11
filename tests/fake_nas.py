@@ -1,10 +1,10 @@
-"""A local stand-in for the NAS (SMB) and a copy of the Company to-do layout: used by the tests and by
+"""A local stand-in for the NAS (SMB) and a copy of the company to-do layout: used by the tests and by
 tests/devserver.py, so neither ever touches the real NAS."""
 from pathlib import Path
 
 
 class FakeSMB:
-    """smbclient stand-in: \\nas\Share\path -> <tmp>/Share/path. Shares that are 'denied' raise like TrueNAS."""
+    r"""smbclient stand-in: \\nas\Share\path -> <tmp>/Share/path. Shares that are 'denied' raise like TrueNAS."""
 
     def __init__(self, root, denied=()):
         self.root, self.denied = Path(root), set(denied)
@@ -56,7 +56,7 @@ class FakeSMB:
 
 
 def todo_workbook(path):
-    """A copy of the Company to-do layout (3 sections, rows 6-30)."""
+    """A copy of the company to-do layout (3 sections, rows 6-30)."""
     import openpyxl
     from openpyxl.formatting.rule import CellIsRule
     from openpyxl.styles import PatternFill

@@ -223,11 +223,11 @@ async def gather(person: Person) -> dict:
 
 
 STALE_DAYS = 14
-_PROGRESS_KEY = "company_progress_seen"
+_PROGRESS_KEY = "company_todo_progress_seen"
 
 
 async def _company_todo(person: Person, now: datetime) -> dict | None:
-    """Admins/cofounders: the top open Company to-dos; on Mondays also what's been "in progress"
+    """Admins/cofounders: the top open company to-dos; on Mondays also what's been "in progress"
     for 2+ weeks (tracked here, since the workbook has no dates)."""
     import asyncio
     from . import nas, company_todo
@@ -236,7 +236,7 @@ async def _company_todo(person: Person, now: datetime) -> dict | None:
     try:
         todo = await asyncio.to_thread(company_todo.show, person)
     except Exception as e:  # noqa: BLE001
-        log.warning("Briefing Company to-do failed: %s", e)
+        log.warning("Briefing company to-do failed: %s", e)
         return {"note": "unavailable right now"}
     current = sorted(todo["current"], key=lambda i: -(i.get("importance") or 0))
     out = {"top_current": [{"todo": i["description"], "importance": i.get("importance"), "status": i.get("status")}
@@ -265,7 +265,7 @@ async def compose(person: Person, data: dict, channel: str) -> str:
     style = ("It will be read aloud on a phone call: 4-7 short spoken sentences, no lists, no symbols, "
              "no emoji, times said naturally." if channel == "call" else
              "It is a Telegram message: a greeting line, then short lines grouped as needed (weather, "
-             "calendar, reminders, calls, tasks, Company to-do), plain text with at most a few emoji as markers, no "
+             "calendar, reminders, calls, tasks, company to-do), plain text with at most a few emoji as markers, no "
              "headings, no Markdown tables. Under 900 characters.")
     system = (f"You are {settings.assistant_name}, a discreet, warm British butler (Alfred Pennyworth's manner) "
               f"writing {who}'s daily briefing. Use ONLY the facts in the JSON; never invent events or details. "

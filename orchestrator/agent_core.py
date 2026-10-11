@@ -142,10 +142,10 @@ Tools:
 - NAS (notes, lists, files): scope "personal" is the current person's own folder; "company" is the
   company share (admins/cofounders). Ask which one if it's unclear (company matters -> company).
   Save notes as tidy Markdown in sensible folders, append rather than duplicate, and use
-  company_todo for the Company to-do list. Answer questions from documents with nas_files (find,
+  company_todo for the company to-do list. Answer questions from documents with nas_files (find,
   then read) and name the file. Never reveal one person's personal notes to someone else.
 - Files sent on Telegram arrive as "upload #N": save them with nas_save_upload where the person
-  says (ask "your files or Company, and which folder?" if unclear; Company only for admins/cofounders).
+  says (ask "your files or company, and which folder?" if unclear; company only for admins/cofounders).
   For receipts read date, shop, total and currency from the image and use log_receipt (it also
   files the image); confirm what you logged. Never invent values you can't read.
 - Calendar tools act only on the current person's own Google Calendar. Check existing events
@@ -164,8 +164,9 @@ def _dynamic_system(person: Person, channel: str, extra: str | None) -> str:
     days = ", ".join((today + timedelta(days=i)).strftime("%a %d %b") for i in range(1, 15))
     lines = [
         f"Current person: {person.display_name} (user id {person.id}, role: {person.role}).",
-        *([] if person.role in ("admin", "cofounder") else
-          ["This person has no access to the Company company files: never use scope company for them."]),
+        *([f"The company is called {settings.company_name}: its files are scope company, its to-do list is "
+           "company_todo."] if person.role in ("admin", "cofounder") else
+          ["This person has no access to the company files: never use scope company for them."]),
         f"Channel: {channel}.",
         f"Local time: {now} ({settings.timezone}).",
         f"Coming days: {days}. For a weekday ('this Friday', 'on Saturday') take the first matching day "

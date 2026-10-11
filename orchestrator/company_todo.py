@@ -1,5 +1,5 @@
-"""The Company to-do workbook on the NAS (NAS_COMPANY_TODO, default
-Admin/To-Do.xlsx in the Company share). Admins and cofounders only.
+"""The company to-do workbook on the NAS (NAS_COMPANY_TODO, default
+Admin/To-Do.xlsx in the company share). Admins and cofounders only.
 
 Layout (sheet 1, data rows 6–30, header in row 5):
   AKTUELLES (current): A Position · B wichtigkeit (1–5) · C Status · D beschreibung
@@ -9,7 +9,7 @@ A row is free when its description is empty. Status values: not started, in prog
 
 Editing safety: openpyxl would drop the workbook's conditional-formatting extensions on save, so
 writes change only the touched cells in the sheet XML and copy every other part of the file byte
-for byte. Before each write the current file is copied to .alfred-backups/ in the Company share
+for byte. Before each write the current file is copied to .alfred-backups/ in the company share
 (last 20 kept). If someone has it open in Excel (~$ lock file), nothing is written.
 """
 from __future__ import annotations
@@ -176,7 +176,7 @@ def _write(person: Person, what: str, plan) -> dict:
                 smb.remove(f"{base}\\{BACKUPS}\\{n}")
             return summary
     summary = _call(go)
-    db.log_activity("system", f"Company to-do: {person.display_name} {what}: {summary}", user_id=person.id)
+    db.log_activity("system", f"company to-do: {person.display_name} {what}: {summary}", user_id=person.id)
     return {"ok": True, "done": summary}
 
 

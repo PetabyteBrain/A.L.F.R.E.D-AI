@@ -192,10 +192,10 @@ def fake_nas() -> None:
     from orchestrator import nas, company_todo
     from tests.fake_nas import FakeSMB, todo_workbook
     base = root / "nas"
-    for share in ("Company", "Alfred_Personal"):
+    for share in ("company", "Alfred_Personal"):
         (base / share).mkdir(parents=True, exist_ok=True)
-    if not (base / "Company" / "To-Do.xlsx").exists():
-        todo_workbook(base / "Company" / "To-Do.xlsx")
+    if not (base / "company" / "To-Do.xlsx").exists():
+        todo_workbook(base / "company" / "To-Do.xlsx")
     fake = FakeSMB(base)
     from orchestrator import nas_files, nas_search
     for mod in (nas, company_todo, nas_files, nas_search):

@@ -75,7 +75,7 @@ def _prune(smb, root: str) -> int:
     now = time.time()
     n = 0
     for e in smb.scandir(root + "\\db"):
-        if e.name.startswith("alfred-") and now - e.stat().st_mtime > KEEP_DB_DAYS * 86400:
+        if e.name.endswith(".db") and now - e.stat().st_mtime > KEEP_DB_DAYS * 86400:
             smb.remove(root + "\\db\\" + e.name)
             n += 1
     for dirpath, _dirs, files in smb.walk(root + "\\storage"):

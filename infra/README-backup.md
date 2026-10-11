@@ -18,7 +18,7 @@ only write into that folder and can never delete or overwrite history elsewhere.
 later) with its own crontab, so a broken or wiped Pi can't take the history down with it:
 
 ```
-15 4 * * * find /ssd/backups/alfred/db -name "alfred-*.db" -mtime +14 -delete
+15 4 * * * find /ssd/backups/alfred/db -name "*.db" -mtime +14 -delete
 20 4 * * * find /ssd/backups/alfred/storage -name "audio.wav" -mtime +97 -delete
 ```
 `config/.env` holds Alfred's secrets (mode 600, readable by `user` only).

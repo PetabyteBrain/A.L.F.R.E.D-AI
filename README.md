@@ -8,9 +8,9 @@ number), **Telegram** (text, voice notes, files and photos) and a **web chat**, 
 **TrueNAS** box, wired into **n8n**, and a **dashboard** with two-factor sign-in. Only people in
 the registry get answers; unknown callers can leave a message, everyone else is ignored silently.
 
-Runs as one Docker container on a small home server (a Raspberry Pi 5 here). The project, service and
-container keep their original `alfred` names (`docker compose exec alfred`);
-only the assistant's persona and branding are "Alfred" (`ASSISTANT_NAME`). The site has four skins, chosen on the
+Runs as one Docker container on a small home server (a Raspberry Pi 5 here). Service and container
+are called `alfred` (`docker compose exec alfred`); the assistant's name comes from `ASSISTANT_NAME`, the
+operator details on the public pages from `OPERATOR_NAME`, `OPERATOR_LOCATION` and `CONTACT_EMAIL`. The site has four skins, chosen on the
 homepage, the sign-in page or the dashboard and applied everywhere (homepage, dashboard, legal pages,
 404 page): **Stark** (holographic HUD), **Batcave** (bat-signal yellow on gunmetal, Gotham skyline), **Matrix**
 (green-screen terminal with digital rain) and **Alfred** (the butler's outfit: black, white and silver).
@@ -25,13 +25,13 @@ homepage, the sign-in page or the dashboard and applied everywhere (homepage, da
 | Chat | Telegram (text + voice notes answered with voice; voice-note replies on request or in "voice mode"; files and photos, which Alfred can read and file on the NAS) and the dashboard Chat tab with live-streamed replies and Alfred's portrait | Telegram, web |
 | Reminders | One-off or recurring (daily/weekdays/weekly/monthly), Telegram with Done/Snooze or a call, optional escalation to a call if ignored; can be tied to a calendar event (follows it, not sent if it's deleted; duplicates flagged) | any channel, Tasks tab |
 | Agenda | Month / week / day calendar (jump to any date) of events, reminders, tasks and calls with categories (meeting, reminder, task, call, work, personal, other), editable from the calendar and the list; create reminders, tasks or calendar-only entries straight from a day or time slot; Alfred sees the same merged view (`agenda` tool), so \"what do I have on Saturday?\" includes reminders and repeats | Tasks tab |
-| Daily briefing | Weather (Open-Meteo), today's calendar, reminders, planned calls, overnight call outcomes, tasks, the top Company to-dos (admins/cofounders; Monday nudge for items stuck in progress); by Telegram or call at a set time | Profile |
+| Daily briefing | Weather (Open-Meteo), today's calendar, reminders, planned calls, overnight call outcomes, tasks, the top company to-dos (admins/cofounders; Monday nudge for items stuck in progress); by Telegram or call at a set time | Profile |
 | Tasks & follow-ups | Tasks with owner, due time and follow-up: Alfred checks in with the owner (Telegram buttons or a call), up to 3 times, and tells the requester | any channel, Tasks tab |
 | Memory | Short per-person notes ("prefers calls after 9") used in that person's conversations only; editable. Plus full-text search over all past conversations ("what did Max say about the invoice?") | any channel, Profile |
-| Notes & files | Alfred tidies your own notes on request, in chat or with "Tidy up" on the Files tab (folder structure or contents: reformat, combine, separate; .md/.txt only; you see the plan and approve it, step by step on the Files tab; nothing lost). Markdown notes and checklists plus a full file explorer on the NAS (create, edit, upload, move, trash, download; tabs, Markdown preview, recent files): own space per person, Company for admins/cofounders, every folder for admins | any channel, Files tab |
+| Notes & files | Alfred tidies your own notes on request, in chat or with "Tidy up" on the Files tab (folder structure or contents: reformat, combine, separate; .md/.txt only; you see the plan and approve it, step by step on the Files tab; nothing lost). Markdown notes and checklists plus a full file explorer on the NAS (create, edit, upload, move, trash, download; tabs, Markdown preview, recent files): own space per person, company for admins/cofounders, every folder for admins | any channel, Files tab |
 | Files & documents | Browse, search (by meaning, English + German) and read Word, Excel, PDF and text files on the NAS and answer from them with the file named; files and photos sent on Telegram are filed where you say (never overwritten) | any channel |
 | Receipts | Send a photo of a receipt: Alfred reads date, shop and amount, files the photo and adds a line to an Excel-ready CSV | Telegram |
-| Company to-do | The company Excel to-do list: show, add, change status/importance, move between sections; only the touched cells change, with a backup before each edit | any channel (admin/cofounder), Notes tab |
+| Company to-do | The company's Excel to-do list: show, add, change status/importance, move between sections; only the touched cells change, with a backup before each edit | any channel (admin/cofounder), Notes tab |
 | Calendar | Per-user Google Calendar: list, create, move, delete events (Limited Use) | any channel, Profile |
 | Meetings | "Find an hour with Max next week": common free times (opt-in free/busy sharing, times only), each person asked by Telegram buttons or call, booked with Google invitations | any channel (admin/cofounder), Tasks |
 | Automations | Full n8n API for the admin, webhook tools, async results via callback | any channel |
@@ -68,7 +68,7 @@ How it fits together (components, data flow, security model, operations): [docs/
 | 3 | Twilio Media Streams + ElevenLabs STT/TTS + stereo recording | live |
 | 4 | Dashboard + additions (people, calls for others, calendar, usage, web chat, reminders, briefing, voice notes, memory, verification, quiet hours, task follow-ups) | live |
 | 5 | Self-hosted speech on the Jetson Orin (Whisper large-v3-turbo + Kokoro `bm_george`) | live; `speech_server/`, ElevenLabs as fallback |
-| 6 | NAS (TrueNAS over SMB): notes, lists, files, Company to-do, receipts, second backup, recordings after 14 days | live |
+| 6 | NAS (TrueNAS over SMB): notes, lists, files, company to-do, receipts, second backup, recordings after 14 days | live |
 
 ## First start on the server
 
@@ -144,7 +144,7 @@ data/inbox/                                                       # Telegram fil
 NAS, share Alfred_Personal:  <person>/Notes/ · <person>/Lists/ · <person>/Receipts/   (one folder per person)
                              .alfred-backups/{db,storage,config}   (nightly copy)
                              .alfred-recordings/{user_id}/...      (recordings older than 14 days)
-NAS, share Company:           company files (read-only for Alfred) · Notes/ · Lists/ · Receipts/
+NAS, company share:          company files (read-only for Alfred) · Notes/ · Lists/ · Receipts/
                              the to-do workbook · .alfred-backups/ (copies before each to-do edit)
 ```
 

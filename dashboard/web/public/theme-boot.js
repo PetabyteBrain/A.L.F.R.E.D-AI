@@ -1,9 +1,9 @@
 /* Applies the saved skin before the page paints (no flash of the default look). Plain script,
    loaded from <head> on every page; the skins are listed in src/themes.js. */
 (function () {
-  var t = "alfred";
+  var t = "stark";
   try { t = localStorage.getItem("alfred-theme") || t; } catch (e) { /* storage blocked */ }
-  if (["alfred", "batcave", "matrix", "alfred"].indexOf(t) < 0) t = "alfred";
+  if (["stark", "batcave", "matrix", "alfred"].indexOf(t) < 0) t = "stark";
   document.documentElement.setAttribute("data-theme", t);
   // Tab icon: a fresh <link> with a versioned URL (browsers ignore a changed href or keep an old copy).
   var icon = document.querySelector('link[rel="icon"]');      // loaded after the <link>, so it exists

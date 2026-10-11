@@ -59,7 +59,7 @@ def snapshot() -> Path:
         tmp.unlink(missing_ok=True)
         raise RuntimeError(f"snapshot failed verification: integrity={ok!r}, users={users}")
     tmp.replace(target)          # same second twice: the newer snapshot wins
-    for old in sorted(_nightly_dir().glob("alfred-*.db"))[:-KEEP_LOCAL]:
+    for old in sorted(_nightly_dir().glob("*.db"), key=lambda p: p.stat().st_mtime)[:-KEEP_LOCAL]:   # by age
         old.unlink()
     return target
 

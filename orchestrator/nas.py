@@ -1,9 +1,9 @@
-"""NAS (TrueNAS SCALE) over SMB: notes, lists, files and the Company to-do workbook.
+"""NAS (TrueNAS SCALE) over SMB: notes, lists, files and the company to-do workbook.
 
 Two shares, two permission scopes (enforced here, before anything touches the NAS):
 - "personal": Alfred_Personal/<person's folder>/ — every registered person gets their own folder
   and only ever sees that one (admins included). Notes/ and Lists/ inside it.
-- "company":   the Company share — admins and cofounders only. Existing company files are
+- "company":   the company share — admins and cofounders only. Existing company files are
   read-only for Alfred; it writes only Markdown notes (Notes/), lists (Lists/) and the to-do workbook.
 
 Writes are limited to .md files under Notes/ and Lists/ (and the to-do cells, see company_todo.py).
@@ -120,7 +120,7 @@ def personal_folder(person: Person) -> str:
 def check_scope(person: Person, scope: str) -> None:
     if scope == "company":
         if person.role not in COMPANY_ROLES:
-            raise NasError("The Company files are only for admins and cofounders.")
+            raise NasError("The company files are only for admins and cofounders.")
     elif scope == "people":                    # every personal folder: admins only (dashboard explorer)
         if not person.is_admin:
             raise NasError("Only admins can open everyone's folders.")
@@ -520,7 +520,7 @@ def health() -> tuple[bool, str]:
     smb = _smb()
     h = settings.nas_host
     ok, parts = True, []
-    for label, share in (("Company", settings.nas_share_company), ("personal", settings.nas_share_personal)):
+    for label, share in (("company", settings.nas_share_company), ("personal", settings.nas_share_personal)):
         try:
             _call(smb.listdir, rf"\\{h}\{share}")
             parts.append(f"{label} ok")

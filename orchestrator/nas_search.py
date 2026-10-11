@@ -1,6 +1,6 @@
 """Search the NAS by meaning (#40 / #16b), without an embedding service:
 
-1. the model turns the question into search terms, in English AND German (the Company files are
+1. the model turns the question into search terms, in English AND German (the company files are
    mostly German), with synonyms and word stems;
 2. every readable file in the scope (text, Markdown, Word, Excel, PDF) is scored by how many of
    those terms it contains (file name counts double), keeping the 20 best with snippets;

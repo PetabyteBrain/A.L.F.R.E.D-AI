@@ -1,4 +1,4 @@
-"""Notes, lists and the Company to-do on the dashboard (#37). Same rules as the chat tools: the
+"""Notes, lists and the company to-do on the dashboard (#37). Same rules as the chat tools: the
 scope checks live in orchestrator/nas.py (personal = own folder, company = admins/cofounders)."""
 from __future__ import annotations
 
@@ -12,6 +12,7 @@ from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 from orchestrator import nas, nas_files, company_todo
+from orchestrator.config import settings
 from orchestrator.identity.registry import Person
 
 from .routes import current_person
@@ -68,7 +69,7 @@ async def status(person: Person = Depends(current_person)) -> dict:
     return {"enabled": nas.enabled(),
             "scopes": ["personal"] + (["company"] if person.role in nas.COMPANY_ROLES else [])
                       + (["people"] if person.is_admin else []),
-            "company_todo": person.role in nas.COMPANY_ROLES}
+            "company_todo": person.role in nas.COMPANY_ROLES, "company_name": settings.company_name}
 
 
 # --- explorer (orchestrator/nas_files.py) --------------------------------------------------------

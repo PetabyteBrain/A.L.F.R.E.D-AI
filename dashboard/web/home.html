@@ -17,7 +17,7 @@
 
   <header class="bar">
     <a class="brand" href="/" aria-label="Alfred home">
-      <svg class="reactor-sm emblem emblem-alfred" viewBox="0 0 100 100" aria-hidden="true">
+      <svg class="reactor-sm emblem emblem-stark" viewBox="0 0 100 100" aria-hidden="true">
         <g class="spin s20"><circle class="ring dash" cx="50" cy="50" r="44"/></g>
         <g class="spin rev s30"><path class="seg" d="M 71.92 51.92 L 83.87 52.96 A 34 34 0 0 1 76.05 71.85 L 66.85 64.14 A 22 22 0 0 0 71.92 51.92 Z"/><path class="seg" d="M 64.14 66.85 L 71.85 76.05 A 34 34 0 0 1 52.96 83.87 L 51.92 71.92 A 22 22 0 0 0 64.14 66.85 Z"/><path class="seg" d="M 48.08 71.92 L 47.04 83.87 A 34 34 0 0 1 28.15 76.05 L 35.86 66.85 A 22 22 0 0 0 48.08 71.92 Z"/><path class="seg" d="M 33.15 64.14 L 23.95 71.85 A 34 34 0 0 1 16.13 52.96 L 28.08 51.92 A 22 22 0 0 0 33.15 64.14 Z"/><path class="seg" d="M 28.08 48.08 L 16.13 47.04 A 34 34 0 0 1 23.95 28.15 L 33.15 35.86 A 22 22 0 0 0 28.08 48.08 Z"/><path class="seg" d="M 35.86 33.15 L 28.15 23.95 A 34 34 0 0 1 47.04 16.13 L 48.08 28.08 A 22 22 0 0 0 35.86 33.15 Z"/><path class="seg" d="M 51.92 28.08 L 52.96 16.13 A 34 34 0 0 1 71.85 23.95 L 64.14 33.15 A 22 22 0 0 0 51.92 28.08 Z"/><path class="seg" d="M 66.85 35.86 L 76.05 28.15 A 34 34 0 0 1 83.87 47.04 L 71.92 48.08 A 22 22 0 0 0 66.85 35.86 Z"/></g>
         <circle class="core" cx="50" cy="50" r="14" fill="#dff7ff"/>
@@ -64,7 +64,7 @@
         <p class="fine">Invitation only. Alfred serves people registered by its operator; there is no public sign-up.</p>
       </div>
       <div class="hero-visual" id="visual">
-      <svg class="reactor-xl emblem emblem-alfred" viewBox="0 0 500 500" aria-hidden="true">
+      <svg class="reactor-xl emblem emblem-stark" viewBox="0 0 500 500" aria-hidden="true">
         <defs>
           <radialGradient id="coreGlow"><stop offset="0" stop-color="#ffffff"/><stop offset=".35" stop-color="#bff2ff"/>
             <stop offset="1" stop-color="#58d6ff" stop-opacity="0"/></radialGradient>
@@ -255,7 +255,7 @@
           channel to another, and download or delete their data from their profile.</p>
         <p class="small">Read the <a href="/privacy-policy">Privacy Policy</a> and the
           <a href="/terms-of-service">Terms of Service</a>. Questions or data requests:
-          <a href="mailto:contact@example.com">contact@example.com</a>.</p>
+          <a href="mailto:{{CONTACT_EMAIL}}">{{CONTACT_EMAIL}}</a>.</p>
       </div>
     </section>
 
@@ -267,7 +267,7 @@
   </main>
 
   <footer class="foot">
-    <span>© 2026 Erika Mustermann · Alfred</span>
+    <span>© 2026 {{OPERATOR_NAME}} · Alfred</span>
     <div class="theme-switch foot-themes" data-theme-switch role="group" aria-label="Look"></div>
     <nav aria-label="Legal">
       <a href="/privacy-policy">Privacy Policy</a>

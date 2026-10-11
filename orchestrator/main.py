@@ -7,13 +7,15 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import hashlib
+import html
+import json
 import logging
 import re
 from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import HTMLResponse, PlainTextResponse, Response
+from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse, Response
 from fastapi.exception_handlers import http_exception_handler
 from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
@@ -112,14 +114,32 @@ def _asset_version(url: str) -> str:
 
 # Browser-tab icons: one version over all of them. The served page carries it in <meta name="icon-version">,
 # and theme-boot.js / themes.setFavicon put it on the skin's icon URL, so a browser never reuses an old icon.
-_ICONS = ("/favicon.svg", "/favicon-alfred.svg", "/favicon-batcave.svg", "/favicon-matrix.svg", "/favicon-alfred.svg")
+_ICONS = ("/favicon.svg", "/favicon-stark.svg", "/favicon-batcave.svg", "/favicon-matrix.svg", "/favicon-alfred.svg")
 
 
 def _icon_version() -> str:
     return hashlib.sha256("".join(_asset_version(u) for u in _ICONS).encode()).hexdigest()[:10]
 
 
-def _versioned(html: str) -> str:
+# Operator details live in .env, not in the repo: the public pages (homepage, legal pages, 404,
+# robots.txt, ai.txt, tdmrep.json) carry {{PLACEHOLDERS}} that are filled in when they're served.
+def _site_values() -> dict[str, str]:
+    from urllib.parse import urlsplit
+    host = urlsplit(settings.public_base_url).netloc if settings.public_base_url else ""
+    return {"ASSISTANT_NAME": settings.assistant_name, "OPERATOR_NAME": settings.operator_name,
+            "OPERATOR_LOCATION": settings.operator_location, "CONTACT_EMAIL": settings.contact_email,
+            "SITE_URL": settings.public_base_url or "", "SITE_HOST": host or "this site",
+            "COMPANY_NAME": settings.company_name}
+
+
+def _fill(text: str, escape=html.escape) -> str:
+    for key, value in _site_values().items():
+        text = text.replace("{{" + key + "}}", escape(value))
+    return text
+
+
+def _versioned(html_text: str) -> str:
+    html = _fill(html_text)
     for url in _FIXED_NAME_ASSETS:
         v = _asset_version(url)
         if v:
@@ -250,6 +270,37 @@ async def privacy_policy() -> Response:
 @app.get("/terms-of-service", include_in_schema=False)
 async def terms_of_service() -> Response:
     return _legal("terms-of-service")
+
+
+@app.get("/legal/{name}.html", include_in_schema=False)
+async def legal_file(name: str) -> Response:
+    """The raw files hold placeholders: always send people to the filled-in pages."""
+    if name not in ("privacy-policy", "terms-of-service"):
+        raise HTTPException(status_code=404)
+    return RedirectResponse(f"/{name}", status_code=308)
+
+
+def _public_text(rel: str, media_type: str, escape) -> Response:
+    path = WEB_DIR / rel
+    if not path.is_file():
+        raise HTTPException(status_code=404)
+    return Response(_fill(path.read_text(encoding="utf-8"), escape), media_type=media_type,
+                    headers={"Cache-Control": "no-cache"})
+
+
+@app.get("/robots.txt", include_in_schema=False)
+async def robots_txt() -> Response:
+    return _public_text("robots.txt", "text/plain; charset=utf-8", str)
+
+
+@app.get("/ai.txt", include_in_schema=False)
+async def ai_txt() -> Response:
+    return _public_text("ai.txt", "text/plain; charset=utf-8", str)
+
+
+@app.get("/.well-known/tdmrep.json", include_in_schema=False)
+async def tdmrep_json() -> Response:
+    return _public_text(".well-known/tdmrep.json", "application/json", lambda v: json.dumps(v)[1:-1])
 
 
 if WEB_DIR.is_dir():

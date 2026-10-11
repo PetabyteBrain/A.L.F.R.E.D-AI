@@ -384,10 +384,10 @@ def test_user_management_permissions():
         assert admin.post(f"/api/people/{jid}/connections", json={"type": "dashboard", "value": "x"}, headers=CSRF).status_code == 422
 
         # --- dashboard login for Max
-        assert admin.put(f"/api/people/{jid}/login", json={"username": "max", "password": "short"}, headers=CSRF).status_code == 400
-        assert admin.put(f"/api/people/{jid}/login", json={"username": "max", "password": "cofounder-pass-1"}, headers=CSRF).status_code == 200
-        assert co.post("/api/login", json={"username": "max", "password": "cofounder-pass-1"}, headers=CSRF).status_code == 200
-        assert co_second_device.post("/api/login", json={"username": "max", "password": "cofounder-pass-1"}, headers=CSRF).status_code == 200
+        assert admin.put(f"/api/people/{jid}/login", json={"username": "maxm", "password": "short"}, headers=CSRF).status_code == 400
+        assert admin.put(f"/api/people/{jid}/login", json={"username": "maxm", "password": "cofounder-pass-1"}, headers=CSRF).status_code == 200
+        assert co.post("/api/login", json={"username": "maxm", "password": "cofounder-pass-1"}, headers=CSRF).status_code == 200
+        assert co_second_device.post("/api/login", json={"username": "maxm", "password": "cofounder-pass-1"}, headers=CSRF).status_code == 200
 
         # --- a cofounder can't touch the registry
         assert co.get("/api/people").status_code == 403
@@ -405,8 +405,8 @@ def test_user_management_permissions():
         prof = co.post("/api/profile/connections", json={"type": "email", "value": "Moritz@Example.com"}, headers=CSRF).json()
         email = next(c for c in prof["connections"] if c["type"] == "email")
         assert email["value"] == "moritz@example.com"
-        prof = co.patch(f"/api/profile/connections/{email['id']}", json={"value": "max@example.com"}, headers=CSRF).json()
-        assert any(c["value"] == "max@example.com" for c in prof["connections"])
+        prof = co.patch(f"/api/profile/connections/{email['id']}", json={"value": "max.mustermann@example.com"}, headers=CSRF).json()
+        assert any(c["value"] == "max.mustermann@example.com" for c in prof["connections"])
         assert co.delete(f"/api/profile/connections/{email['id']}", headers=CSRF).status_code == 200
 
         # --- password change: needs the current one; signs out other devices, keeps this one
@@ -2681,9 +2681,9 @@ def test_unknown_caller_is_screened(monkeypatch):
     assert btn.startswith("scr:block:")
 
     friend = registry.lookup("telegram", "22222222")
-    max = registry.get_person(jid)
+    cofounder = registry.get_person(jid)
     assert "Only admins and cofounders" in screening.block_from_button(int(btn.split(":")[2]), friend)
-    assert "blocked" in screening.block_from_button(int(btn.split(":")[2]), max)
+    assert "blocked" in screening.block_from_button(int(btn.split(":")[2]), cofounder)
     assert screening.accept("+41780000101") is None
     screening.unblock("+41780000101", admin)
     assert screening.accept("+41780000101") is not None
@@ -2882,11 +2882,11 @@ def test_nas_notes_lists_files_and_permissions(monkeypatch, tmp_path):
     from orchestrator.tools import registry as tools
     fake = _FakeSMB(tmp_path)
     monkeypatch.setattr(nas, "settings", dataclasses.replace(settings, nas_host="nas", nas_user="alfred-ai",
-                                                             nas_password="x", nas_share_company="Company",
+                                                             nas_password="x", nas_share_company="company",
                                                              nas_share_personal="Alfred_Personal"))
     monkeypatch.setattr(nas, "_smb", lambda: fake)
-    (tmp_path / "Company" / "Admin").mkdir(parents=True)
-    (tmp_path / "Company" / "Admin" / "offer.md").write_text("# Offer\nWebsite package: CHF 2400, 3 weeks.")
+    (tmp_path / "company" / "Admin").mkdir(parents=True)
+    (tmp_path / "company" / "Admin" / "offer.md").write_text("# Offer\nWebsite package: CHF 2400, 3 weeks.")
     admin = registry.lookup("telegram", "111")
     friend = registry.lookup("telegram", "22222222")
 
@@ -2938,7 +2938,7 @@ def test_nas_notes_lists_files_and_permissions(monkeypatch, tmp_path):
     monkeypatch.setattr(nas, "_smb", lambda: _FakeSMB(tmp_path, denied={"Alfred_Personal"}))
     assert "refused access" in run(admin, "nas_list", {"action": "all", "scope": "personal"})["error"]
     ok, detail = nas.health()
-    assert not ok and "Company ok" in detail and "personal" in detail
+    assert not ok and "company ok" in detail and "personal" in detail
 
 
 def test_company_todo_edits_only_the_cells_it_changes(monkeypatch, tmp_path):
@@ -2948,13 +2948,13 @@ def test_company_todo_edits_only_the_cells_it_changes(monkeypatch, tmp_path):
     from orchestrator.config import settings
     from orchestrator.tools import registry as tools
     fake = _FakeSMB(tmp_path)
-    s2 = dataclasses.replace(settings, nas_host="nas", nas_user="u", nas_password="p", nas_share_company="Company",
+    s2 = dataclasses.replace(settings, nas_host="nas", nas_user="u", nas_password="p", nas_share_company="company",
                              nas_company_todo="Admin/To-Do.xlsx")
     for mod in (nas, company_todo):
         monkeypatch.setattr(mod, "settings", s2)
     monkeypatch.setattr(nas, "_smb", lambda: fake)
     monkeypatch.setattr(company_todo, "_smb", lambda: fake)
-    xlsx = tmp_path / "Company" / "Admin" / "templates" / "To-Do.xlsx"
+    xlsx = tmp_path / "company" / "Admin" / "To-Do.xlsx"
     _todo_workbook(xlsx)
     before = zipfile.ZipFile(io.BytesIO(xlsx.read_bytes()))
     admin = registry.lookup("telegram", "111")
@@ -2987,11 +2987,11 @@ def test_company_todo_edits_only_the_cells_it_changes(monkeypatch, tmp_path):
     for info in before.infolist():                                                   # everything else byte for byte
         if info.filename != sheet:
             assert before.read(info.filename) == after.read(info.filename), info.filename
-    backups = list((tmp_path / "Company" / ".alfred-backups").iterdir())
+    backups = list((tmp_path / "company" / ".alfred-backups").iterdir())
     assert len(backups) == 3
 
     # Open in Excel (~$ lock file) -> nothing is written.
-    (xlsx.parent / "~$-Do_Company_V1.0.xlsx").write_text("lock")
+    (xlsx.parent / "~$-Do.xlsx").write_text("lock")
     assert "open in Excel" in run(admin, {"action": "add", "description": "Test", "importance": 1})["error"]
 
 
@@ -3048,10 +3048,10 @@ def test_telegram_files_to_nas_and_receipts(monkeypatch, tmp_path):
     from orchestrator.tools import registry as tools
     fake = _FakeSMB(tmp_path / "nas")
     monkeypatch.setattr(nas, "settings", dataclasses.replace(settings, nas_host="nas", nas_user="u", nas_password="p",
-                                                             nas_share_company="Company", nas_share_personal="Alfred_Personal"))
+                                                             nas_share_company="company", nas_share_personal="Alfred_Personal"))
     monkeypatch.setattr(nas, "_smb", lambda: fake)
-    (tmp_path / "nas" / "Company" / "Clients" / "Acme").mkdir(parents=True)
-    (tmp_path / "nas" / "Company" / "Clients" / "Acme" / "offer.pdf").write_bytes(b"old offer")
+    (tmp_path / "nas" / "company" / "Clients" / "Acme").mkdir(parents=True)
+    (tmp_path / "nas" / "company" / "Clients" / "Acme" / "offer.pdf").write_bytes(b"old offer")
     admin = registry.lookup("telegram", "111")
     friend = registry.lookup("telegram", "22222222")
     seen = {}
@@ -3077,16 +3077,16 @@ def test_telegram_files_to_nas_and_receipts(monkeypatch, tmp_path):
 
     class Msg:
         chat_id, text, voice, audio, video_note, photo = 111, None, None, None, None, None
-        caption, document = "save to Company Acme", Doc()
+        caption, document = "save to company Acme", Doc()
         async def reply_text(self, t, **kw):
             replies.append(t)
 
     upd = NS(effective_message=Msg(), effective_user=NS(id=111, username="t"), effective_chat=NS(id=111, type="private"))
     asyncio.run(th.on_message(upd, None))
-    assert "upload #" in seen["text"] and "offer.pdf" in seen["text"] and "save to Company Acme" in seen["text"]
+    assert "upload #" in seen["text"] and "offer.pdf" in seen["text"] and "save to company Acme" in seen["text"]
     assert seen["save"]["saved"] == "Clients/Acme/offer (2).pdf"                  # never overwrites
-    assert (tmp_path / "nas" / "Company" / "Clients" / "Acme" / "offer.pdf").read_bytes() == b"old offer"
-    assert (tmp_path / "nas" / "Company" / "Clients" / "Acme" / "offer (2).pdf").read_bytes() == b"%PDF new offer"
+    assert (tmp_path / "nas" / "company" / "Clients" / "Acme" / "offer.pdf").read_bytes() == b"old offer"
+    assert (tmp_path / "nas" / "company" / "Clients" / "Acme" / "offer (2).pdf").read_bytes() == b"%PDF new offer"
     assert not list(uploads._dir().glob("*offer*"))                                # inbox emptied
 
     # Photos go to the model as images; receipts are filed + logged in a CSV.
@@ -3103,7 +3103,7 @@ def test_telegram_files_to_nas_and_receipts(monkeypatch, tmp_path):
     lines = (folder / "receipts-2026.csv").read_text(encoding="utf-8-sig").splitlines()
     assert lines[0].startswith("date;shop;amount") and lines[1].startswith("2026-10-04;Migros;23.50;CHF;food")
     assert lines[2].startswith("2026-10-05;SBB;12.00;CHF") and len(lines) == 3
-    # Someone else's upload can't be used, friends can't file into Company, bad types are refused.
+    # Someone else's upload can't be used, friends can't file into company, bad types are refused.
     up2 = uploads.add(admin, "x.pdf", b"%PDF")
     out, _ = asyncio.run(tools.execute("nas_save_upload", {"upload_id": up2.id, "scope": "personal", "folder": "Docs"},
                                        tools.ToolContext(friend, None, "telegram")))
@@ -3125,13 +3125,13 @@ def test_briefing_includes_company_todo(monkeypatch, tmp_path):
     from orchestrator import briefing, nas, company_todo
     from orchestrator.config import settings
     fake = _FakeSMB(tmp_path)
-    s2 = dataclasses.replace(settings, nas_host="nas", nas_user="u", nas_password="p", nas_share_company="Company",
+    s2 = dataclasses.replace(settings, nas_host="nas", nas_user="u", nas_password="p", nas_share_company="company",
                              nas_company_todo="todo.xlsx")
     for mod in (nas, company_todo):
         monkeypatch.setattr(mod, "settings", s2)
     monkeypatch.setattr(nas, "_smb", lambda: fake)
     monkeypatch.setattr(company_todo, "_smb", lambda: fake)
-    _todo_workbook(tmp_path / "Company" / "todo.xlsx")
+    _todo_workbook(tmp_path / "company" / "todo.xlsx")
     admin = registry.lookup("telegram", "111")
     friend = registry.lookup("telegram", "22222222")
     monday = datetime(2026, 10, 5, 7, 0)
@@ -3189,10 +3189,10 @@ def test_nas_find_by_meaning(monkeypatch, tmp_path):
     from orchestrator.tools import registry as tools
     fake = _FakeSMB(tmp_path)
     monkeypatch.setattr(nas, "settings", dataclasses.replace(settings, nas_host="nas", nas_user="u", nas_password="p",
-                                                             nas_share_company="Company", nas_share_personal="Alfred_Personal"))
+                                                             nas_share_company="company", nas_share_personal="Alfred_Personal"))
     monkeypatch.setattr(nas, "_smb", lambda: fake)
     monkeypatch.setattr(nas_search, "_smb", lambda: fake)
-    d = tmp_path / "Company" / "Admin"
+    d = tmp_path / "company" / "Admin"
     d.mkdir(parents=True)
     (d / "Leistungsangebot.md").write_text("# Leistungsangebot\nWebseite Paket: Preis CHF 2400, Lieferung in 3 Wochen.", encoding="utf-8")
     (d / "Protokoll.md").write_text("Sitzung: Logo besprochen.", encoding="utf-8")
@@ -3216,7 +3216,7 @@ def test_nas_find_by_meaning(monkeypatch, tmp_path):
     friend = registry.lookup("telegram", "22222222")
     try:
         nas_search.find(friend, "company", "website price")
-        raise AssertionError("friend searched Company")
+        raise AssertionError("friend searched company")
     except nas.NasError:
         pass
 
@@ -3355,12 +3355,12 @@ def test_file_explorer(monkeypatch, tmp_path):
     from orchestrator.main import app
     fake = _FakeSMB(tmp_path)
     monkeypatch.setattr(nas, "settings", dataclasses.replace(settings, nas_host="nas", nas_user="u", nas_password="p",
-                                                             nas_share_company="Company", nas_share_personal="Alfred_Personal"))
+                                                             nas_share_company="company", nas_share_personal="Alfred_Personal"))
     monkeypatch.setattr(nas, "_smb", lambda: fake)
     import orchestrator.nas_files as nf
     monkeypatch.setattr(nf, "_smb", lambda: fake)
-    (tmp_path / "Company" / "Clients").mkdir(parents=True)
-    (tmp_path / "Company" / "Clients" / "brief.md").write_text("# Brief\nold", encoding="utf-8")
+    (tmp_path / "company" / "Clients").mkdir(parents=True)
+    (tmp_path / "company" / "Clients" / "brief.md").write_text("# Brief\nold", encoding="utf-8")
     (tmp_path / "Alfred_Personal" / "someone-else").mkdir(parents=True)
     (tmp_path / "Alfred_Personal" / "someone-else" / "diary.md").write_text("private", encoding="utf-8")
 
@@ -3398,7 +3398,7 @@ def test_file_explorer(monkeypatch, tmp_path):
         assert c.delete("/api/nas/path", params={"scope": "personal", "path": "Archive/Projects/plan (2).md"}, headers=CSRF).status_code == 200
         folder = tmp_path / "Alfred_Personal" / nas.personal_folder(registry.lookup("telegram", "111"))
         assert list((folder / ".trash").iterdir()) and not (folder / "Archive" / "Projects" / "plan (2).md").exists()
-        # admins: everyone's folders + Company (editable)
+        # admins: everyone's folders + company (editable)
         people = c.get("/api/nas/browse", params={"scope": "people"}).json()["items"]
         assert "someone-else" in [i["name"] for i in people] and not any(i["name"].startswith(".") for i in people)
         assert c.get("/api/nas/file", params={"scope": "people", "path": "someone-else/diary.md"}).json()["text"] == "private"
@@ -3412,7 +3412,7 @@ def test_file_explorer(monkeypatch, tmp_path):
         rec = c.get("/api/nas/recent").json()
         assert rec["edited"][0]["path"] == "Clients/brief.md" and any(r["path"] == "Archive/Projects/plan.md" for r in rec["edited"])
 
-    # Non-admins: no "people" scope; friends no Company (friend has no dashboard role in tests, so check the rules directly)
+    # Non-admins: no "people" scope; friends no company (friend has no dashboard role in tests, so check the rules directly)
     friend = registry.lookup("telegram", "22222222")
     for scope in ("people", "company"):
         try:
@@ -3654,7 +3654,7 @@ def test_notes_tidy(monkeypatch, tmp_path):
     import orchestrator.nas_files as nf
     fake = _FakeSMB(tmp_path)
     monkeypatch.setattr(nas, "settings", dataclasses.replace(settings, nas_host="nas", nas_user="u", nas_password="p",
-                                                             nas_share_company="Company", nas_share_personal="Alfred_Personal"))
+                                                             nas_share_company="company", nas_share_personal="Alfred_Personal"))
     monkeypatch.setattr(nas, "_smb", lambda: fake)
     monkeypatch.setattr(nf, "_smb", lambda: fake)
     admin = registry.lookup("telegram", "111")
@@ -3771,7 +3771,7 @@ def test_notes_tidy_from_files_tab(monkeypatch, tmp_path):
     import orchestrator.nas_files as nf
     fake = _FakeSMB(tmp_path)
     monkeypatch.setattr(nas, "settings", dataclasses.replace(settings, nas_host="nas", nas_user="u", nas_password="p",
-                                                             nas_share_company="Company", nas_share_personal="Alfred_Personal"))
+                                                             nas_share_company="company", nas_share_personal="Alfred_Personal"))
     monkeypatch.setattr(nas, "_smb", lambda: fake)
     monkeypatch.setattr(nf, "_smb", lambda: fake)
     monkeypatch.setattr(ai_config, "configured", lambda: True)
@@ -3825,7 +3825,7 @@ def test_ai_model_and_key_switch(monkeypatch):
     from orchestrator import ai_config, usage
     from orchestrator.main import app
     monkeypatch.setenv("ANTHROPIC_API_KEY_2", "sk-ant-second-key-9z9z")
-    monkeypatch.setenv("ANTHROPIC_KEY_2_LABEL", "Company")
+    monkeypatch.setenv("ANTHROPIC_KEY_2_LABEL", "company")
     db.execute("DELETE FROM app_settings WHERE key = 'ai'")
     assert ai_config.current() == ai_config.DEFAULTS
     # Haiku: no thinking parameters; the bigger models: effort + room to think, web search variant
@@ -3840,7 +3840,7 @@ def test_ai_model_and_key_switch(monkeypatch):
         c.post("/api/login", json={"username": "admin", "password": "correct horse battery"}, headers=CSRF)
         d = c.get("/api/settings/ai").json()
         keys = {k["id"]: k for k in d["keys"]}
-        assert keys["secondary"]["label"] == "Company" and keys["secondary"]["hint"] == "…9z9z"
+        assert keys["secondary"]["label"] == "company" and keys["secondary"]["hint"] == "…9z9z"
         assert "sk-ant-second-key" not in c.get("/api/settings/ai").text            # never the key itself
         r = c.put("/api/settings/ai", json={"key": "secondary", "model": "claude-sonnet-5-5", "effort": "low"}, headers=CSRF)
         assert r.status_code == 200 and r.json()["current"]["model"] == "claude-sonnet-5-5"
@@ -3929,7 +3929,7 @@ def test_file_preview_endpoints(monkeypatch, tmp_path):
     import orchestrator.nas_files as nf
     fake = _FakeSMB(tmp_path)
     monkeypatch.setattr(nas, "settings", dataclasses.replace(settings, nas_host="nas", nas_user="u", nas_password="p",
-                                                             nas_share_company="Company", nas_share_personal="Alfred_Personal"))
+                                                             nas_share_company="company", nas_share_personal="Alfred_Personal"))
     monkeypatch.setattr(nas, "_smb", lambda: fake)
     monkeypatch.setattr(nf, "_smb", lambda: fake)
     admin = registry.lookup("telegram", "111")
@@ -4053,7 +4053,7 @@ def test_video_ranges_and_office_pdf(monkeypatch, tmp_path):
     from dashboard.api import notes as notes_api
     fake = _FakeSMB(tmp_path)
     monkeypatch.setattr(nas, "settings", dataclasses.replace(settings, nas_host="nas", nas_user="u", nas_password="p",
-                                                             nas_share_company="Company", nas_share_personal="Alfred_Personal"))
+                                                             nas_share_company="company", nas_share_personal="Alfred_Personal"))
     monkeypatch.setattr(nas, "_smb", lambda: fake)
     monkeypatch.setattr(nf, "_smb", lambda: fake)
     admin = registry.lookup("telegram", "111")
@@ -4100,3 +4100,24 @@ def test_video_ranges_and_office_pdf(monkeypatch, tmp_path):
         c.post("/api/login", json={"username": "admin", "password": "correct horse battery"}, headers=CSRF)
         r = c.post("/api/nas/view/prepare", json={"scope": "personal", "path": "Broken.xlsx"}, headers=CSRF)
         assert r.status_code == 400 and "couldn't be shown" in r.json()["detail"]
+
+
+def test_public_pages_filled_from_env(monkeypatch):
+    import dataclasses
+    from fastapi.testclient import TestClient
+    from orchestrator import main
+    from orchestrator.config import settings
+    custom = dataclasses.replace(settings, operator_name="Erika <Mustermann>", operator_location="Testland",
+                                 contact_email="hello@example.org", public_base_url="https://alfred.example.org")
+    monkeypatch.setattr(main, "settings", custom)
+    if not (main.WEB_DIR / "legal" / "privacy-policy.html").is_file():
+        import pytest
+        pytest.skip("dashboard not built")
+    with TestClient(main.app, base_url="http://testserver") as c:
+        page = c.get("/privacy-policy").text
+        assert "Erika &lt;Mustermann&gt;, Testland" in page and "mailto:hello@example.org" in page   # escaped
+        assert "{{" not in page and "{{" not in c.get("/terms-of-service").text and "{{" not in c.get("/").text
+        r = c.get("/legal/privacy-policy.html", follow_redirects=False)
+        assert r.status_code == 308 and r.headers["location"] == "/privacy-policy"
+        assert "alfred.example.org" in c.get("/robots.txt").text and "hello@example.org" in c.get("/ai.txt").text
+        assert c.get("/.well-known/tdmrep.json").json()[0]["tdm-policy"] == "https://alfred.example.org/terms-of-service"

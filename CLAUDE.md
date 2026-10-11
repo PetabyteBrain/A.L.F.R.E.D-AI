@@ -1,8 +1,10 @@
-# Alfred (repo/service name: alfred) — notes for Claude
+# Alfred — notes for Claude
 
-Personal AI butler "Alfred" ("A Loyal Family Retainer, Exceedingly Discreet"; phone + Telegram + dashboard). Renamed from Alfred on 2026-09-28:
-user-facing name comes from `ASSISTANT_NAME`; infra names (folder, container, domain, cookie,
-CSRF value, localStorage keys) intentionally stay `alfred`. Skins: `alfred` (Stark HUD),
+Personal AI butler "Alfred" ("A Loyal Family Retainer, Exceedingly Discreet"; phone + Telegram + dashboard).
+The user-facing name comes from `ASSISTANT_NAME`; service, container, cookie, CSRF value and localStorage
+keys are `alfred`. Operator details (name, location, contact email, site URL) and the company workspace's
+name come from `.env` (`OPERATOR_*`, `CONTACT_EMAIL`, `PUBLIC_BASE_URL`, `COMPANY_NAME`): public pages hold
+`{{PLACEHOLDERS}}` filled in by `main._fill`, so no personal details live in the repo. Skins: `stark` (Stark HUD),
 `batcave`, `matrix` and `alfred`, listed in `dashboard/web/src/themes.js` (+ `public/theme-boot.js`,
 which applies the saved skin on every page); animated backgrounds in `src/backdrops.js` (shared with
 the homepage). Features are in the README, the design in `docs/ARCHITECTURE.md`. Personal planning

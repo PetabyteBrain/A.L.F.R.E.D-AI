@@ -139,7 +139,7 @@ export default function App() {
   const skin = THEMES[theme];
   const assistant = me.assistant_name || "Alfred";
   // Stark: A.L.F.R.E.D.; Alfred skin: the name as written; others in capitals (matrix adds a cursor in CSS)
-  const wordmark = theme === "alfred" ? assistant.toUpperCase().split("").join(".") + "."
+  const wordmark = theme === "stark" ? assistant.toUpperCase().split("").join(".") + "."
     : theme === "alfred" ? assistant : assistant.toUpperCase();
   const index = String(tabs.indexOf(active) + 1).padStart(2, "0");
 

@@ -25,6 +25,12 @@ class Settings:
     claude_max_tokens: int = field(default_factory=lambda: int(_env("CLAUDE_MAX_TOKENS", "2048")))
     history_turns: int = field(default_factory=lambda: int(_env("AGENT_HISTORY_TURNS", "40")))
     assistant_name: str = field(default_factory=lambda: _env("ASSISTANT_NAME", "Alfred"))
+    # Name of the company workspace (shared NAS share + to-do), shown to people and the model.
+    company_name: str = field(default_factory=lambda: _env("COMPANY_NAME", "Company"))
+    # Operator details for the homepage, privacy policy and terms (filled into the public pages).
+    operator_name: str = field(default_factory=lambda: _env("OPERATOR_NAME", "The operator"))
+    operator_location: str = field(default_factory=lambda: _env("OPERATOR_LOCATION", "Switzerland"))
+    contact_email: str = field(default_factory=lambda: _env("CONTACT_EMAIL", "contact@example.com"))
     timezone: str = field(default_factory=lambda: _env("TZ", "Europe/Zurich"))
 
     # --- Telegram ---
@@ -96,7 +102,7 @@ class Settings:
     # Shared secret for /internal/watchdog (the external watchdog on another Pi, infra/watchdog).
     watchdog_token: str = field(default_factory=lambda: _env("WATCHDOG_TOKEN"))
 
-    # --- NAS (TrueNAS, SMB): notes, lists, files, Company to-do (orchestrator/nas.py) ---
+    # --- NAS (TrueNAS, SMB): notes, lists, files, company to-do (orchestrator/nas.py) ---
     nas_host: str = field(default_factory=lambda: _env("NAS_HOST"))
     nas_user: str = field(default_factory=lambda: _env("NAS_USER"))
     nas_password: str = field(default_factory=lambda: _env("NAS_PASSWORD"))

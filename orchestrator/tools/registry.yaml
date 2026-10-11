@@ -666,7 +666,7 @@ tools:
       Checklists on the NAS (Markdown files in Lists/): shopping, packing, ideas, team lists.
       scope personal (own) or company (admins/cofounders). action: all (names of the lists), show,
       add, check, uncheck, remove, clear_done. `items` for add/check/uncheck/remove. A list is
-      created on the first add. For the Company company to-do use company_todo instead.
+      created on the first add. For the company to-do use company_todo instead.
     input_schema:
       type: object
       properties:
@@ -744,7 +744,7 @@ tools:
     roles: [admin, cofounder]
     requires: nas
     description: >-
-      The Company company to-do list (the Excel file on the NAS; German entries are fine, keep the
+      The company to-do list (the Excel file on the NAS; German entries are fine, keep the
       wording the person uses). action: show; add (description, importance 1-5, section current
       or future); update (todo = words from the description, status not started / in progress /
       done (done moves it to FERTIG), and/or importance); move (todo, to current or future).

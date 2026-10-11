@@ -3,10 +3,10 @@ import { api } from "../api.js";
 import { usePoll } from "../hooks.js";
 import { ErrorNote } from "./common.jsx";
 
-/* ---------------------------------------------------------------- Company to-do */
+/* ---------------------------------------------------------------- company to-do (COMPANY_NAME) */
 const SECTION_LABEL = { current: "Aktuelles", future: "Zukunft", done: "Fertig" };
 
-export default function CompanyTodo() {
+export default function CompanyTodo({ name = "Company" }) {
   const { data, error, reload } = usePoll(() => api("/nas/company-todo"), 0);
   const [form, setForm] = useState({ description: "", importance: 3, section: "current" });
   const [busy, setBusy] = useState(false);
@@ -18,7 +18,7 @@ export default function CompanyTodo() {
   }
   return (
     <section className="company-todo">
-      <h3 className="sub">Company to-do</h3>
+      <h3 className="sub">{name} to-do</h3>
       <p className="muted small">The Excel file on the NAS; a backup is kept before every change.</p>
       <ErrorNote error={error || err} />
       {data && ["current", "future", "done"].map((k) => (

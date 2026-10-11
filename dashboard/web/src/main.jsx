@@ -22,7 +22,7 @@ import "./styles.css";
 try {
   document.documentElement.dataset.theme = normalizeTheme(localStorage.getItem("alfred-theme"));
 } catch {
-  document.documentElement.dataset.theme = "alfred";
+  document.documentElement.dataset.theme = "stark";
 }
 
 createRoot(document.getElementById("root")).render(

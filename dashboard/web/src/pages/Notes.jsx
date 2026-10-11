@@ -6,7 +6,7 @@ import { Panel } from "../components/hud.jsx";
 import FileEditor from "../components/FileEditor.jsx";
 import CompanyTodo from "../components/CompanyTodo.jsx";
 
-const SCOPE_LABEL = { personal: "Mine", company: "Company", people: "All people" };
+const SCOPE_LABEL = { personal: "Mine", company: "Company", people: "All people" };   // company: COMPANY_NAME
 const q = (o) => new URLSearchParams(o).toString();
 const join = (dir, name) => (dir ? `${dir}/${name}` : name);
 const fmtSize = (n) => (n == null ? "" : n < 1024 ? `${n} B` : n < 1048576 ? `${(n / 1024).toFixed(0)} KB` : `${(n / 1048576).toFixed(1)} MB`);
@@ -289,6 +289,7 @@ export default function Notes({ assistant }) {
   if (!st) return <Panel code="10" title="Notes & files"><ErrorNote error={error} /></Panel>;
   if (!st.enabled) return <Panel code="10" title="Notes & files"><Empty>The NAS isn't connected.</Empty></Panel>;
   const current = tabs.find((t) => key(t) === active);
+  SCOPE_LABEL.company = st.company_name || "Company";
   return (
     <Panel code="10" title="Notes & files" actions={st.scopes.length > 1 && (
       <div className="seg" role="group" aria-label="Space">
@@ -299,7 +300,7 @@ export default function Notes({ assistant }) {
     )}>
       <p className="muted small">
         {scope === "personal" && `Your own files, notes and lists on the NAS; only you (and admins) can open them. ${assistant} works on the same files when you ask in chat.`}
-        {scope === "company" && "The Company company files, for admins and cofounders. Deleting moves things to the NAS trash."}
+        {scope === "company" && `The ${SCOPE_LABEL.company} files, for admins and cofounders. Deleting moves things to the NAS trash.`}
         {scope === "people" && "Every person's personal folder (admins only). Handle with care: these are private."}
         {scope === "personal" && !tidy && <> <button className="link" onClick={() => setTidy(true)}>Tidy up my notes…</button></>}
       </p>
@@ -342,7 +343,7 @@ export default function Notes({ assistant }) {
           {!current && <Empty>Open a file from the explorer, or create a new note or list.</Empty>}
         </div>
       </div>
-      {scope === "company" && st.company_todo && <CompanyTodo />}
+      {scope === "company" && st.company_todo && <CompanyTodo name={SCOPE_LABEL.company} />}
     </Panel>
   );
 }

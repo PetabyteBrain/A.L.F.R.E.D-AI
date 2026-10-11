@@ -1,4 +1,4 @@
-# alfred.example.com — Alfred, a private assistant.
+# {{SITE_HOST}} — Alfred, a private assistant.
 # The owner does NOT consent to scraping, crawling for datasets, or use of any content on this
 # site for training or improving AI / machine-learning models (text and data mining reservation
 # under Art. 4 EU DSM Directive 2019/790 also applies; see /.well-known/tdmrep.json).

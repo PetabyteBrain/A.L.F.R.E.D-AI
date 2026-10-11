@@ -2,6 +2,6 @@
   {
     "location": "/",
     "tdm-reservation": 1,
-    "tdm-policy": "https://alfred.example.com/terms-of-service"
+    "tdm-policy": "{{SITE_URL}}/terms-of-service"
   }
 ]

@@ -265,7 +265,7 @@ html.js .reveal.in { opacity: 1; transform: none; }
 
 /* ---------- one emblem per skin ---------- */
 .emblem { display: none; }
-:root:not([data-theme]) .emblem-alfred, :root[data-theme="alfred"] .emblem-alfred,
+:root:not([data-theme]) .emblem-stark, :root[data-theme="stark"] .emblem-stark,
 :root[data-theme="batcave"] .emblem-batcave, :root[data-theme="matrix"] .emblem-matrix, :root[data-theme="alfred"] .emblem-alfred { display: block; }
 .hero-visual > .emblem:not(.reactor-xl) { width: min(520px, 100%); height: auto; overflow: visible; }
 .emblem .halo { opacity: .9; }
