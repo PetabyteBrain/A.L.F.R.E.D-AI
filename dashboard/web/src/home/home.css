@@ -155,7 +155,7 @@ h1::after { color: var(--accent); transform: translateX(2px); animation: glitch 
 .r4 { bottom: 10%; right: 4%; animation-delay: 1.9s; } .r4::after { right: 100%; transform: scaleX(-1); }
 
 /* ---------- strip ---------- */
-.strip { display: grid; grid-template-columns: repeat(5, 1fr); border: 1px solid var(--line); background: rgb(var(--a) / .04); margin: 0 0 90px; }
+.strip { display: grid; grid-template-columns: repeat(6, 1fr); border: 1px solid var(--line); background: rgb(var(--a) / .04); margin: 0 0 90px; }
 .strip > div { padding: 18px 20px; display: grid; gap: 4px; }
 .strip > div + div { border-left: 1px solid var(--line); }
 .strip .k { font: 400 11px var(--mono); letter-spacing: .22em; text-transform: uppercase; color: var(--muted); }

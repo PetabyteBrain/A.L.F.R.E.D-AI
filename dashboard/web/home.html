@@ -49,13 +49,16 @@
         <p class="lead">Alfred is a private AI butler you can <strong>phone</strong>, <strong>message</strong>
           (by text or voice), <strong>email</strong> or talk to on a <strong>secure dashboard</strong>. It calls
           people on your behalf, writes and answers email from its own address, reminds you, follows up on tasks
-          until they're done, briefs you every morning, remembers how you like things and, if you link it, manages
-          your Google Calendar. What it may not decide, it passes to a person.</p>
+          until they're done, briefs you every morning, keeps track of your clients, deals, quotes and invoices,
+          remembers how you like things and, if you link it, manages your Google Calendar. What it may not decide,
+          it passes to a person.</p>
         <ul class="boot" aria-label="System status">
           <li><span>voice interface</span><b>ready</b></li>
           <li><span>call &amp; follow-up scheduler</span><b>ready</b></li>
           <li><span>reminders &amp; briefings</span><b>ready</b></li>
           <li><span>mailbox</span><b>open</b></li>
+          <li><span>clients &amp; pipeline</span><b>ready</b></li>
+          <li><span>invoices · QR-bill</span><b>ready</b></li>
           <li><span>quiet hours</span><b>observed</b></li>
         </ul>
         <div class="cta">
@@ -140,16 +143,17 @@
         <rect class="bm-knot" x="93.5" y="92.5" width="13" height="15" rx="3.5"/>
       </svg>
         <div class="readout r1"><span>VOICE</span><b>ONLINE</b></div>
-        <div class="readout r2"><span>CHANNELS</span><b>PHONE · CHAT · WEB</b></div>
+        <div class="readout r2"><span>CHANNELS</span><b>PHONE · CHAT · MAIL · WEB</b></div>
         <div class="readout r3"><span>ACCESS</span><b>INVITE ONLY</b></div>
         <div class="readout r4"><span>QUIET HOURS</span><b>OBSERVED</b></div>
       </div>
     </section>
 
     <section class="strip reveal" aria-label="Highlights">
-      <div><span class="k">Channels</span><span class="v">Phone · Message · Web</span></div>
+      <div><span class="k">Channels</span><span class="v">Phone · Message · Email · Web</span></div>
       <div><span class="k">Voice</span><span class="v">Calls &amp; voice notes</span></div>
       <div><span class="k">Access</span><span class="v">Invitation only</span></div>
+      <div><span class="k">Business</span><span class="v">Clients · deals · invoices</span></div>
       <div><span class="k">Storage</span><span class="v">On our own servers</span></div>
       <div><span class="k">Privacy</span><span class="v">No ads · no tracking</span></div>
     </section>
@@ -226,20 +230,24 @@
         <article class="card reveal">
           <div class="card-top"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2M3 12h18M10.5 12v2h3v-2"/></svg><span class="idx">13</span></div>
           <h3>Knows your clients</h3>
-          <p>“What's open with Acme?” “Invoice Acme 10 hours of web design.” Clients and the people at them, a sales
-            pipeline with a forecast, quotes and invoices with the Swiss QR-bill, and a timeline of every note, call,
-            meeting and email. New leads are suggested from market analyses and inquiries, and anything sent to a
-            client waits for a colleague's approval.</p>
+          <p>“What's open with Acme?” “Acme signed, mark it won.” Clients and the people at them, with a timeline of
+            every note, call, meeting and email, and a sales pipeline you move deals through, with a forecast of what's
+            coming in. New leads are suggested from market analyses and inquiries; nothing is added without you.</p>
         </article>
         <article class="card reveal">
-          <div class="card-top"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><path d="M14 17.5h7M17.5 14v7"/></svg><span class="idx">14</span></div>
+          <div class="card-top"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h9l4 4v14H6z"/><path d="M15 3v4h4M9 12h7M9 16h4"/><rect x="13" y="14" width="4" height="4"/></svg><span class="idx">14</span></div>
+          <h3>Quotes &amp; invoices</h3>
+          <p>“Invoice Acme ten hours of web design.” Alfred drafts it from your products and prices, with VAT and the
+            Swiss QR-bill, in your company's look. A colleague approves before anything goes to a client; then it's
+            numbered, filed and emailed. Payments, reminders and the export for your bookkeeping are a click away.</p>
+        </article>
+        <article class="card reveal">
+          <div class="card-top"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><path d="M14 17.5h7M17.5 14v7"/></svg><span class="idx">15</span></div>
           <h3>Command dashboard</h3>
-          <p>Live calls and chats, a searchable archive, Alfred's mailbox with groups and tags, notes and files, the calendar, tasks, scheduled calls, automations and system health in one place, with roles and groups you shape yourself, protected by two-factor sign-in. Four looks to choose from: Stark, Batcave, Matrix or Alfred.</p>
-        </article>
-        <article class="card reveal">
-          <div class="card-top"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="7" r="3.5"/><path d="M5 21c0-3.9 3.1-6.5 7-6.5s7 2.6 7 6.5"/><path d="M12 16.2l-2.6-1.4v2.8zM12 16.2l2.6-1.4v2.8z"/></svg><span class="idx">15</span></div>
-          <h3>At hand on the dashboard</h3>
-          <p>Alfred himself waits in the corner of every page. Ask him how something works, or simply have him do it; his portrait shows what he's up to, from checking his tablet to a quiet cup of tea.</p>
+          <p>Live calls and chats, the archive, the mailbox, the CRM with its pipeline and invoices, files, the calendar,
+            tasks, automations and system health in one place, with roles you shape yourself and two-factor sign-in.
+            Alfred waits in the corner of every page: ask him how something works, or simply have him do it. Four looks:
+            Stark, Batcave, Matrix or Alfred.</p>
         </article>
       </div>
     </section>
@@ -248,8 +256,8 @@
       <p class="kicker reveal"><span class="blip"></span>Protocol</p>
       <h2 class="reveal">How it works</h2>
       <ol class="steps">
-        <li class="reveal"><span class="num">1</span><h3>You ask</h3><p>Call, send a text, a voice message, a photo or an email, or use the dashboard: “Remind me at five”, “what's my day like?”, “call Max Mustermann and ask if he's coming”, “save this receipt”.</p></li>
-        <li class="reveal"><span class="num">2</span><h3>Alfred acts</h3><p>It understands the request, checks what it's allowed to do for you, and handles it: a call, an email, a reminder, a task with a follow-up, a note, a file, a calendar change, an automation. Anything beyond its authority goes to a person, and you're told so.</p></li>
+        <li class="reveal"><span class="num">1</span><h3>You ask</h3><p>Call, send a text, a voice message, a photo or an email, or use the dashboard: “Remind me at five”, “what's my day like?”, “call Max Mustermann and ask if he's coming”, “save this receipt”, “invoice Acme for the logo”.</p></li>
+        <li class="reveal"><span class="num">2</span><h3>Alfred acts</h3><p>It understands the request, checks what it's allowed to do for you, and handles it: a call, an email, a reminder, a task with a follow-up, a note, a file, a calendar change, a client record, a quote or invoice, an automation. Anything that goes to a client waits for a colleague's approval, and anything beyond its authority goes to a person; you're told either way.</p></li>
         <li class="reveal"><span class="num">3</span><h3>You get the result</h3><p>Answers come back where you asked. Calls made and tasks followed up for you are reported back, at a considerate hour.</p></li>
       </ol>
     </section>
@@ -279,7 +287,8 @@
           own servers, and the dashboard needs two-factor sign-in. Calls are recorded and transcribed so they
           can be reviewed; the audio is deleted after 90 days. Everyone can see and correct their own details,
           set quiet hours when Alfred won't disturb them, choose whether Alfred may carry a conversation over from one
-          channel to another, and download or delete their data from their profile.</p>
+          channel to another, and download or delete their data from their profile. Client records, quotes and
+          invoices are seen only by the team members allowed to, and every change can be traced and undone.</p>
         <p class="small">Read the <a href="/privacy-policy">Privacy Policy</a> and the
           <a href="/terms-of-service">Terms of Service</a>. Questions or data requests:
           <a href="mailto:{{CONTACT_EMAIL}}">{{CONTACT_EMAIL}}</a>.</p>
