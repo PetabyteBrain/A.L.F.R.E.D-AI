@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "../../api.js";
-import { fmtAgo, fmtPhone, fmtTime } from "../../format.js";
+import { fmtAgo, fmtCHF, fmtDate, fmtPhone, fmtTime } from "../../format.js";
 import { usePoll } from "../../hooks.js";
 import { ErrorNote, Tag } from "../common.jsx";
 import { Icon } from "../icons.jsx";
@@ -131,7 +131,7 @@ function History({ entity, id, onUndo }) {
   );
 }
 
-export default function RecordView({ entity, id, status, onBack, onOpen, onEdit, onAddContact, onToast, onChanged }) {
+export default function RecordView({ entity, id, status, onBack, onOpen, onEdit, onAddContact, onAddDeal, onToast, onChanged }) {
   const path = `/crm/${entity === "company" ? "companies" : "contacts"}/${id}`;
   const { data: r, error, reload } = usePoll(() => api(path), 0, [path]);
   const [dialog, setDialog] = useState(null);
@@ -230,6 +230,21 @@ export default function RecordView({ entity, id, status, onBack, onOpen, onEdit,
               ))}
               {canEdit && !r.archived && (
                 <button type="button" className="btn ghost small" onClick={() => onAddContact(r)}><Icon name="plus" className="btn-ico" />Add a person</button>
+              )}
+            </div>
+          )}
+          {entity === "company" && (
+            <div className="crm-people">
+              <h3 className="sub">Deals {r.deals.length > 0 && <span className="mail-count plain">{r.deals.length}</span>}</h3>
+              {r.deals.length === 0 && <p className="muted small">No deals yet.</p>}
+              {r.deals.map((d) => (
+                <button key={d.id} type="button" className={`crm-person crm-deal-mini k-${d.stage_kind}`} onClick={() => onOpen("deal", d.id)}>
+                  <span className="crm-person-main"><b>{d.title}</b>
+                    <span className="meta">{d.stage_name} · {fmtCHF(d.value)}{d.expected_close && d.open ? ` · ${fmtDate(d.expected_close)}` : ""}</span></span>
+                </button>
+              ))}
+              {canEdit && !r.archived && onAddDeal && (
+                <button type="button" className="btn ghost small" onClick={() => onAddDeal(r)}><Icon name="plus" className="btn-ico" />New deal</button>
               )}
             </div>
           )}

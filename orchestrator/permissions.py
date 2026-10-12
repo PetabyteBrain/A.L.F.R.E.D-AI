@@ -55,6 +55,7 @@ _CATALOGUE = [
     ("crm.use", "CRM", "CRM: clients and contacts they own or that belong to their groups", "c"),
     ("crm.view_all", "CRM", "CRM: see every client and contact", "c"),
     ("crm.edit", "CRM", "CRM: add and change clients, contacts and their timeline", "c"),
+    ("crm.settings", "CRM", "CRM: set up the sales pipeline (stages)", "c"),
     ("crm.approve", "CRM", "CRM: approve deletions, merges and anything sent to clients", "c"),
 
     ("automations.view", "Automations", "See n8n workflows and their runs", "c"),

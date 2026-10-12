@@ -15,8 +15,10 @@ const TYPES = {
   document: { label: "Document", icon: "doc" },
   email: { label: "Email", icon: "mail" },
   outside_call: { label: "Alfred's call", icon: "phone" },
+  deal: { label: "Deal", icon: "crm" },
 };
-const FILTERS = [["", "All"], ["note", "Notes"], ["call", "Calls"], ["meeting", "Meetings"], ["email", "Emails"]];
+const PATHS = { company: "companies", contact: "contacts", deal: "deals" };
+const FILTERS = [["", "All"], ["note", "Notes"], ["call", "Calls"], ["meeting", "Meetings"], ["email", "Emails"], ["deal", "Deals"]];
 
 function localInput(d = new Date()) {
   const p = (n) => String(n).padStart(2, "0");
@@ -76,7 +78,8 @@ function Composer({ path, onLogged }) {
 
 export default function Timeline({ entity, id, canEdit, onChanged }) {
   const [filter, setFilter] = useState("");
-  const path = `/crm/${entity === "company" ? "companies" : "contacts"}/${id}`;
+  const path = `/crm/${PATHS[entity]}/${id}`;
+  const filters = FILTERS.filter(([k]) => !(k === "email" && entity === "deal") && !(k === "deal" && entity === "contact"));
   const { data, error, reload } = usePoll(() => api(`${path}/timeline${filter ? `?type=${filter}` : ""}`), 60000, [path, filter]);
   const [open, setOpen] = useState(() => new Set());
   const [err, setErr] = useState("");
@@ -93,7 +96,7 @@ export default function Timeline({ entity, id, canEdit, onChanged }) {
       <h3 className="sub flush">Timeline</h3>
       {canEdit && <Composer path={path} onLogged={(out, what) => { reload(); onChanged?.(out, `${what} added`); }} />}
       <div className="crm-filters" role="tablist" aria-label="Filter the timeline">
-        {FILTERS.map(([k, label]) => (
+        {filters.map(([k, label]) => (
           <button key={k || "all"} type="button" role="tab" aria-selected={filter === k}
                   className={`chip${filter === k ? "" : " off"}`} onClick={() => setFilter(k)}>{label}</button>
         ))}
@@ -122,7 +125,7 @@ export default function Timeline({ entity, id, canEdit, onChanged }) {
                 {long && open.has(key) && <p className="crm-tl-text">{i.body}</p>}
                 <div className="meta">
                   {[i.by && (i.type === "email" ? i.by : `by ${i.by}`), i.contact && `with ${i.contact}`].filter(Boolean).join(" · ")}
-                  {i.mine && canEdit && !["email", "outside_call"].includes(i.type) && <> · <button type="button" className="linkish" onClick={() => remove(i)}>Remove</button></>}
+                  {i.mine && canEdit && !["email", "outside_call", "deal"].includes(i.type) && <> · <button type="button" className="linkish" onClick={() => remove(i)}>Remove</button></>}
                 </div>
               </div>
             </li>

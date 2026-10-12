@@ -868,12 +868,17 @@ async def analyse(person: Person, spec: Spec) -> dict:
         xl = await asyncio.to_thread(nas_files.upload, person, "company", FOLDER, f"{stem}.xlsx", build_excel(spec, run, businesses))
         files.append(xl["saved"])
     fit = sorted((b for b in businesses if b["fit"]), key=_sort_key(spec))
+    try:                                            # the shortlist becomes lead suggestions in the CRM (for review)
+        from . import crm_leads
+        run["crm_suggestions"] = crm_leads.add_market(fit[:spec.shortlist], place["location"], date)
+    except Exception:  # noqa: BLE001 — the report matters more than the suggestions
+        log.warning("Market analysis: CRM suggestions failed", exc_info=True)
     db.log_activity("system", f"Market analysis by {person.display_name}: {len(businesses)} businesses, {len(fit)} fitting "
                               f"({spec.label}, {spec.radius_km:g} km of {place['location']})"[:300], user_id=person.id)
     return {"area": place["location"], "businesses": len(businesses), "fitting": len(fit),
             "no_website": sum(1 for b in businesses if not b["website"]), "new": sum(1 for b in businesses if b.get("new")),
             "top": [f"{b['name']} ({b['town'] or b['category']}): {'; '.join(b['reasons'])}" for b in fit[:5]],
-            "files": files}
+            "files": files, "crm_suggestions": run.get("crm_suggestions", 0)}
 
 
 async def start(person: Person, spec: Spec, confirmed: bool = False) -> dict:

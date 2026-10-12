@@ -264,6 +264,30 @@ def fake_mail() -> None:
                                        ("Bäckerei Sonne", "lead", "Bakery"), ("Druckerei Beispiel AG", "supplier", "Printing"),
                                        ("Studio Partner", "partner", "Agency")):
             crm.save(boss, "company", {"name": name, "status": status, "industry": industry}, force=True)
+    if not db.query_one("SELECT 1 FROM crm_deals LIMIT 1"):              # pipeline demo (#58 stage 2)
+        from datetime import date, timedelta
+        from orchestrator import crm_deals, crm_leads
+        boss = reg.get_person(db.query_one("SELECT user_id FROM user_identifiers WHERE type = 'dashboard' "
+                                           "AND value = 'cofounder'")["user_id"])
+        cos = {r["name"]: r["id"] for r in db.query("SELECT id, name FROM crm_companies")}
+        st = {s["name"]: s["id"] for s in crm_deals.stages()}
+        soon = lambda d: (date.today() + timedelta(days=d)).isoformat()  # noqa: E731
+        for title, co, stage, value, close, nxt in (
+                ("Online shop", "Beispiel Shop GmbH", "Proposal", 15000, soon(20), "Send offer v2"),
+                ("Menu website", "Café Muster", "Negotiation", 4800, soon(9), "Call about the price"),
+                ("Brand refresh", "Atelier Nord", "New", 9000, soon(45), ""),
+                ("Ordering app", "Bäckerei Sonne", "Qualified", 22000, soon(-3), "Book a workshop"),
+                ("Print catalogue", "Druckerei Beispiel AG", "Won", 3500, soon(-10), "")):
+            d = crm_deals.save(boss, {"title": title, "company_id": cos.get(co), "stage_id": st[stage], "value": value,
+                                      "expected_close": close, "next_step": nxt,
+                                      "next_step_at": soon(2) if nxt else None})["record"]
+        crm_leads.add_market([{"osm_id": "node/demo1", "name": "Velo Werkstatt Muster", "category": "Bicycle shop",
+                               "street": "Seestrasse 4", "postcode": "6000", "town": "Luzern", "score": 8,
+                               "reasons": ["no website", "good reviews"]},
+                              {"osm_id": "node/demo2", "name": "Coiffeur Beispiel", "category": "Hairdresser",
+                               "street": "Bahnhofplatz 2", "postcode": "6003", "town": "Luzern", "score": 6,
+                               "website": "http://coiffeur.example", "reasons": ["website not mobile-friendly"]}],
+                             "Luzern, Switzerland", date.today().isoformat())
     if db.query_one("SELECT 1 FROM emails LIMIT 1"):
         return
     admin = db.query_one("SELECT id FROM users WHERE role='admin'")["id"]

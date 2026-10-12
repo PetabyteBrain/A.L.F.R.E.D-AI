@@ -822,7 +822,30 @@ async def close_escalation(ctx, escalation_id: int, note: str = "") -> dict:
 
 # --- CRM (orchestrator/crm.py, roadmap #58) ------------------------------------------------------------
 
+def _crm_entity(kind: str) -> str:
+    k = (kind or "").lower()
+    return "deal" if k.startswith("deal") else "contact" if k.startswith("contact") else "company"
+
+
+def _crm_find(person, entity: str, ref):
+    from .. import crm, crm_deals
+    return crm_deals.find_one(person, ref) if entity == "deal" else crm.find_one(person, entity, ref)
+
+
+def _deal_brief(d: dict) -> dict:
+    keys = ("id", "title", "company_name", "contact_name", "stage_name", "value", "probability_effective", "weighted",
+            "expected_close", "next_step", "next_step_at", "owner_name", "outcome_note", "archived")
+    out = {k: d[k] for k in keys if d.get(k) not in (None, "", False)}
+    if d.get("overdue_close"):
+        out["close_date_passed"] = True
+    if d.get("next_step_due"):
+        out["next_step_due"] = True
+    return out
+
+
 def _crm_brief(entity: str, r: dict) -> dict:
+    if entity == "deal":
+        return _deal_brief(r)
     keys = (("id", "name", "status", "industry", "website", "email", "phone", "address", "tags", "owner_name",
              "contacts", "archived") if entity == "company" else
             ("id", "name", "title", "company_name", "email", "phone", "tags", "owner_name", "archived"))
@@ -846,9 +869,9 @@ async def crm_search(ctx, query: str = "", kind: str = "company", status: str = 
 @handler
 async def crm_get(ctx, kind: str, ref: str) -> dict:
     from .. import crm
-    entity = "contact" if kind.startswith("contact") else "company"
+    entity = _crm_entity(kind)
     try:
-        r = crm.find_one(ctx.person, entity, ref)
+        r = _crm_find(ctx.person, entity, ref)
         tl = crm.timeline(ctx.person, entity, r["id"], limit=12)
     except crm.CrmError as e:
         return {"error": str(e)}
@@ -856,6 +879,7 @@ async def crm_get(ctx, kind: str, ref: str) -> dict:
     out.update({k: r[k] for k in ("notes", "custom", "source") if r.get(k)})
     if entity == "company":
         out["contacts"] = [_crm_brief("contact", c) for c in r["contacts"]]
+        out["deals"] = [_deal_brief(d) for d in r["deals"] if not d["archived"]]
     elif r.get("company"):
         out["company"] = r["company"]
     out["timeline"] = [{k: i[k] for k in ("type", "summary", "body", "at_local", "by", "contact", "direction")
@@ -888,9 +912,9 @@ async def crm_save(ctx, kind: str, fields: dict, ref: str = "", company: str = "
 @handler
 async def crm_log(ctx, kind: str, ref: str, type: str, summary: str, details: str = "", when: str = "") -> dict:
     from .. import crm
-    entity = "contact" if kind.startswith("contact") else "company"
+    entity = _crm_entity(kind)
     try:
-        r = crm.find_one(ctx.person, entity, ref)
+        r = _crm_find(ctx.person, entity, ref)
         crm.log(ctx.person, entity, r["id"], type, summary, details, when or None)
     except crm.CrmError as e:
         return {"error": str(e)}
@@ -900,9 +924,9 @@ async def crm_log(ctx, kind: str, ref: str, type: str, summary: str, details: st
 @handler
 async def crm_archive(ctx, kind: str, ref: str, archived: bool = True) -> dict:
     from .. import crm
-    entity = "contact" if kind.startswith("contact") else "company"
+    entity = _crm_entity(kind)
     try:
-        r = crm.find_one(ctx.person, entity, ref)
+        r = _crm_find(ctx.person, entity, ref)
         res = crm.set_archived(ctx.person, entity, r["id"], bool(archived))
     except crm.CrmError as e:
         return {"error": str(e)}
@@ -921,10 +945,12 @@ async def crm_undo(ctx) -> dict:
 @handler
 async def crm_request(ctx, action: str, kind: str, ref: str, merge_into: str = "", reason: str = "") -> dict:
     from .. import approvals, crm
-    entity = "contact" if kind.startswith("contact") else "company"
+    entity = _crm_entity(kind)
     try:
-        r = crm.find_one(ctx.person, entity, ref)
-        into = crm.find_one(ctx.person, entity, merge_into)["id"] if merge_into else None
+        if entity == "deal" and action == "merge":
+            return {"error": "Deals can't be merged; ask to delete the extra one instead."}
+        r = _crm_find(ctx.person, entity, ref)
+        into = _crm_find(ctx.person, entity, merge_into)["id"] if merge_into else None
         a = crm.request(ctx.person, action, entity, r["id"], merge_into=into, reason=reason)
     except (crm.CrmError, approvals.ApprovalError) as e:
         return {"error": str(e)}
@@ -954,3 +980,80 @@ async def decide_approval(ctx, approval_id: int, approve: bool, note: str = "") 
     except approvals.ApprovalError as e:
         return {"error": str(e)}
     return {"approval_id": a["id"], "status": a["status"], "result": a["result"]}
+
+
+@handler
+async def crm_deals(ctx, query: str = "", status: str = "open", stage: str = "", company: str = "", mine: bool = False,
+                    with_forecast: bool = False) -> dict:
+    from .. import crm, crm_deals as deals
+    try:
+        stage_id = deals.stage_by_name(stage)["id"] if stage else None
+        company_id = crm.find_one(ctx.person, "company", company)["id"] if company else None
+        res = deals.search(ctx.person, q=query, status=status if status in ("open", "won", "lost", "all") else "open",
+                           stage_id=stage_id, company_id=company_id, mine=bool(mine), limit=25)
+        out = {"total": res["total"], "deals": [_deal_brief(d) for d in res["items"]],
+               "stages": [f"{s['name']} ({s['probability']} %)" for s in deals.stages()]}
+        if with_forecast:
+            f = deals.forecast(ctx.person, mine=bool(mine))
+            out["forecast"] = {k: f[k] for k in ("open_count", "open_value", "weighted", "won_month", "won_quarter",
+                                                 "win_rate_90d", "overdue", "no_close_date", "next_steps_due")}
+            out["forecast"]["by_month"] = [{k: m[k] for k in ("month", "count", "value", "weighted")} for m in f["months"]]
+            out["currency"] = "CHF"
+    except crm.CrmError as e:
+        return {"error": str(e)}
+    return out
+
+
+@handler
+async def crm_deal_save(ctx, fields: dict, ref: str = "", company: str = "", contact: str = "", stage: str = "") -> dict:
+    from .. import crm, crm_deals as deals
+    data = {k: v for k, v in (fields or {}).items() if k not in ("owner_id", "group_id", "company_id", "contact_id",
+                                                                   "stage_id")}
+    try:
+        if company:
+            data["company_id"] = crm.find_one(ctx.person, "company", company)["id"]
+        if contact:
+            data["contact_id"] = crm.find_one(ctx.person, "contact", contact)["id"]
+        if stage:
+            data["stage_id"] = deals.stage_by_name(stage)["id"]
+        did = deals.find_one(ctx.person, ref)["id"] if ref else None
+        res = deals.save(ctx.person, data, did)
+    except crm.CrmError as e:
+        return {"error": str(e)}
+    return {"saved": True, "created": did is None, "deal": _deal_brief(res["record"]),
+            "undo": "crm_undo reverts this if the person wants it back."}
+
+
+@handler
+async def crm_leads(ctx, source: str = "") -> dict:
+    from .. import crm, crm_leads as leads
+    try:
+        rows = leads.list_for(ctx.person, source=source if source in ("market", "mail") else "", limit=30)
+    except crm.CrmError as e:
+        return {"error": str(e)}
+    return {"suggestions": [{"id": r["id"], "from": "market analysis" if r["source"] == "market" else "email inquiry",
+                             "name": r["title"], "details": r["subtitle"], "why": r["reason"]} for r in rows],
+            "note": "Suggestions only: add, link or dismiss them only when the person says which."}
+
+
+@handler
+async def crm_lead_decide(ctx, action: str, ids: list[int], link_to: str = "", force: bool = False) -> dict:
+    from .. import crm, crm_leads as leads
+    try:
+        if action == "dismiss":
+            return {"dismissed": leads.dismiss(ctx.person, ids)}
+        if action == "link":
+            if len(ids) != 1 or not link_to:
+                return {"error": "Link one suggestion at a time, to an existing company (link_to)."}
+            return leads.link(ctx.person, int(ids[0]), crm.find_one(ctx.person, "company", link_to)["id"])
+        if action != "add":
+            return {"error": "Action must be add, link or dismiss."}
+        if force and len(ids) == 1:
+            return leads.add(ctx.person, int(ids[0]), force=True)
+        out = leads.add_many(ctx.person, ids)
+        if out["duplicates"]:
+            out["next"] = ("Some look like records that already exist: tell the person which, then link them "
+                           "(action=link, link_to) or add anyway (force=true, one at a time) as they say.")
+        return out
+    except crm.CrmError as e:
+        return {"error": str(e)}

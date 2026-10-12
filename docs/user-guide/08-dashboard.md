@@ -53,8 +53,9 @@ team, and the **Template manager**. See [Email](06-email.md#the-mail-tab).
 
 ## CRM (*team*)
 
-Companies and the people at them, each with a timeline of notes, calls, meetings and emails; duplicate warnings,
-undo, and **Approvals** for deleting and merging. See [CRM: clients and contacts](12-crm.md).
+The sales pipeline (forecast, board with drag and drop, list), companies and the people at them, each with a
+timeline of notes, calls, meetings, emails and deal moves; suggested leads from market analyses and inquiries;
+duplicate warnings, undo, and **Approvals** for deleting and merging. See [CRM](12-crm.md).
 
 ## Log
 

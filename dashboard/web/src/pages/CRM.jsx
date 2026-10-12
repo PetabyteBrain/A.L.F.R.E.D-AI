@@ -6,11 +6,17 @@ import { Empty, ErrorNote, Tag } from "../components/common.jsx";
 import { Panel } from "../components/hud.jsx";
 import { Icon } from "../components/icons.jsx";
 import Approvals from "../components/crm/Approvals.jsx";
+import DealEditor from "../components/crm/DealEditor.jsx";
+import DealView from "../components/crm/DealView.jsx";
+import Leads from "../components/crm/Leads.jsx";
+import Pipeline from "../components/crm/Pipeline.jsx";
+import StagesDialog from "../components/crm/StagesDialog.jsx";
 import RecordEditor, { STATUS_LABEL } from "../components/crm/RecordEditor.jsx";
 import RecordView, { Avatar, STATUS_TONE } from "../components/crm/RecordView.jsx";
 
-/* CRM (roadmap #58, stage 1): companies and the people at them, each with a timeline; deleting and merging
-   go through Approvals. Same layout as Mail: views on the left, a list, and a record opened in place. */
+/* CRM (roadmap #58): the sales pipeline, companies and the people at them (each with a timeline), suggested
+   leads, and Approvals for deleting and merging. Same layout as Mail: views on the left, a list or the board,
+   and a record opened in place. */
 
 const PAGE = 50;
 const VIEWS = [
@@ -37,8 +43,8 @@ function Toast({ toast, onUndo, onClose }) {
 export default function CRM({ assistant }) {
   const active = usePageActive();
   const { data: st, reload: reloadStatus } = usePoll(() => api("/crm/status"), 60000);
-  const [savedView, setSavedView] = useStoredState("alfred-crm-view", "company");
-  const [view, setViewState] = useState(savedView);                      // company | contact | approvals
+  const [savedView, setSavedView] = useStoredState("alfred-crm-view", "pipeline");
+  const [view, setViewState] = useState(savedView);                      // pipeline | company | contact | leads | approvals
   const [statusFilter, setStatusFilter] = useState("");
   const [tag, setTag] = useState("");
   const [mine, setMine] = useState(false);
@@ -49,15 +55,16 @@ export default function CRM({ assistant }) {
   const [offset, setOffset] = useState(0);
   const [open, setOpen] = useState(null);                                // {entity, id}
   const [editor, setEditor] = useState(null);                            // {entity, record?, presetCompany?}
+  const [stagesOpen, setStagesOpen] = useState(false);
   const [toast, setToast] = useState(null);
-  const [viewRev, setViewRev] = useState(0);
-  const [showFilters, setShowFilters] = useState(false);                 // phones: filters folded away                             // reloads the open record after edits/undo
+  const [viewRev, setViewRev] = useState(0);                             // reloads the open record after edits/undo
+  const [showFilters, setShowFilters] = useState(false);                 // phones: filters folded away
   const [err, setErr] = useState("");
   const searchRef = useRef(null);
-  const listing = view !== "approvals";
+  const listing = view === "company" || view === "contact";
   const canEdit = !!st?.can?.edit;
 
-  const setView = (v) => { setViewState(v); if (v !== "approvals") setSavedView(v); setOpen(null); setOffset(0); };
+  const setView = (v) => { setViewState(v); if (v !== "approvals" && v !== "leads") setSavedView(v); setOpen(null); setOffset(0); };
   const url = useMemo(() => {
     if (!listing) return null;
     const p = new URLSearchParams({ offset: String(offset), limit: String(PAGE), sort });
@@ -86,7 +93,7 @@ export default function CRM({ assistant }) {
     const onKey = (e) => {
       if (editor || e.target.closest("input, textarea, select") || e.metaKey || e.ctrlKey || e.altKey) return;
       if (e.key === "/") { e.preventDefault(); searchRef.current?.focus(); }
-      else if (e.key === "n" && canEdit && listing) setEditor({ entity: view });
+      else if (e.key === "n" && canEdit && (listing || view === "pipeline")) setEditor({ entity: listing ? view : "deal" });
       else if (e.key === "Escape" && open) setOpen(null);
     };
     window.addEventListener("keydown", onKey);
@@ -103,7 +110,8 @@ export default function CRM({ assistant }) {
     <Panel code="13" title="CRM" actions={canEdit && (
       <>
         <button className="btn small" onClick={() => setEditor({ entity: "contact" })}><Icon name="user" className="btn-ico" />New person</button>
-        <button className="btn primary small" onClick={() => setEditor({ entity: "company" })}><Icon name="building" className="btn-ico" />New company</button>
+        <button className="btn small" onClick={() => setEditor({ entity: "company" })}><Icon name="building" className="btn-ico" />New company</button>
+        <button className="btn primary small" onClick={() => setEditor({ entity: "deal" })}><Icon name="crm" className="btn-ico" />New deal</button>
       </>
     )}>
       <p className="muted small mail-intro">
@@ -112,12 +120,22 @@ export default function CRM({ assistant }) {
       </p>
       <div className={`mail-layout crm-layout${open ? " has-open" : ""}`}>
         <nav className="mail-side" aria-label="CRM views">
+          <button type="button" className={`mail-side-box${view === "pipeline" ? " active" : ""}`} onClick={() => setView("pipeline")}>
+            <Icon name="crm" className="lab-ico" />Pipeline
+            <span className="mail-count plain">{st?.deals_open ?? ""}</span>
+          </button>
           {VIEWS.map((v) => (
             <button key={v.id} type="button" className={`mail-side-box${view === v.id ? " active" : ""}`} onClick={() => setView(v.id)}>
               <Icon name={v.icon} className="lab-ico" />{v.label}
               <span className="mail-count plain">{counts[v.count] ?? ""}</span>
             </button>
           ))}
+          {canEdit && Object.keys(st?.leads || {}).length > 0 && (
+            <button type="button" className={`mail-side-box${view === "leads" ? " active" : ""}`} onClick={() => setView("leads")}>
+              <Icon name="inbox" className="lab-ico" />Leads
+              {Object.values(st.leads).reduce((a, b) => a + b, 0) > 0 && <b className="mail-count">{Object.values(st.leads).reduce((a, b) => a + b, 0)}</b>}
+            </button>
+          )}
           <button type="button" className={`mail-side-box${view === "approvals" ? " active" : ""}`} onClick={() => setView("approvals")}>
             <Icon name="approve" className="lab-ico" />Approvals
             {st?.approvals_pending > 0 ? <b className="mail-count">{st.approvals_pending}</b>
@@ -166,11 +184,34 @@ export default function CRM({ assistant }) {
         </nav>
 
         <section className="mail-main">
-          {view === "approvals" ? <Approvals onChanged={changed} /> : open ? (
+          {open?.entity === "deal" ? (
+            <DealView key={`deal:${open.id}:${viewRev}`} id={open.id} status={st} onBack={() => setOpen(null)}
+                      onOpen={(entity, id) => setOpen({ entity, id })} onEdit={(deal) => setEditor({ entity: "deal", record: deal })}
+                      onToast={showToast} onChanged={changed} />
+          ) : view === "approvals" && !open ? <Approvals onChanged={changed} />
+            : view === "leads" && !open ? <Leads status={st} onOpen={(entity, id) => setOpen({ entity, id })} onToast={showToast} onChanged={changed} />
+            : view === "pipeline" && !open ? (
+              <>
+                <div className="mail-toolbar">
+                  <div className="mail-filters">
+                    <b className="mail-title">Pipeline</b>
+                    <label className="mail-unread-toggle"><input type="checkbox" checked={mine} onChange={(e) => setMine(e.target.checked)} /> Only mine</label>
+                    <form className="mail-search" onSubmit={(e) => { e.preventDefault(); setQuery(q.trim()); }}>
+                      <input ref={searchRef} value={q} onChange={(e) => setQ(e.target.value)} maxLength={80} aria-label="Search deals"
+                             placeholder="Search deals or companies…" />
+                      {query && <button type="button" className="btn ghost small" onClick={() => { setQ(""); setQuery(""); }}>Clear</button>}
+                    </form>
+                  </div>
+                </div>
+                <Pipeline status={st} mine={mine} q={query} rev={viewRev} onOpen={(id) => setOpen({ entity: "deal", id })}
+                          onToast={showToast} onChanged={changed} onStages={() => setStagesOpen(true)} />
+              </>
+            ) : open ? (
             <RecordView key={`${open.entity}:${open.id}:${viewRev}`} entity={open.entity} id={open.id} status={st}
                         onBack={() => setOpen(null)} onOpen={(entity, id) => setOpen({ entity, id })}
                         onEdit={(record) => setEditor({ entity: open.entity, record })}
                         onAddContact={(company) => setEditor({ entity: "contact", presetCompany: { id: company.id, name: company.name } })}
+                        onAddDeal={(company) => setEditor({ entity: "deal", presetCompany: { id: company.id, name: company.name } })}
                         onToast={showToast} onChanged={changed} />
           ) : (
             <>
@@ -234,7 +275,17 @@ export default function CRM({ assistant }) {
         </section>
       </div>
 
-      {editor && (
+      {editor?.entity === "deal" && (
+        <DealEditor deal={editor.record} presetCompany={editor.presetCompany} status={st} onClose={() => setEditor(null)}
+                    onSaved={(out) => {
+                      const isNew = !editor.record;
+                      setEditor(null); changed(); setViewRev((n) => n + 1);
+                      showToast(isNew ? `Added the deal ${out.record.title}` : `Saved ${out.record.title}`, out.change_id);
+                      if (isNew && !editor.presetCompany) setOpen({ entity: "deal", id: out.record.id });
+                    }} />
+      )}
+      {stagesOpen && <StagesDialog onClose={() => setStagesOpen(false)} onChanged={() => { reloadStatus(); setViewRev((n) => n + 1); }} />}
+      {editor && editor.entity !== "deal" && (
         <RecordEditor entity={editor.entity} record={editor.record} presetCompany={editor.presetCompany} status={st}
                       onClose={() => setEditor(null)}
                       onOpen={(entity, id) => { setEditor(null); setViewState(entity); setOpen({ entity, id }); }}

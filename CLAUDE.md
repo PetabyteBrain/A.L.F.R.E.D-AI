@@ -110,8 +110,15 @@ docs and the real homelab map are git-ignored (`docs/PROJECT_PLAN.md`, `CLAUDE.l
 - Deleting and merging are never direct: `crm.request` -> `orchestrator/approvals.py` (generic: area + kind,
   handlers registered with `@approvals.handler`, decided by holders of `<area>.approve`, self-approval allowed,
   Telegram buttons `apv:yes|no:<id>`). Later stages (quotes, invoices, employee data) add their own kinds.
-- API `dashboard/api/crm.py` (`/api/crm/{companies|contacts}...` and fixed paths under `/api/crm-actions`); UI
-  `pages/CRM.jsx` + `components/crm/*` (same layout classes as Mail). Tools crm_* and list/decide_approval.
+- Pipeline (stage 2): `orchestrator/crm_deals.py` (`crm_stages`: open stages in order with a win probability, plus
+  one Won and one Lost; `crm_deals`: value CHF, probability override, expected_close, next step, outcome note;
+  visibility = `crm._scope(..., "deal")`, also through the company; changes/undo/approvals reuse crm.py with
+  entity "deal"; won/lost sets `closed_at`, `board()` and `forecast()`). Stage moves are shown on timelines from
+  `crm_changes`. Leads: `orchestrator/crm_leads.py` (`crm_suggestions`, from `market_analysis.analyse` shortlists
+  and inquiry senders; add/link/dismiss only by a person). Permission crm.settings for the stages.
+- API `dashboard/api/crm.py` (`/api/crm/{companies|contacts|deals}...` and fixed paths under `/api/crm-actions`:
+  pipeline, stages, leads, approvals, undo); UI `pages/CRM.jsx` + `components/crm/*` (same layout classes as Mail).
+  Tools crm_*, crm_deals, crm_deal_save, crm_leads, crm_lead_decide and list/decide_approval.
 
 ## Calls, calendar, usage
 - Call requests: `orchestrator/scheduler.py` (tools place_call/schedule_call/...; `end_call` is

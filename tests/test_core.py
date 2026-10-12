@@ -5306,7 +5306,7 @@ def test_crm_api_tools_and_buttons(monkeypatch):
     with TestClient(app, base_url="http://testserver") as c:
         c.post("/api/login", json={"username": "admin", "password": "correct horse battery"}, headers=CSRF)
         st = c.get("/api/crm/status").json()
-        assert st["can"] == {"edit": True, "approve": True, "view_all": True} and "client" in st["statuses"]
+        assert st["can"] == {"edit": True, "approve": True, "view_all": True, "settings": True} and "client" in st["statuses"]
         made = c.post("/api/crm/companies", json={"fields": {"name": "Api Shop SA", "status": "lead"}}, headers=CSRF).json()
         cid = made["record"]["id"]
         r = c.post("/api/crm/companies", json={"fields": {"name": "API shop"}}, headers=CSRF)
@@ -5365,3 +5365,185 @@ def test_crm_api_tools_and_buttons(monkeypatch):
     assert notes[0] == "✓ Approved" and approvals.get(aid)["status"] == "approved"
     asyncio.run(telegram_handler.on_button(type("Up", (), {"callback_query": Q()})(), None))
     assert "already" in notes[-1]
+
+
+def test_crm_pipeline_deals_forecast_and_stages():
+    from datetime import date, timedelta
+    from orchestrator import approvals, crm, crm_deals, permissions
+    co = registry.get_person(registry.add_user("Dora Deals", "cofounder"))
+    friend = registry.lookup("telegram", "22222222")
+    boss = permissions.Actor(0, "test", permissions.KEYS, True)
+    if not registry.role_exists("deal-rep"):
+        permissions.create_role(boss, "Deal rep")
+        for p in ("crm.use", "crm.edit"):
+            permissions.set_rule(boss, "deal-rep", p, "allow")
+    rep = registry.get_person(registry.add_user("Remy Rep", "deal-rep"))
+    stages = {s["name"]: s for s in crm_deals.stages()}
+    assert [s["name"] for s in crm_deals.stages()][-2:] == ["Won", "Lost"] and stages["New"]["probability"] == 10
+    acme = crm.save(co, "company", {"name": "Pipeline Acme AG"}, force=True)["record"]
+    close = (date.today() + timedelta(days=20)).isoformat()
+    deal = crm_deals.save(co, {"title": "Web shop", "company_id": acme["id"], "value": "CHF 12’500.50",
+                               "expected_close": close})["record"]
+    assert deal["stage_name"] == "New" and deal["value"] == 12500.5 and deal["weighted"] == 1250.05
+    assert deal["owner_id"] == co.id and crm.get(co, "company", acme["id"])["deals"][0]["id"] == deal["id"]
+    for bad in ({"value": "lots"}, {"probability": 140}, {"expected_close": "next week"}, {"stage_id": 9999}, {"title": ""}):
+        with pytest.raises(crm.CrmError):
+            crm_deals.save(co, bad, deal["id"])
+    # Visibility follows the company: the rep sees nothing until it is filed under his group.
+    with pytest.raises(crm.CrmError):
+        crm_deals.get(rep, deal["id"])
+    gid = permissions.create_group(boss, "Pipeline team test")
+    permissions.set_group_members(boss, gid, [rep.id])
+    crm.save(co, "company", {"group_id": gid}, acme["id"])
+    assert crm_deals.get(rep, deal["id"])["title"] == "Web shop"
+    with pytest.raises(crm.CrmError):
+        crm_deals.search(friend)
+    # Moving: probability follows the stage unless overridden; won/lost closes the deal; undo reopens it.
+    moved = crm_deals.move(rep, deal["id"], stages["Proposal"]["id"])["record"]
+    assert moved["probability_effective"] == 50 and moved["closed_at"] is None
+    crm_deals.save(rep, {"probability": 80}, deal["id"])
+    assert crm_deals.get(co, deal["id"])["weighted"] == 10000.4
+    won = crm_deals.move(co, deal["id"], stages["Won"]["id"], "fast offer")["record"]
+    assert won["closed_at"] and won["outcome_note"] == "fast offer" and not won["open"]
+    f = crm_deals.forecast(co)
+    assert f["won_month"] >= 12500.5 and f["win_rate_90d"] is not None
+    tl = [i["summary"] for i in crm.timeline(co, "company", acme["id"]) if i["type"] == "deal"]
+    assert any("Proposal → Won" in t for t in tl) and any(t.startswith("New deal: Web shop") for t in tl)
+    crm.undo(co)
+    back = crm_deals.get(co, deal["id"])
+    assert back["stage_name"] == "Proposal" and back["closed_at"] is None
+    crm.log(co, "deal", deal["id"], "call", "Talked about the budget")
+    assert any(i["summary"] == "Talked about the budget" for i in crm.timeline(co, "company", acme["id"]))
+    assert any(i["summary"] == "Talked about the budget" for i in crm.timeline(co, "deal", deal["id"]))
+    b = crm_deals.board(co)
+    col = next(c for c in b["stages"] if c["name"] == "Proposal")
+    assert any(d["id"] == deal["id"] for d in col["items"]) and col["total"] >= 12500.5
+    late = crm_deals.save(co, {"title": "Late one", "company_id": acme["id"], "value": 100,
+                               "expected_close": (date.today() - timedelta(days=3)).isoformat()})["record"]
+    assert late["overdue_close"] and crm_deals.forecast(co)["overdue"]["count"] >= 1
+    # Deleting a deal waits for approval.
+    req = crm.request(co, "delete", "deal", late["id"])
+    assert approvals.decide(req["id"], co, True)["status"] == "approved"
+    with pytest.raises(crm.CrmError):
+        crm_deals.get(co, late["id"])
+
+    # Stages: only with crm.settings; stages with deals can't be removed; Won/Lost are fixed.
+    with pytest.raises(crm.CrmError):
+        crm_deals.save_stage(rep, name="Demo")
+    demo = crm_deals.save_stage(co, name="Demo booked", probability=40)
+    order = [s["name"] for s in crm_deals.move_stage(co, demo["id"], -1)]
+    assert order.index("Demo booked") < order.index("Negotiation")
+    with pytest.raises(crm.CrmError):
+        crm_deals.archive_stage(co, stages["Proposal"]["id"])             # the Web shop deal is there
+    with pytest.raises(crm.CrmError):
+        crm_deals.save_stage(co, probability=50, stage_id=stages["Won"]["id"])
+    assert not any(s["name"] == "Demo booked" for s in crm_deals.archive_stage(co, demo["id"]))
+
+
+def test_crm_lead_suggestions_from_market_and_mail():
+    from orchestrator import crm, crm_leads, mail
+    co = registry.get_person(registry.add_user("Lena Leads", "cofounder"))
+    friend = registry.lookup("telegram", "22222222")
+    n = crm_leads.add_market([
+        {"osm_id": "node/77001", "name": "Velo Test Werkstatt", "category": "Bicycle shop", "street": "Seestrasse 4",
+         "postcode": "6000", "town": "Luzern", "score": 8, "reasons": ["no website"]},
+        {"osm_id": "node/77002", "name": "Coiffeur Test", "category": "Hairdresser", "score": 6,
+         "website": "https://coiffeur-test.example", "reasons": ["slow website"]}], "Luzern, Switzerland", "2026-10-13")
+    assert n == 2 and crm_leads.add_market([{"osm_id": "node/77001", "name": "Velo Test Werkstatt"}], "Luzern", "x") == 0
+    mail.record(direction="in", kind="inquiry", status="done", scope="company", from_addr="hans@meier-design.example",
+                from_name="Hans Meier", to=["alfred@example.test"], subject="Logo", body_text="Hi")
+    mail.record(direction="in", kind="inquiry", status="done", scope="company", from_addr="hans@meier-design.example",
+                from_name="Hans Meier", to=["alfred@example.test"], subject="Logo again", body_text="Hi")
+    mail.record(direction="in", kind="inquiry", status="done", scope="company", from_addr="pia@gmail.com",
+                from_name="Pia Test", to=["alfred@example.test"], subject="Question", body_text="Hi")
+    rows = {r["title"]: r for r in crm_leads.list_for(co)}
+    assert {"Velo Test Werkstatt", "Coiffeur Test", "Hans Meier", "Pia Test"} <= set(rows)
+    assert sum(1 for r in crm_leads.list_for(co) if r["data"].get("email") == "hans@meier-design.example") == 1
+    assert rows["Hans Meier"]["data"]["company"] == "Meier Design" and "company" not in rows["Pia Test"]["data"]
+    assert "Seestrasse 4, 6000 Luzern" in rows["Velo Test Werkstatt"]["subtitle"]
+    with pytest.raises(crm.CrmError):
+        crm_leads.list_for(friend)
+
+    out = crm_leads.add_many(co, [rows["Velo Test Werkstatt"]["id"], rows["Hans Meier"]["id"]])
+    assert set(out["added"]) == {"Velo Test Werkstatt", "Hans Meier"} and not out["duplicates"]
+    velo = crm.search(co, "company", q="Velo Test Werkstatt")["items"][0]
+    assert velo["status"] == "lead" and velo["source"].startswith("market analysis") and "Seestrasse" in velo["address"]
+    hans = crm.search(co, "contact", q="hans@meier-design.example")["items"][0]
+    assert hans["company_name"] == "Meier Design"
+    assert not any(r["title"] == "Hans Meier" for r in crm_leads.list_for(co))   # he's in the CRM now
+    # A duplicate comes back for a decision; linking fills the existing company's empty details.
+    existing = crm.save(co, "company", {"name": "Coiffeur Test GmbH"}, force=True)["record"]
+    res = crm_leads.add_many(co, [rows["Coiffeur Test"]["id"]])
+    assert res["duplicates"][0]["matches"][0]["id"] == existing["id"]
+    crm_leads.link(co, rows["Coiffeur Test"]["id"], existing["id"])
+    assert crm.get(co, "company", existing["id"])["website"] == "https://coiffeur-test.example"
+    assert crm_leads.dismiss(co, [rows["Pia Test"]["id"]]) == 1
+    assert not crm_leads.list_for(co) or all(r["title"] != "Pia Test" for r in crm_leads.list_for(co))
+    with pytest.raises(crm.CrmError):
+        crm_leads.add(co, rows["Pia Test"]["id"])                             # already dismissed
+
+
+def test_crm_stage2_api_and_tools(monkeypatch):
+    import asyncio
+    from fastapi.testclient import TestClient
+    from orchestrator.main import app
+    from orchestrator.tools import registry as tools
+    admin = registry.lookup("telegram", "111")
+    with TestClient(app, base_url="http://testserver") as c:
+        c.post("/api/login", json={"username": "admin", "password": "correct horse battery"}, headers=CSRF)
+        st = c.get("/api/crm/status").json()
+        assert st["can"]["settings"] and st["stages"][0]["name"] == "New" and "deals_open" in st
+        co = c.post("/api/crm/companies", json={"fields": {"name": "Api Pipeline AG"}, "force": True}, headers=CSRF).json()
+        d = c.post("/api/crm/deals", json={"fields": {"title": "Api deal", "company_id": co["record"]["id"],
+                                                       "value": 5000}}, headers=CSRF).json()["record"]
+        won = next(s for s in st["stages"] if s["kind"] == "won")
+        moved = c.post(f"/api/crm-actions/deals/{d['id']}/move", json={"stage_id": won["id"], "note": "signed"},
+                       headers=CSRF).json()["record"]
+        assert moved["stage_kind"] == "won"
+        p = c.get("/api/crm-actions/pipeline").json()
+        assert any(x["id"] == d["id"] for s in p["stages"] for x in s["items"]) and p["forecast"]["won_month"] >= 5000
+        assert c.get("/api/crm/deals?status=won").json()["total"] >= 1
+        assert c.patch(f"/api/crm/deals/{d['id']}", json={"fields": {"value": "x"}}, headers=CSRF).status_code == 400
+        assert c.get(f"/api/crm/deals/{d['id']}/timeline").json()[0]["type"] == "deal"
+        stages = c.post("/api/crm-actions/stages", json={"name": "Api stage", "probability": 30}, headers=CSRF).json()
+        sid = next(s["id"] for s in stages if s["name"] == "Api stage")
+        c.post(f"/api/crm-actions/stages/{sid}/archive", json={"archived": True}, headers=CSRF)
+        assert c.get("/api/crm-actions/leads").status_code == 200
+        c.post("/api/logout", headers=CSRF)
+    ctx = tools.ToolContext(admin, None, "telegram")
+    out, err = asyncio.run(tools.execute("crm_deal_save", {"fields": {"title": "Tool deal", "value": 900},
+                                                            "company": "Api Pipeline", "stage": "proposal"}, ctx))
+    assert not err and '"stage_name": "Proposal"' in out
+    out, _ = asyncio.run(tools.execute("crm_deal_save", {"ref": "Tool deal", "stage": "Lost",
+                                                         "fields": {"outcome_note": "price"}}, ctx))
+    assert '"stage_name": "Lost"' in out
+    out, _ = asyncio.run(tools.execute("crm_deals", {"status": "all", "with_forecast": True}, ctx))
+    assert "Tool deal" in out and '"forecast"' in out
+    out, _ = asyncio.run(tools.execute("crm_get", {"kind": "deal", "ref": "Tool deal"}, ctx))
+    assert '"outcome_note": "price"' in out
+    out, _ = asyncio.run(tools.execute("crm_request", {"action": "merge", "kind": "deal", "ref": "Tool deal",
+                                                       "merge_into": "Api deal"}, ctx))
+    assert "can't be merged" in out
+
+
+def test_crm_changes_migrates_to_allow_deals(monkeypatch, tmp_path):
+    import dataclasses, sqlite3
+    from orchestrator import db as dbmod
+    old = tmp_path / "stage1.db"
+    c = sqlite3.connect(old)
+    c.executescript("""
+        CREATE TABLE crm_changes (id INTEGER PRIMARY KEY AUTOINCREMENT,
+            entity TEXT NOT NULL CHECK (entity IN ('company','contact','activity')), entity_id INTEGER NOT NULL,
+            action TEXT NOT NULL CHECK (action IN ('create','update','archive','restore','delete')),
+            before TEXT, after TEXT, user_id INTEGER, ts TEXT NOT NULL, undone_at TEXT);
+        INSERT INTO crm_changes(entity, entity_id, action, ts) VALUES ('company', 1, 'create', 'x');
+    """)
+    c.commit(); c.close()
+    monkeypatch.setattr(dbmod, "settings", dataclasses.replace(dbmod.settings, db_path=old))
+    dbmod.init_db()
+    c = sqlite3.connect(old)
+    c.execute("INSERT INTO crm_changes(entity, entity_id, action, ts) VALUES ('deal', 1, 'create', 'y')")
+    assert c.execute("SELECT COUNT(*) FROM crm_changes").fetchone()[0] == 2
+    assert c.execute("SELECT name FROM crm_stages ORDER BY position").fetchone()[0] == "New"
+    c.close()
+    dbmod.init_db()  # idempotent

@@ -34,3 +34,15 @@ export function fmtPhone(p) {
   if (m) return `+41 ${m[1]} ${m[2]} ${m[3]} ${m[4]}`;
   return `${p.slice(0, 3)} ${p.slice(3).replace(/(\d{3})(?=\d)/g, "$1 ")}`;
 }
+
+// 12500 -> "CHF 12’500" (Swiss grouping, no decimals unless there are cents).
+export function fmtCHF(v, { compact = false } = {}) {
+  const n = Number(v || 0);
+  if (compact && Math.abs(n) >= 10000) {
+    return `CHF ${new Intl.NumberFormat("de-CH", { maximumFractionDigits: 1 }).format(n / 1000)}k`;
+  }
+  return `CHF ${new Intl.NumberFormat("de-CH", { minimumFractionDigits: n % 1 ? 2 : 0, maximumFractionDigits: 2 }).format(n)}`;
+}
+
+// "2026-11-15" -> "15 Nov 2026"
+export const fmtDate = (d) => (d ? new Date(`${d}T12:00:00`).toLocaleDateString([], { day: "numeric", month: "short", year: "numeric" }) : "");

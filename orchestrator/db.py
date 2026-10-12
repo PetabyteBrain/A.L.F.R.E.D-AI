@@ -487,7 +487,7 @@ CREATE INDEX IF NOT EXISTS idx_crm_act_contact ON crm_activities(contact_id, occ
 -- Every direct change, so it can be shown and undone.
 CREATE TABLE IF NOT EXISTS crm_changes (
     id        INTEGER PRIMARY KEY AUTOINCREMENT,
-    entity    TEXT NOT NULL CHECK (entity IN ('company','contact','activity')),
+    entity    TEXT NOT NULL CHECK (entity IN ('company','contact','activity','deal')),
     entity_id INTEGER NOT NULL,
     action    TEXT NOT NULL CHECK (action IN ('create','update','archive','restore','delete')),
     before    TEXT,
@@ -497,6 +497,54 @@ CREATE TABLE IF NOT EXISTS crm_changes (
     undone_at TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_crm_changes ON crm_changes(entity, entity_id);
+
+-- Sales pipeline (orchestrator/crm_deals.py, #58 stage 2): editable stages, deals on them.
+CREATE TABLE IF NOT EXISTS crm_stages (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    name        TEXT NOT NULL,
+    position    INTEGER NOT NULL DEFAULT 0,
+    probability INTEGER NOT NULL DEFAULT 0,          -- % used for the weighted forecast
+    kind        TEXT NOT NULL DEFAULT 'open' CHECK (kind IN ('open','won','lost')),
+    archived_at TEXT
+);
+CREATE TABLE IF NOT EXISTS crm_deals (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    title          TEXT NOT NULL,
+    company_id     INTEGER REFERENCES crm_companies(id) ON DELETE SET NULL,
+    contact_id     INTEGER REFERENCES crm_contacts(id) ON DELETE SET NULL,
+    stage_id       INTEGER NOT NULL REFERENCES crm_stages(id),
+    value          REAL NOT NULL DEFAULT 0,           -- CHF
+    probability    INTEGER,                           -- % override; NULL = the stage's
+    expected_close TEXT,                              -- YYYY-MM-DD
+    source         TEXT NOT NULL DEFAULT '',
+    next_step      TEXT NOT NULL DEFAULT '',
+    next_step_at   TEXT,                              -- YYYY-MM-DD
+    outcome_note   TEXT NOT NULL DEFAULT '',          -- why it was won or lost
+    notes          TEXT NOT NULL DEFAULT '',
+    owner_id       INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    group_id       INTEGER REFERENCES people_groups(id) ON DELETE SET NULL,
+    created_by     INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    created_at     TEXT NOT NULL,
+    updated_at     TEXT NOT NULL,
+    closed_at      TEXT,
+    archived_at    TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_crm_deals_company ON crm_deals(company_id);
+CREATE INDEX IF NOT EXISTS idx_crm_deals_stage ON crm_deals(stage_id);
+-- Possible new leads and contacts for review (orchestrator/crm_leads.py): from market analyses and inquiries.
+CREATE TABLE IF NOT EXISTS crm_suggestions (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    source      TEXT NOT NULL CHECK (source IN ('market','mail')),
+    source_ref  TEXT NOT NULL,                        -- market: OpenStreetMap id; mail: email id
+    data        TEXT NOT NULL DEFAULT '{}',           -- proposed company / contact fields
+    reason      TEXT NOT NULL DEFAULT '',
+    status      TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','added','linked','dismissed')),
+    company_id  INTEGER REFERENCES crm_companies(id) ON DELETE SET NULL,
+    created_at  TEXT NOT NULL,
+    decided_by  INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    decided_at  TEXT,
+    UNIQUE (source, source_ref)
+);
 
 -- Drafts that need someone with the area's approve permission (orchestrator/approvals.py).
 CREATE TABLE IF NOT EXISTS approvals (
@@ -703,6 +751,31 @@ def _migrate_sessions_channel_check() -> None:
         conn.close()
 
 
+def _migrate_crm_changes_check() -> None:
+    """CRM stage 1 databases don't allow deal changes in crm_changes: rebuild it with the wider CHECK."""
+    import re
+    conn = sqlite3.connect(settings.db_path, timeout=10)
+    try:
+        row = conn.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='crm_changes'").fetchone()
+        if not row or "'deal'" in row[0]:
+            return
+        conn.execute("PRAGMA foreign_keys = OFF")
+        conn.execute("BEGIN")
+        conn.execute(re.sub(r"CHECK \(entity IN \([^)]*\)\)", "CHECK (entity IN ('company','contact','activity','deal'))",
+                            re.sub(r'CREATE TABLE\s+["`]?crm_changes["`]?', "CREATE TABLE crm_changes_new", row[0], count=1)))
+        conn.execute("INSERT INTO crm_changes_new SELECT * FROM crm_changes")
+        conn.execute("DROP TABLE crm_changes")
+        conn.execute("ALTER TABLE crm_changes_new RENAME TO crm_changes")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_crm_changes ON crm_changes(entity, entity_id)")
+        conn.execute("COMMIT")
+    except Exception:
+        conn.execute("ROLLBACK") if conn.in_transaction else None
+        raise
+    finally:
+        conn.execute("PRAGMA foreign_keys = ON")
+        conn.close()
+
+
 def _migrate_identifier_verified_at() -> None:
     """Connections that existed before verification was introduced were already in use: keep
     them working by marking them verified."""
@@ -754,6 +827,7 @@ ADDED_COLUMNS = [
     ("roles", "label", "TEXT"),                                   # display name (renaming keeps the key)
     ("roles", "parent", "TEXT"),                                  # inherits that role's permissions
     ("roles", "archived", "INTEGER NOT NULL DEFAULT 0"),
+    ("crm_activities", "deal_id", "INTEGER REFERENCES crm_deals(id) ON DELETE CASCADE"),   # timeline of a deal
 ]
 
 
@@ -772,6 +846,7 @@ def _add_missing_columns() -> None:
 def init_db() -> None:
     settings.db_path.parent.mkdir(parents=True, exist_ok=True)
     _migrate_sessions_channel_check()
+    _migrate_crm_changes_check()
     _migrate_identifier_verified_at()
     with tx() as conn:
         conn.execute("PRAGMA journal_mode = WAL")
@@ -782,9 +857,10 @@ def init_db() -> None:
             DEFAULT_ROLES,
         )
     _add_missing_columns()
-    from . import permissions
+    from . import crm_deals, permissions
     with tx() as conn:
         permissions.migrate(conn)
+        crm_deals.seed(conn)
     _build_search_index()
 
 

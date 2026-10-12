@@ -31,7 +31,10 @@ COMPANY_FIELDS = ("name", "status", "industry", "website", "email", "phone", "ad
                   "source", "owner_id", "group_id")
 CONTACT_FIELDS = ("first_name", "last_name", "company_id", "title", "email", "phone", "notes", "tags", "custom",
                   "source", "owner_id", "group_id")
-TABLE = {"company": "crm_companies", "contact": "crm_contacts"}
+DEAL_FIELDS = ("title", "company_id", "contact_id", "stage_id", "value", "probability", "expected_close", "source",
+               "next_step", "next_step_at", "outcome_note", "notes", "owner_id", "group_id")
+TABLE = {"company": "crm_companies", "contact": "crm_contacts", "deal": "crm_deals"}
+FIELDS = {"company": COMPANY_FIELDS, "contact": CONTACT_FIELDS, "deal": DEAL_FIELDS}
 MAX_TAGS, MAX_CUSTOM = 20, 30
 _LEGAL = re.compile(r"\b(ag|gmbh|sa|sàrl|sarl|ltd|limited|inc|llc|kg|co|plc|bv|srl|spa|sagl|ug|oy|ab|as|corp|"
                     r"corporation|company|& co|und co)\b\.?", re.I)
@@ -70,7 +73,7 @@ def _scope(person: Person, alias: str, entity: str) -> tuple[str, list]:
     own = f"({{a}}.owner_id = ? OR {{a}}.created_by = ?{in_groups})"
     cond = own.format(a=alias)
     params: list = [person.id, person.id, *gids]
-    if entity == "contact":
+    if entity in ("contact", "deal"):             # also visible through their company
         cond = (f"({cond} OR {alias}.company_id IN (SELECT co.id FROM crm_companies co WHERE "
                 f"{own.format(a='co')}))")
         params += [person.id, person.id, *gids]
@@ -288,7 +291,9 @@ def search(person: Person, entity: str, *, q: str = "", status: str = "", tag: s
 def get(person: Person, entity: str, record_id: int) -> dict:
     row = _view(entity, _get_visible(person, entity, record_id))
     if entity == "company":
+        from . import crm_deals
         row["contacts"] = search(person, "contact", company_id=record_id, limit=200)["items"]
+        row["deals"] = crm_deals.search(person, company_id=record_id, status="all", limit=100)["items"]
     elif row.get("company_id"):
         try:
             co = _get_visible(person, "company", row["company_id"])
@@ -315,7 +320,7 @@ def find_one(person: Person, entity: str, ref) -> dict:
 
 def tags_in_use(person: Person) -> list[str]:
     out: set[str] = set()
-    for entity in TABLE:
+    for entity in ("company", "contact"):
         where, params = _scope(person, "x", entity)
         for r in db.query(f"SELECT x.tags FROM {TABLE[entity]} x WHERE x.archived_at IS NULL{where}", params):
             out.update(json.loads(r["tags"] or "[]"))
@@ -324,7 +329,7 @@ def tags_in_use(person: Person) -> list[str]:
 
 def counts(person: Person) -> dict:
     out = {}
-    for entity in TABLE:
+    for entity in ("company", "contact"):
         where, params = _scope(person, "x", entity)
         out[entity] = db.query_one(f"SELECT COUNT(*) AS n FROM {TABLE[entity]} x WHERE x.archived_at IS NULL{where}",
                                    params)["n"]
@@ -384,6 +389,8 @@ def _record(entity: str, entity_id: int, action: str, before: dict | None, after
 
 
 def _label(entity: str, row: dict) -> str:
+    if entity == "deal":
+        return f"deal “{row['title']}”"
     return row["name"] if entity == "company" else contact_label(row)
 
 
@@ -494,9 +501,13 @@ def undo(person: Person, change_id: int | None = None) -> dict:
             db.execute(f"UPDATE {TABLE[entity]} SET archived_at = ?, updated_at = ? WHERE id = ?", (now, now, eid))
             what = f"archived {_label(entity, row)} again (new records are archived, not deleted)"
         elif action == "update":
-            keep = {k: v for k, v in (before or {}).items() if k in (COMPANY_FIELDS if entity == "company" else CONTACT_FIELDS)}
+            keep = {k: v for k, v in (before or {}).items() if k in FIELDS[entity]}
             db.execute(f"UPDATE {TABLE[entity]} SET {', '.join(f'{k} = ?' for k in keep)}, updated_at = ? WHERE id = ?",
                        (*keep.values(), now, eid))
+            if entity == "deal" and "stage_id" in keep:    # back in an open stage = not closed any more (and vice versa)
+                db.execute("UPDATE crm_deals SET closed_at = CASE WHEN (SELECT kind FROM crm_stages s WHERE "
+                           "s.id = crm_deals.stage_id) = 'open' THEN NULL ELSE COALESCE(closed_at, ?) END WHERE id = ?",
+                           (now, eid))
             what = f"put back {', '.join(keep)} of {_label(entity, row)}"
         elif action in ("archive", "restore"):
             db.execute(f"UPDATE {TABLE[entity]} SET archived_at = ?, updated_at = ? WHERE id = ?",
@@ -543,8 +554,9 @@ def log(person: Person, entity: str, record_id: int, kind: str, summary: str, bo
     if not summary:
         raise CrmError("What happened? Give a short summary.")
     company_id = record_id if entity == "company" else row.get("company_id")
-    contact_id = record_id if entity == "contact" else None
-    cols = {"company_id": company_id, "contact_id": contact_id, "kind": kind, "summary": summary,
+    contact_id = record_id if entity == "contact" else row.get("contact_id") if entity == "deal" else None
+    cols = {"company_id": company_id, "contact_id": contact_id, "deal_id": record_id if entity == "deal" else None,
+            "kind": kind, "summary": summary,
             "body": _multiline(body, 5000), "occurred_at": _when(when), "user_id": person.id, "created_at": db.now_iso()}
     aid = db.execute(f"INSERT INTO crm_activities({', '.join(cols)}) VALUES ({','.join('?' * len(cols))})",
                      list(cols.values()))
@@ -559,7 +571,8 @@ def delete_activity(person: Person, activity_id: int) -> dict:
     row = db.query_one("SELECT * FROM crm_activities WHERE id = ?", (activity_id,))
     if not row:
         raise CrmError("No such timeline entry.")
-    entity, rid = ("contact", row["contact_id"]) if row["contact_id"] else ("company", row["company_id"])
+    entity, rid = (("deal", row["deal_id"]) if row.get("deal_id") else
+                   ("contact", row["contact_id"]) if row["contact_id"] else ("company", row["company_id"]))
     _get_visible(person, entity, rid)
     if row["user_id"] != person.id:
         raise CrmError("You can only remove timeline entries you wrote yourself.")
@@ -581,11 +594,37 @@ def _addresses(entity: str, row: dict) -> tuple[list[str], list[str]]:
     return sorted(emails), sorted(p for p in phones if p)
 
 
+def _deal_events(entity: str, record_id: int, names: dict, limit: int) -> list[dict]:
+    """Deals created, moved to another stage, won or lost, from the change log."""
+    deals = ({d["id"]: d["title"] for d in db.query("SELECT id, title FROM crm_deals WHERE company_id = ?", (record_id,))}
+             if entity == "company" else
+             {d["id"]: d["title"] for d in db.query("SELECT id, title FROM crm_deals WHERE id = ?", (record_id,))})
+    if not deals:
+        return []
+    stages = {s["id"]: s["name"] for s in db.query("SELECT id, name FROM crm_stages")}
+    rows = db.query(f"SELECT * FROM crm_changes WHERE entity = 'deal' AND undone_at IS NULL AND entity_id IN "
+                    f"({','.join('?' * len(deals))}) ORDER BY id DESC LIMIT ?", (*deals, limit))
+    out = []
+    for c in rows:
+        before = json.loads(c["before"]) if c["before"] else {}
+        after = json.loads(c["after"]) if c["after"] else {}
+        if c["action"] == "create":
+            text = f"New deal: {deals[c['entity_id']]}" + (f" ({stages.get(after.get('stage_id'), '')})" if after else "")
+        elif c["action"] == "update" and "stage_id" in after:
+            text = (f"{deals[c['entity_id']]}: {stages.get(before.get('stage_id'), '?')} → "
+                    f"{stages.get(after['stage_id'], '?')}")
+        else:
+            continue
+        out.append({"type": "deal", "id": c["id"], "deal_id": c["entity_id"], "summary": text, "body": "",
+                    "at": c["ts"], "at_local": _local(c["ts"]), "by": names.get(c["user_id"]), "mine": False})
+    return out
+
+
 def timeline(person: Person, entity: str, record_id: int, *, kind: str = "", limit: int = 100) -> list[dict]:
     row = _get_visible(person, entity, record_id)
     names = _names()
     items: list[dict] = []
-    col = "company_id" if entity == "company" else "contact_id"
+    col = {"company": "company_id", "contact": "contact_id", "deal": "deal_id"}[entity]
     if kind in ("", "note", "call", "meeting", "task", "document"):
         acts = db.query(f"SELECT a.*, c.first_name, c.last_name FROM crm_activities a LEFT JOIN crm_contacts c "
                         f"ON c.id = a.contact_id WHERE a.{col} = ?" + (" AND a.kind = ?" if kind else "")
@@ -595,7 +634,9 @@ def timeline(person: Person, entity: str, record_id: int, *, kind: str = "", lim
                           "at": a["occurred_at"], "at_local": _local(a["occurred_at"]), "by": names.get(a["user_id"]),
                           "contact": contact_label(a) if entity == "company" and a["contact_id"] else None,
                           "mine": a["user_id"] == person.id})
-    emails, phones = _addresses(entity, row)
+    if kind in ("", "deal") and entity in ("company", "deal"):
+        items += _deal_events(entity, record_id, names, limit)
+    emails, phones = _addresses(entity, row) if entity != "deal" else ([], [])
     if kind in ("", "email") and emails:
         from . import mail
         rows = db.query(

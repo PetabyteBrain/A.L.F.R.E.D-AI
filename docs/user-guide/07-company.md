@@ -6,8 +6,8 @@ sidebar_position: 7
 
 # Company work
 
-**Who:** admins and cofounders, unless a section says otherwise. Clients and contacts are in the
-[CRM](12-crm.md).
+**Who:** admins and cofounders, unless a section says otherwise. Clients, contacts and deals are in the
+[CRM](12-crm.md); a market analysis' shortlist shows up there as suggested leads.
 
 ## Company files
 

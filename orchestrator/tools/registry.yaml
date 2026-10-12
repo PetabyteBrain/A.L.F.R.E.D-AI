@@ -1232,13 +1232,14 @@ tools:
     handler: crm_get
     permission: crm.use
     description: >-
-      One company or contact with its details, contacts and recent timeline (notes, calls, meetings, emails,
-      outside calls). ref = its id or name. Use it for "what's open with Acme?" or before changing a record.
+      One company, contact or deal with its details, contacts, deals and recent timeline (notes, calls,
+      meetings, emails, outside calls, deal moves). ref = its id or name. Use it for "what's open with Acme?"
+      or before changing a record.
     input_schema:
       type: object
       properties:
-        kind: {type: string, enum: [company, contact]}
-        ref: {type: string, description: "id or name"}
+        kind: {type: string, enum: [company, contact, deal]}
+        ref: {type: string, description: "id or name (deals: id or title)"}
       required: [kind, ref]
 
   - name: crm_save
@@ -1267,12 +1268,12 @@ tools:
     handler: crm_log
     permission: crm.edit
     description: >-
-      Add an entry to a company's or contact's timeline: a note, a call, a meeting, a task or a document
-      reference. when = local date/time it happened (default now).
+      Add an entry to a company's, contact's or deal's timeline: a note, a call, a meeting, a task or a
+      document reference. when = local date/time it happened (default now).
     input_schema:
       type: object
       properties:
-        kind: {type: string, enum: [company, contact]}
+        kind: {type: string, enum: [company, contact, deal]}
         ref: {type: string}
         type: {type: string, enum: [note, call, meeting, task, document]}
         summary: {type: string, description: "one line"}
@@ -1284,11 +1285,12 @@ tools:
     kind: builtin
     handler: crm_archive
     permission: crm.edit
-    description: Archive a company or contact (hidden from lists, kept; undoable), or restore it with archived=false.
+    description: >-
+      Archive a company, contact or deal (hidden from lists, kept; undoable), or restore it with archived=false.
     input_schema:
       type: object
       properties:
-        kind: {type: string, enum: [company, contact]}
+        kind: {type: string, enum: [company, contact, deal]}
         ref: {type: string}
         archived: {type: boolean}
       required: [kind, ref]
@@ -1305,13 +1307,14 @@ tools:
     handler: crm_request
     permission: crm.edit
     description: >-
-      Ask for a company or contact to be deleted for good, or merged into another (duplicates). Never happens
-      directly: it becomes a request someone with approval rights decides (Telegram buttons, dashboard).
+      Ask for a company, contact or deal to be deleted for good, or a company/contact merged into another
+      (duplicates). Never happens directly: it becomes a request someone with approval rights decides
+      (Telegram buttons, dashboard).
     input_schema:
       type: object
       properties:
         action: {type: string, enum: [delete, merge]}
-        kind: {type: string, enum: [company, contact]}
+        kind: {type: string, enum: [company, contact, deal]}
         ref: {type: string}
         merge_into: {type: string, description: "merge: the record to keep (id or name)"}
         reason: {type: string}
@@ -1341,3 +1344,69 @@ tools:
         approve: {type: boolean}
         note: {type: string}
       required: [approval_id, approve]
+
+  - name: crm_deals
+    kind: builtin
+    handler: crm_deals
+    permission: crm.use
+    description: >-
+      Deals in the sales pipeline (open by default), with stage, value in CHF, probability, expected close and
+      next step; filter by text, stage, company or own deals. with_forecast adds the pipeline totals, weighted
+      value, won this month/quarter, win rate and the next six months by expected close.
+    input_schema:
+      type: object
+      properties:
+        query: {type: string}
+        status: {type: string, enum: [open, won, lost, all]}
+        stage: {type: string}
+        company: {type: string}
+        mine: {type: boolean}
+        with_forecast: {type: boolean}
+
+  - name: crm_deal_save
+    kind: builtin
+    handler: crm_deal_save
+    permission: crm.edit
+    description: >-
+      Add a deal (no ref) or change one (ref = id or title): move it to another stage ("Won", "Lost", ...),
+      change value (CHF), probability (% override), expected_close / next_step_at (YYYY-MM-DD), next_step,
+      outcome_note (why it was won or lost), notes, source, title. company / contact link it by name or id.
+      Only use details the person gave you. Changes apply at once and can be undone (crm_undo).
+    input_schema:
+      type: object
+      properties:
+        ref: {type: string}
+        fields: {type: object}
+        company: {type: string}
+        contact: {type: string}
+        stage: {type: string}
+      required: [fields]
+
+  - name: crm_leads
+    kind: builtin
+    handler: crm_leads
+    permission: crm.edit
+    description: >-
+      Suggested new leads and contacts waiting for review: businesses from market analyses and senders of
+      inquiries who aren't in the CRM yet.
+    input_schema:
+      type: object
+      properties:
+        source: {type: string, enum: [market, mail]}
+
+  - name: crm_lead_decide
+    kind: builtin
+    handler: crm_lead_decide
+    permission: crm.edit
+    description: >-
+      Act on suggestions the person picked: add them as leads (companies with status lead, plus the contact
+      for inquiries), link one to an existing company (link_to), or dismiss them. Duplicates are reported
+      for the person to decide; force=true adds one anyway.
+    input_schema:
+      type: object
+      properties:
+        action: {type: string, enum: [add, link, dismiss]}
+        ids: {type: array, items: {type: integer}}
+        link_to: {type: string}
+        force: {type: boolean}
+      required: [action, ids]
