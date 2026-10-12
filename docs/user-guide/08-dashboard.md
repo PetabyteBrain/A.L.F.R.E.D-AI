@@ -51,6 +51,11 @@ Your notes, lists and files on the storage server: **Mine**, the company's files
 Alfred's mailbox: boxes, groups and tags, bulk actions, the conversation reader with attachments, matters for the
 team, and the **Template manager**. See [Email](06-email.md#the-mail-tab).
 
+## CRM (*team*)
+
+Companies and the people at them, each with a timeline of notes, calls, meetings and emails; duplicate warnings,
+undo, and **Approvals** for deleting and merging. See [CRM: clients and contacts](12-crm.md).
+
 ## Log
 
 The event log: everything that happened (sign-ins, calls, messages, tools Alfred used, system events). Admins can

@@ -2,9 +2,10 @@
 // calls carry the CSRF header the backend requires (see dashboard/api/security.py).
 
 export class ApiError extends Error {
-  constructor(status, message) {
+  constructor(status, message, data = null) {
     super(message);
     this.status = status;
+    this.data = data;          // structured detail, e.g. the CRM's possible duplicates on a 409
   }
 }
 
@@ -29,11 +30,13 @@ async function request(path, { method = "GET", body, accept = "application/json"
   }
   if (!res.ok) {
     let detail = res.statusText;
+    let data = null;
     try {
       const j = await res.json();
       if (typeof j.detail === "string") detail = j.detail;
+      else if (j.detail && typeof j.detail.message === "string") { detail = j.detail.message; data = j.detail; }
     } catch { /* not JSON */ }
-    throw new ApiError(res.status, detail);
+    throw new ApiError(res.status, detail, data);
   }
   return res;
 }

@@ -245,6 +245,25 @@ def fake_mail() -> None:
         mail.spool(rid, raw)
         from orchestrator.mail_inbound import parse
         mail_attachments.index(rid, parse(raw).attachments)
+    if not db.query_one("SELECT 1 FROM crm_companies LIMIT 1"):          # CRM demo (roadmap #58)
+        from orchestrator import crm
+        boss = reg.get_person(db.query_one("SELECT user_id FROM user_identifiers WHERE type = 'dashboard' "
+                                           "AND value = 'cofounder'")["user_id"])
+        shop = crm.save(boss, "company", {"name": "Beispiel Shop GmbH", "status": "prospect", "industry": "Retail",
+                                          "website": "shop.example", "email": "anna@shop.example",
+                                          "phone": "044 000 00 10", "address": "Musterstrasse 1\n8000 Zürich",
+                                          "tags": ["web", "shop"], "custom": {"Budget": "CHF 15k"},
+                                          "source": "email inquiry"}, force=True)["record"]
+        anna = crm.save(boss, "contact", {"first_name": "Anna", "last_name": "Beispiel", "title": "Owner",
+                                          "email": "anna@shop.example", "phone": "079 000 00 11",
+                                          "company_id": shop["id"]}, force=True)["record"]
+        crm.log(boss, "contact", anna["id"], "call", "First call: wants an online shop by May",
+                "Has a floor plan and logo; budget around 15k. Send an offer next week.")
+        crm.log(boss, "company", shop["id"], "meeting", "Visit at the shop", "Measured the shop; photos in Files.")
+        for name, status, industry in (("Café Muster", "client", "Restaurant"), ("Atelier Nord", "lead", "Design"),
+                                       ("Bäckerei Sonne", "lead", "Bakery"), ("Druckerei Beispiel AG", "supplier", "Printing"),
+                                       ("Studio Partner", "partner", "Agency")):
+            crm.save(boss, "company", {"name": name, "status": status, "industry": industry}, force=True)
     if db.query_one("SELECT 1 FROM emails LIMIT 1"):
         return
     admin = db.query_one("SELECT id FROM users WHERE role='admin'")["id"]

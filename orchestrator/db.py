@@ -428,6 +428,94 @@ CREATE TABLE IF NOT EXISTS context_resets (
 );
 
 -- Alfred's own email (orchestrator/mail.py): every message in and out; the .eml itself is archived on the NAS.
+-- CRM (orchestrator/crm.py, roadmap #58). Records are visible with crm.view_all, or to their owner, their
+-- creator and the members of their group. tags = JSON list, custom = JSON object of extra fields.
+CREATE TABLE IF NOT EXISTS crm_companies (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    name        TEXT NOT NULL,
+    status      TEXT NOT NULL DEFAULT 'lead',
+    industry    TEXT NOT NULL DEFAULT '',
+    website     TEXT NOT NULL DEFAULT '',
+    email       TEXT NOT NULL DEFAULT '',
+    phone       TEXT NOT NULL DEFAULT '',
+    address     TEXT NOT NULL DEFAULT '',
+    notes       TEXT NOT NULL DEFAULT '',
+    tags        TEXT NOT NULL DEFAULT '[]',
+    custom      TEXT NOT NULL DEFAULT '{}',
+    source      TEXT NOT NULL DEFAULT '',
+    owner_id    INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    group_id    INTEGER REFERENCES people_groups(id) ON DELETE SET NULL,
+    created_by  INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    created_at  TEXT NOT NULL,
+    updated_at  TEXT NOT NULL,
+    archived_at TEXT
+);
+CREATE TABLE IF NOT EXISTS crm_contacts (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    first_name  TEXT NOT NULL DEFAULT '',
+    last_name   TEXT NOT NULL DEFAULT '',
+    company_id  INTEGER REFERENCES crm_companies(id) ON DELETE SET NULL,
+    title       TEXT NOT NULL DEFAULT '',
+    email       TEXT NOT NULL DEFAULT '',
+    phone       TEXT NOT NULL DEFAULT '',
+    notes       TEXT NOT NULL DEFAULT '',
+    tags        TEXT NOT NULL DEFAULT '[]',
+    custom      TEXT NOT NULL DEFAULT '{}',
+    source      TEXT NOT NULL DEFAULT '',
+    owner_id    INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    group_id    INTEGER REFERENCES people_groups(id) ON DELETE SET NULL,
+    created_by  INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    created_at  TEXT NOT NULL,
+    updated_at  TEXT NOT NULL,
+    archived_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_crm_contacts_company ON crm_contacts(company_id);
+-- Timeline entries written by people or Alfred (emails and outside calls are matched in at read time).
+CREATE TABLE IF NOT EXISTS crm_activities (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    company_id  INTEGER REFERENCES crm_companies(id) ON DELETE CASCADE,
+    contact_id  INTEGER REFERENCES crm_contacts(id) ON DELETE CASCADE,
+    kind        TEXT NOT NULL CHECK (kind IN ('note','call','meeting','task','document')),
+    summary     TEXT NOT NULL,
+    body        TEXT NOT NULL DEFAULT '',
+    occurred_at TEXT NOT NULL,
+    user_id     INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    created_at  TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_crm_act_company ON crm_activities(company_id, occurred_at);
+CREATE INDEX IF NOT EXISTS idx_crm_act_contact ON crm_activities(contact_id, occurred_at);
+-- Every direct change, so it can be shown and undone.
+CREATE TABLE IF NOT EXISTS crm_changes (
+    id        INTEGER PRIMARY KEY AUTOINCREMENT,
+    entity    TEXT NOT NULL CHECK (entity IN ('company','contact','activity')),
+    entity_id INTEGER NOT NULL,
+    action    TEXT NOT NULL CHECK (action IN ('create','update','archive','restore','delete')),
+    before    TEXT,
+    after     TEXT,
+    user_id   INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    ts        TEXT NOT NULL,
+    undone_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_crm_changes ON crm_changes(entity, entity_id);
+
+-- Drafts that need someone with the area's approve permission (orchestrator/approvals.py).
+CREATE TABLE IF NOT EXISTS approvals (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    area         TEXT NOT NULL,
+    kind         TEXT NOT NULL,
+    summary      TEXT NOT NULL,
+    payload      TEXT NOT NULL DEFAULT '{}',
+    requested_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    status       TEXT NOT NULL DEFAULT 'pending'
+                 CHECK (status IN ('pending','approved','rejected','failed','cancelled')),
+    decided_by   INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    decided_at   TEXT,
+    note         TEXT NOT NULL DEFAULT '',
+    result       TEXT,
+    created_at   TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_approvals_status ON approvals(status, area);
+
 CREATE TABLE IF NOT EXISTS emails (
     id           INTEGER PRIMARY KEY AUTOINCREMENT,
     direction    TEXT NOT NULL CHECK (direction IN ('in','out')),

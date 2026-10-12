@@ -19,6 +19,13 @@ PAGES: dict[str, tuple[str, str]] = {
                        "folder for admins; editor with Markdown preview and checklists, read-only previews of PDF, Word, Excel, "
                        "PowerPoint, pictures, audio and video, recent files; "
                        "Tidy up asks Alfred to propose a cleaner layout for your notes, applied only after you approve it."),
+    "crm": ("CRM", "companies (clients, leads, partners: status, industry, website, contacts, tags, extra fields, "
+                   "owner, group) and the people at them; open one for its facts, people and timeline (log a note, "
+                   "call, meeting or document; emails to and from their addresses and Alfred's outside calls appear "
+                   "by themselves), History with Undo, More: archive, merge into, delete (merging and deleting wait "
+                   "for approval). New company / New person (duplicate warning while typing). Sidebar: status and "
+                   "tag filters, only mine, archive; Approvals (approve/reject with a note, withdraw own). Keys: / "
+                   "search, n new, Esc back."),
     "mail": ("Mail", "admins/cofounders: Alfred's own mailbox: inbox, unread, starred, sent, archived, all, "
                      "inquiries and matters passed to the team (mark handled). Groups (like folders) and coloured "
                      "tags in the sidebar (+ to add, pencil to rename/recolour/delete; own ones, plus shared team ones "
@@ -42,7 +49,7 @@ PAGES: dict[str, tuple[str, str]] = {
                            "voice replies, morning briefing, memory notes, download or delete own data."),
 }
 # Tabs that need a permission (any of them); the dashboard's App.jsx uses the same rules.
-TAB_PERMISSIONS = {"people": ("people.manage",), "usage": ("usage.view",), "mail": ("mail.tab",),
+TAB_PERMISSIONS = {"people": ("people.manage",), "usage": ("usage.view",), "mail": ("mail.tab",), "crm": ("crm.use",),
                    "settings": ("settings.manage", "roles.manage")}
 
 

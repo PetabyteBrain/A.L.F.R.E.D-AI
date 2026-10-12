@@ -291,6 +291,18 @@ async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if kind == "mtg":
         await _meeting_button(q, person, action, rid)
         return
+    if kind == "apv" and action in ("yes", "no") and rid.isdigit():
+        from . import approvals
+        try:
+            a = approvals.decide(int(rid), person, action == "yes")
+            note = {"approved": "✓ Approved", "rejected": "✕ Rejected", "failed": "Approved, but it failed"}[a["status"]]
+            if a["status"] == "failed" and a.get("result"):
+                note += f": {a['result']}"
+        except approvals.ApprovalError as e:
+            note = str(e)
+        await q.answer(note[:190])
+        await _append_note(q, note)
+        return
     if kind == "scr" and action == "block" and rid.isdigit():
         from . import screening
         note = screening.block_from_button(int(rid), person)

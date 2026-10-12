@@ -11,6 +11,8 @@ working on the code are in [CLAUDE.md](../CLAUDE.md).
 | Agent Core | Claude conversation loop with tools, prompt caching, date checks | `orchestrator/agent_core.py` |
 | Identity registry | People, connections (phone, Telegram, dashboard, email), verification | `orchestrator/identity/` |
 | Permissions | Named permissions, editable roles (allow/deny, inheritance), several roles per person, groups | `orchestrator/permissions.py` |
+| CRM | Companies, contacts, timeline (logged + matched emails/outside calls), change log with undo | `orchestrator/crm.py` |
+| Approvals | Drafts (delete/merge, later outgoing quotes, invoices, employee changes) decided by holders of `<area>.approve` | `orchestrator/approvals.py` |
 | Tools | Declared in YAML with the permission they need, checked twice (offered + executed); built-ins, n8n webhooks, n8n API | `orchestrator/tools/` |
 | Telephony | Twilio Media Streams (8 kHz mu-law), streamed sentence-by-sentence speech | `orchestrator/call_handler.py` |
 | Speech | STT/TTS swap point; self-hosted Whisper + Kokoro on a GPU box, ElevenLabs as fallback | `orchestrator/stt_tts/`, `speech_server/` |
@@ -48,6 +50,7 @@ Email ─► provider ─► /mail/inbound/<token> (validated once) ─► sende
 - `emails` (log of every message; the .eml itself on the NAS), `email_attachments` (index; bytes stay in the .eml),
   `mail_labels` / `email_labels` / `email_state` (groups, tags, per-viewer read/star/archive), `mail_templates`
   (layouts and texts), `escalations`
+- `crm_companies`, `crm_contacts`, `crm_activities`, `crm_changes` (undo log), `approvals`
 - `reminders`, `tasks`, `scheduled_calls`, `external_calls`, `memories`, `meetings`, `api_usage`, `activity`, `health`, `app_settings`
 - Recordings: `data/storage/{user_id}/{date}/{session_id}/audio.wav`, moved to the NAS after 14 days.
 - New columns go in `db.ADDED_COLUMNS` and are applied on start.

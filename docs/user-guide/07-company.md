@@ -6,7 +6,8 @@ sidebar_position: 7
 
 # Company work
 
-**Who:** admins and cofounders, unless a section says otherwise.
+**Who:** admins and cofounders, unless a section says otherwise. Clients and contacts are in the
+[CRM](12-crm.md).
 
 ## Company files
 

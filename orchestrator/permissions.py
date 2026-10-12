@@ -52,6 +52,11 @@ _CATALOGUE = [
     ("escalations.handle", "Team", "Receive and close matters Alfred passes to the team", "c"),
     ("market.analysis", "Team", "Market analysis", "c"),
 
+    ("crm.use", "CRM", "CRM: clients and contacts they own or that belong to their groups", "c"),
+    ("crm.view_all", "CRM", "CRM: see every client and contact", "c"),
+    ("crm.edit", "CRM", "CRM: add and change clients, contacts and their timeline", "c"),
+    ("crm.approve", "CRM", "CRM: approve deletions, merges and anything sent to clients", "c"),
+
     ("automations.view", "Automations", "See n8n workflows and their runs", "c"),
     ("automations.run", "Automations", "Run n8n workflows", "c"),
     ("automations.edit", "Automations", "Create, edit and switch n8n workflows on/off", "c"),
@@ -302,7 +307,7 @@ def create_role(actor: Actor, label: str, *, description: str = "", copy_from: s
         conn.executemany("INSERT INTO role_permissions(role, permission, effect) VALUES (?,?,?)",
                          [(name, k, e) for k, e in rules.items() if k in KEYS])
     db.log_activity("access", f"{actor.name} created the role '{label}'" + (f" (copy of {label_of(copy_from)})"
-                                                                            if copy_from else ""), user_id=actor.id)
+                                                                            if copy_from else ""), user_id=actor.id or None)
     return name
 
 
@@ -359,7 +364,7 @@ def update_role(actor: Actor, role: str, *, label: str | None = None, descriptio
                    (snap["label"], snap["description"], snap["parent"], snap["archived"], role))
         raise
     db.log_activity("access", f"{actor.name} changed the role '{row['label'] or role}': {', '.join(what)}",
-                    user_id=actor.id)
+                    user_id=actor.id or None)
     return before
 
 
@@ -386,7 +391,7 @@ def set_rule(actor: Actor, role: str, permission: str, effect: str | None) -> No
     _guard_actor(actor, undo=(role, permission, old and old["effect"]))
     word = {"allow": "allowed", "deny": "denied", None: "not set"}[effect]
     db.log_activity("access", f"{actor.name} set '{LABELS[permission]}' to {word} for the role '{label_of(role)}'",
-                    user_id=actor.id)
+                    user_id=actor.id or None)
 
 
 def _guard_actor(actor: Actor, undo: tuple | None = None) -> None:
@@ -490,7 +495,7 @@ def create_group(actor: Actor, name: str, description: str = "") -> int:
         raise PermissionError_("A group with that name already exists.")
     gid = db.execute("INSERT INTO people_groups(name, description, created_at) VALUES (?,?,?)",
                      (name, (description or "")[:200], db.now_iso()))
-    db.log_activity("access", f"{actor.name} created the group '{name}'", user_id=actor.id)
+    db.log_activity("access", f"{actor.name} created the group '{name}'", user_id=actor.id or None)
     return gid
 
 
@@ -504,7 +509,7 @@ def update_group(actor: Actor, group_id: int, *, name: str | None = None, descri
         db.execute("UPDATE people_groups SET name = ? WHERE id = ?", (name, group_id))
     if description is not None:
         db.execute("UPDATE people_groups SET description = ? WHERE id = ?", (description[:200], group_id))
-    db.log_activity("access", f"{actor.name} changed the group '{g['name']}'", user_id=actor.id)
+    db.log_activity("access", f"{actor.name} changed the group '{g['name']}'", user_id=actor.id or None)
 
 
 def delete_group(actor: Actor, group_id: int) -> list[int]:
@@ -515,7 +520,7 @@ def delete_group(actor: Actor, group_id: int) -> list[int]:
     if not actor.admin and any(is_admin_user(m) for m in members) and _group_has_roles(group_id):
         raise PermissionError_("Only an admin can change a group with admins in it.")
     db.execute("DELETE FROM people_groups WHERE id = ?", (group_id,))
-    db.log_activity("access", f"{actor.name} deleted the group '{g['name']}'", user_id=actor.id)
+    db.log_activity("access", f"{actor.name} deleted the group '{g['name']}'", user_id=actor.id or None)
     return members
 
 
@@ -549,7 +554,7 @@ def set_group_members(actor: Actor, group_id: int, user_ids: list[int]) -> list[
     removed = [names[u] for u in old - new]
     db.log_activity("access", f"{actor.name} changed the group '{g['name']}'"
                     + (f": added {', '.join(added)}" if added else "")
-                    + (f"{';' if added else ':'} removed {', '.join(removed)}" if removed else ""), user_id=actor.id)
+                    + (f"{';' if added else ':'} removed {', '.join(removed)}" if removed else ""), user_id=actor.id or None)
     return sorted(changed)
 
 
@@ -576,7 +581,7 @@ def set_group_roles(actor: Actor, group_id: int, roles: list[str]) -> list[int]:
         conn.execute("DELETE FROM group_roles WHERE group_id = ?", (group_id,))
         conn.executemany("INSERT INTO group_roles(group_id, role) VALUES (?,?)", [(group_id, r) for r in roles])
     db.log_activity("access", f"{actor.name} set the roles of the group '{g['name']}' to "
-                              f"{', '.join(label_of(r) for r in roles) or 'none'}", user_id=actor.id)
+                              f"{', '.join(label_of(r) for r in roles) or 'none'}", user_id=actor.id or None)
     return members
 
 

@@ -5197,3 +5197,171 @@ def test_signoff_written_by_the_model_is_not_doubled():
     assert mt.strip_signoff(keep) == keep
     keep2 = "Dear Max,\n\nBest regards from the whole team on your new office, and congratulations on the opening!"
     assert mt.strip_signoff(keep2) == keep2
+
+
+def test_crm_records_visibility_duplicates_undo_and_approvals():
+    from orchestrator import approvals, crm, mail, permissions
+    boss = permissions.Actor(0, "test", permissions.KEYS, True)
+    if not registry.role_exists("sales-rep"):
+        permissions.create_role(boss, "Sales rep")                       # own and group records only
+        for p in ("crm.use", "crm.edit"):
+            permissions.set_rule(boss, "sales-rep", p, "allow")
+    co = registry.get_person(registry.add_user("Cora CRM", "cofounder"))
+    rep = registry.get_person(registry.add_user("Remo Rep", "sales-rep"))
+    other = registry.get_person(registry.add_user("Olga Other", "sales-rep"))
+    friend = registry.lookup("telegram", "22222222")
+    gid = permissions.create_group(boss, "CRM team test")
+    permissions.set_group_members(boss, gid, [rep.id])
+
+    acme = crm.save(co, "company", {"name": "Acme Test AG", "status": "client", "website": "www.acme-test.example",
+                                    "email": "info@acme-test.example", "tags": "VIP, web, vip"})["record"]
+    assert acme["tags"] == ["vip", "web"] and acme["website"] == "https://www.acme-test.example"
+    assert acme["owner_id"] == co.id
+    # Duplicates: same name without the legal form, same domain, same phone.
+    for dup in ({"name": "ACME test"}, {"name": "X", "website": "acme-test.example/about"},
+                {"name": "Y", "email": "sales@acme-test.example"}):
+        with pytest.raises(crm.DuplicateError):
+            crm.save(co, "company", dup)
+    assert crm.save(co, "company", {"name": "Acme Test"}, force=True)["record"]["id"] != acme["id"]
+    erika = crm.save(co, "contact", {"first_name": "Erika", "last_name": "Mustermann", "phone": "079 000 01 77",
+                                     "email": "erika@acme-test.example", "company_id": acme["id"]})["record"]
+    assert erika["phone"] == "+41790000177" and crm.search(co, "contact", q="079 000 01 77")["total"] == 1
+
+    # Visibility: the rep sees records they own, created or that sit in their group (and contacts via the company).
+    mine = crm.save(rep, "company", {"name": "Rep Lead GmbH"})["record"]
+    assert {r["id"] for r in crm.search(rep, "company", limit=200)["items"]} == {mine["id"]}
+    with pytest.raises(crm.CrmError):
+        crm.get(rep, "company", acme["id"])
+    crm.save(co, "company", {"group_id": gid}, acme["id"])
+    assert crm.get(rep, "company", acme["id"])["name"] == "Acme Test AG"
+    assert crm.get(rep, "contact", erika["id"])["company"]["id"] == acme["id"]
+    assert crm.search(other, "company", limit=200)["total"] == 0
+    with pytest.raises(crm.CrmError):
+        crm.save(other, "company", {"name": "Sneaky", "group_id": gid})      # not their group
+    with pytest.raises(crm.CrmError):
+        crm.search(friend, "company")                                       # no CRM at all
+
+    # Timeline: logged entries plus emails to/from the record's addresses the viewer may read.
+    crm.log(rep, "contact", erika["id"], "call", "Called about the offer", "wants it by Friday", when="2026-10-01 10:00")
+    eid = mail.record(direction="in", kind="inquiry", status="done", scope="company", from_addr="erika@acme-test.example",
+                      to=["alfred@example.test"], subject="Offer please", body_text="Hi")
+    personal = mail.record(direction="in", kind="request", status="done", scope="personal", user_id=co.id,
+                           from_addr="info@acme-test.example", to=["alfred@example.test"], subject="Private", body_text="x")
+    tl = crm.timeline(co, "company", acme["id"])
+    assert [i["type"] for i in tl if i["type"] == "call"] == ["call"] and any(i["id"] == eid for i in tl)
+    assert any(i["id"] == personal for i in tl if i["type"] == "email")          # Cora's own mail
+    rep_tl = crm.timeline(rep, "company", acme["id"])
+    assert not any(i["type"] == "email" for i in rep_tl)                       # no mail.tab, not his mail
+    assert crm.timeline(co, "company", acme["id"], kind="email") and all(
+        i["type"] == "email" for i in crm.timeline(co, "company", acme["id"], kind="email"))
+
+    # Undo: only one's own latest change, not past someone else's.
+    crm.save(rep, "company", {"status": "former"}, acme["id"])
+    assert crm.undo(rep)["entity_id"] == acme["id"] and crm.get(co, "company", acme["id"])["status"] == "client"
+    crm.save(rep, "company", {"industry": "Retail"}, acme["id"])
+    crm.save(co, "company", {"industry": "Software"}, acme["id"])
+    with pytest.raises(crm.CrmError):
+        crm.undo(rep)
+    act = crm.log(co, "company", acme["id"], "note", "Temporary note")
+    crm.delete_activity(co, act["activity_id"])
+    crm.undo(co)
+    assert any(i["summary"] == "Temporary note" for i in crm.timeline(co, "company", acme["id"]))
+    with pytest.raises(crm.CrmError):
+        crm.delete_activity(rep, act["activity_id"])                         # not his entry
+
+    # Deleting and merging only through approvals; the rep can ask but not decide; self-approval is fine.
+    dup = crm.save(co, "company", {"name": "Acme Test Holding", "notes": "second entry"}, force=True)["record"]
+    crm.log(co, "company", dup["id"], "note", "Note on the duplicate")
+    req = crm.request(co, "merge", "company", dup["id"], merge_into=acme["id"], reason="same firm")
+    assert req["status"] == "pending" and crm.request(co, "merge", "company", dup["id"], merge_into=acme["id"])["already_pending"]
+    with pytest.raises(approvals.ApprovalError):
+        approvals.decide(req["id"], rep, True)
+    assert approvals.decide(req["id"], co, True)["status"] == "approved"
+    merged = crm.get(co, "company", acme["id"])
+    assert "second entry" in merged["notes"] and any(i["summary"] == "Note on the duplicate"
+                                                     for i in crm.timeline(co, "company", acme["id"]))
+    with pytest.raises(crm.CrmError):
+        crm.get(co, "company", dup["id"])
+    gone = crm.request(rep, "delete", "company", mine["id"])
+    assert approvals.list_for(rep)[0]["can_cancel"] and not approvals.list_for(rep)[0]["can_decide"]
+    assert approvals.decide(gone["id"], co, False, "keep it")["status"] == "rejected"
+    assert crm.get(rep, "company", mine["id"])
+    archived = crm.set_archived(co, "contact", erika["id"], True)["record"]
+    assert archived["archived"] and crm.search(co, "contact", q="erika")["total"] == 0
+    assert crm.search(co, "contact", q="erika", archived=True)["total"] == 1
+    assert db.query_one("SELECT 1 FROM activity WHERE kind = 'crm' AND summary LIKE '%merged%(approved)%'")
+
+
+def test_crm_api_tools_and_buttons(monkeypatch):
+    import asyncio
+    from fastapi.testclient import TestClient
+    from orchestrator import approvals, telegram_handler
+    from orchestrator.main import app
+    from orchestrator.tools import registry as tools
+    admin = registry.lookup("telegram", "111")
+    friend = registry.lookup("telegram", "22222222")
+    assert "crm_search" in {t["name"] for t in tools.tools_for(admin)}
+    assert not any(t["name"].startswith("crm_") for t in tools.tools_for(friend))
+
+    with TestClient(app, base_url="http://testserver") as c:
+        c.post("/api/login", json={"username": "admin", "password": "correct horse battery"}, headers=CSRF)
+        st = c.get("/api/crm/status").json()
+        assert st["can"] == {"edit": True, "approve": True, "view_all": True} and "client" in st["statuses"]
+        made = c.post("/api/crm/companies", json={"fields": {"name": "Api Shop SA", "status": "lead"}}, headers=CSRF).json()
+        cid = made["record"]["id"]
+        r = c.post("/api/crm/companies", json={"fields": {"name": "API shop"}}, headers=CSRF)
+        assert r.status_code == 409 and r.json()["detail"]["duplicates"][0]["id"] == cid
+        assert c.get("/api/crm/duplicates?entity=company&name=api%20shop").json()[0]["reason"] == "same name"
+        assert c.post("/api/crm/companies", json={"fields": {"name": "x", "bogus": 1}}, headers=CSRF).status_code == 400
+        assert c.get("/api/crm/widgets").status_code == 404
+        c.patch(f"/api/crm/companies/{cid}", json={"fields": {"status": "client"}}, headers=CSRF)
+        c.post(f"/api/crm/companies/{cid}/activities", json={"kind": "meeting", "summary": "Kick-off"}, headers=CSRF)
+        assert c.get(f"/api/crm/companies/{cid}/timeline").json()[0]["summary"] == "Kick-off"
+        hist = c.get(f"/api/crm/companies/{cid}/history").json()
+        assert hist[0]["action"] == "update" and hist[0]["fields"] == ["status"]
+        undone = c.post("/api/crm-actions/undo", json={}, headers=CSRF).json()          # the meeting entry
+        assert "timeline entry" in undone["what"]
+        req = c.post("/api/crm-actions/requests", json={"action": "delete", "entity": "company", "id": cid},
+                     headers=CSRF).json()
+        assert c.get("/api/crm/status").json()["approvals_pending"] >= 1
+        pend = c.get("/api/crm-actions/approvals").json()
+        assert pend[0]["id"] == req["id"] and pend[0]["can_decide"]
+        assert c.post(f"/api/crm-actions/approvals/{req['id']}", json={"approve": True}, headers=CSRF).json()["status"] == "approved"
+        assert c.get(f"/api/crm/companies/{cid}").status_code == 400
+        assert c.post(f"/api/crm-actions/approvals/{req['id']}", json={"approve": True}, headers=CSRF).status_code == 400
+        c.post("/api/logout", headers=CSRF)
+
+    # Alfred's tools: duplicate check, then force; requests become approvals; buttons decide them.
+    ctx = tools.ToolContext(admin, None, "telegram")
+    out, err = asyncio.run(tools.execute("crm_save", {"kind": "company", "fields": {"name": "Tool Bakery GmbH",
+                                                                                    "owner_id": 999}}, ctx))
+    assert not err and '"saved": true' in out
+    out, _ = asyncio.run(tools.execute("crm_save", {"kind": "company", "fields": {"name": "tool bakery"}}, ctx))
+    assert "possible_duplicates" in out
+    out, _ = asyncio.run(tools.execute("crm_save", {"kind": "contact", "fields": {"first_name": "Bea"},
+                                                    "company": "Tool Bakery"}, ctx))
+    assert '"saved": true' in out
+    out, _ = asyncio.run(tools.execute("crm_get", {"kind": "company", "ref": "Tool Bakery"}, ctx))
+    assert "Bea" in out and "not instructions" in out
+    out, _ = asyncio.run(tools.execute("crm_log", {"kind": "company", "ref": "Tool Bakery", "type": "call",
+                                                   "summary": "Ordered bread"}, ctx))
+    assert '"logged": true' in out
+    out, _ = asyncio.run(tools.execute("crm_request", {"action": "delete", "kind": "contact", "ref": "Bea"}, ctx))
+    aid = int(out.split('"approval_id": ')[1].split(",")[0])
+    out, err = asyncio.run(tools.execute("crm_search", {"query": "bakery"}, tools.ToolContext(friend, None, "telegram")))
+    assert err and "not available" in out
+
+    notes = []
+
+    class Q:
+        data, from_user = f"apv:yes:{aid}", type("U", (), {"id": 111})()
+        async def answer(self, text="", **kw):
+            notes.append(text)
+
+    async def append(q, note):
+        notes.append(f"appended {note}")
+    monkeypatch.setattr(telegram_handler, "_append_note", append)
+    asyncio.run(telegram_handler.on_button(type("Up", (), {"callback_query": Q()})(), None))
+    assert notes[0] == "✓ Approved" and approvals.get(aid)["status"] == "approved"
+    asyncio.run(telegram_handler.on_button(type("Up", (), {"callback_query": Q()})(), None))
+    assert "already" in notes[-1]

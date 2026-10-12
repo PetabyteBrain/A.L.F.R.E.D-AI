@@ -23,6 +23,7 @@ import Chat from "./pages/Chat.jsx";
 import Notes from "./pages/Notes.jsx";
 import Mail from "./pages/Mail.jsx";
 import Settings from "./pages/Settings.jsx";
+import CRM from "./pages/CRM.jsx";
 
 const TABS = [
   { id: "live", label: "Live", title: "Live operations", kicker: "Channels in progress", Page: Live },
@@ -31,6 +32,7 @@ const TABS = [
   { id: "tasks", label: "Tasks", title: "Tasks & calls", kicker: "Reminders, calls & tasks", Page: Tasks },
   { id: "notes", label: "Files", title: "Notes & files", kicker: "On the NAS", Page: Notes },
   { id: "mail", label: "Mail", title: "Mail", kicker: "Alfred's mailbox", Page: Mail, perms: ["mail.tab"] },
+  { id: "crm", label: "CRM", title: "CRM", kicker: "Clients, contacts & timeline", Page: CRM, perms: ["crm.use"] },
   { id: "activity", label: "Log", title: "Event log", kicker: "Everything that happened", Page: Activity },
   { id: "health", label: "Systems", title: "Systems", kicker: "Diagnostics", Page: Health },
   { id: "people", label: "Personnel", title: "Personnel", kicker: "Registry & access", Page: People, perms: ["people.manage"] },

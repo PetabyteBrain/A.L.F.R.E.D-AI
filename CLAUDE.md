@@ -101,6 +101,18 @@ docs and the real homelab map are git-ignored (`docs/PROJECT_PLAN.md`, `CLAUDE.l
   `orchestrator/identity/registry.py`; the CLI uses the same functions.
 - `.env` ADMIN_* only seeds the very first admin; the DB is the source of truth afterwards.
 
+## CRM and approvals (roadmap #58)
+- `orchestrator/crm.py`: companies/contacts (`crm_companies`, `crm_contacts`; tags JSON list, custom JSON object),
+  timeline `crm_activities` (emails and outside calls are matched by address at read time, mail filtered by
+  `mail.may_read`), every direct change in `crm_changes` (history + `undo`, own latest change only). Visibility:
+  crm.view_all, else owner / creator / group (contacts also via their company): always go through `_scope` /
+  `_get_visible`. New records are duplicate-checked (`DuplicateError`, `force`).
+- Deleting and merging are never direct: `crm.request` -> `orchestrator/approvals.py` (generic: area + kind,
+  handlers registered with `@approvals.handler`, decided by holders of `<area>.approve`, self-approval allowed,
+  Telegram buttons `apv:yes|no:<id>`). Later stages (quotes, invoices, employee data) add their own kinds.
+- API `dashboard/api/crm.py` (`/api/crm/{companies|contacts}...` and fixed paths under `/api/crm-actions`); UI
+  `pages/CRM.jsx` + `components/crm/*` (same layout classes as Mail). Tools crm_* and list/decide_approval.
+
 ## Calls, calendar, usage
 - Call requests: `orchestrator/scheduler.py` (tools place_call/schedule_call/...; `end_call` is
   channel-gated to calls). Outcome hook: `call_handler._call_finished` -> `scheduler.on_call_finished`.
