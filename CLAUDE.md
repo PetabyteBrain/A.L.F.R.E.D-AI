@@ -7,7 +7,9 @@ name come from `.env` (`OPERATOR_*`, `CONTACT_EMAIL`, `PUBLIC_BASE_URL`, `COMPAN
 `{{PLACEHOLDERS}}` filled in by `main._fill`, so no personal details live in the repo. Skins: `stark` (Stark HUD),
 `batcave`, `matrix` and `alfred`, listed in `dashboard/web/src/themes.js` (+ `public/theme-boot.js`,
 which applies the saved skin on every page); animated backgrounds in `src/backdrops.js` (shared with
-the homepage). Features are in the README, the design in `docs/ARCHITECTURE.md`. Personal planning
+the homepage). Features are in the README, the design in `docs/ARCHITECTURE.md`, and how to use them in the user
+guide `docs/user-guide/` (one Markdown page per topic, front matter for a docs site; update it with every
+user-visible change, keeping it free of personal details). Personal planning
 docs and the real homelab map are git-ignored (`docs/PROJECT_PLAN.md`, `CLAUDE.local.md`,
 `orchestrator/homelab.yaml`); keep real phone numbers, IPs, names and hostnames out of tracked files.
 

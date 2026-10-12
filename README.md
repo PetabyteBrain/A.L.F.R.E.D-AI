@@ -15,6 +15,8 @@ homepage, the sign-in page or the dashboard and applied everywhere (homepage, da
 404 page): **Stark** (holographic HUD), **Batcave** (bat-signal yellow on gunmetal, Gotham skyline), **Matrix**
 (green-screen terminal with digital rain) and **Alfred** (the butler's outfit: black, white and silver).
 
+**Using Alfred:** the [user guide](docs/user-guide/index.md) explains every feature for everyday users and admins.
+
 ## What Alfred can do
 
 | Area | What it does | Where |
