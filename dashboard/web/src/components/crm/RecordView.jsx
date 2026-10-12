@@ -5,6 +5,7 @@ import { usePoll } from "../../hooks.js";
 import { ErrorNote, Tag } from "../common.jsx";
 import { Icon } from "../icons.jsx";
 import { STATUS_LABEL } from "./RecordEditor.jsx";
+import DocList from "./DocList.jsx";
 import Timeline from "./Timeline.jsx";
 
 /* One company or contact: facts, people, tags, the timeline, change history, and the actions
@@ -131,7 +132,8 @@ function History({ entity, id, onUndo }) {
   );
 }
 
-export default function RecordView({ entity, id, status, onBack, onOpen, onEdit, onAddContact, onAddDeal, onToast, onChanged }) {
+export default function RecordView({ entity, id, status, onBack, onOpen, onEdit, onAddContact, onAddDeal, onToast, onChanged,
+                                    canBilling, onNewDoc, onOpenDoc }) {
   const path = `/crm/${entity === "company" ? "companies" : "contacts"}/${id}`;
   const { data: r, error, reload } = usePoll(() => api(path), 0, [path]);
   const [dialog, setDialog] = useState(null);
@@ -247,6 +249,9 @@ export default function RecordView({ entity, id, status, onBack, onOpen, onEdit,
                 <button type="button" className="btn ghost small" onClick={() => onAddDeal(r)}><Icon name="plus" className="btn-ico" />New deal</button>
               )}
             </div>
+          )}
+          {entity === "company" && canBilling && (
+            <DocList filter={`company_id=${id}`} preset={{ company_id: id }} onOpenDoc={onOpenDoc} onNewDoc={onNewDoc} />
           )}
           <History key={rev} entity={entity} id={id} onUndo={undo} />
         </div>

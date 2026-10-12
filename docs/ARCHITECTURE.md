@@ -13,6 +13,7 @@ working on the code are in [CLAUDE.md](../CLAUDE.md).
 | Permissions | Named permissions, editable roles (allow/deny, inheritance), several roles per person, groups | `orchestrator/permissions.py` |
 | CRM | Companies, contacts, timeline (logged + matched emails/outside calls), change log with undo | `orchestrator/crm.py` |
 | Pipeline and leads | Stages, deals, board, forecast (`crm_deals.py`); lead suggestions from market analyses and inquiries (`crm_leads.py`) | `orchestrator/crm_deals.py`, `orchestrator/crm_leads.py` |
+| Quotes & invoices | Documents, lines, numbering, payments, approval-gated sending; PDF with the Swiss QR-bill | `orchestrator/invoicing.py`, `orchestrator/invoicing_pdf.py` |
 | Approvals | Drafts (delete/merge, later outgoing quotes, invoices, employee changes) decided by holders of `<area>.approve` | `orchestrator/approvals.py` |
 | Tools | Declared in YAML with the permission they need, checked twice (offered + executed); built-ins, n8n webhooks, n8n API | `orchestrator/tools/` |
 | Telephony | Twilio Media Streams (8 kHz mu-law), streamed sentence-by-sentence speech | `orchestrator/call_handler.py` |
@@ -52,7 +53,7 @@ Email ─► provider ─► /mail/inbound/<token> (validated once) ─► sende
   `mail_labels` / `email_labels` / `email_state` (groups, tags, per-viewer read/star/archive), `mail_templates`
   (layouts and texts), `escalations`
 - `crm_companies`, `crm_contacts`, `crm_activities`, `crm_changes` (undo log), `crm_stages`, `crm_deals`,
-  `crm_suggestions`, `approvals`
+  `crm_suggestions`, `billing_products`, `billing_docs`, `billing_lines`, `billing_payments`, `approvals`
 - `reminders`, `tasks`, `scheduled_calls`, `external_calls`, `memories`, `meetings`, `api_usage`, `activity`, `health`, `app_settings`
 - Recordings: `data/storage/{user_id}/{date}/{session_id}/audio.wav`, moved to the NAS after 14 days.
 - New columns go in `db.ADDED_COLUMNS` and are applied on start.

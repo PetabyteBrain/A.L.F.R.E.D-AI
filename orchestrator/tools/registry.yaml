@@ -1410,3 +1410,75 @@ tools:
         link_to: {type: string}
         force: {type: boolean}
       required: [action, ids]
+
+  # ---------------------------------------------------------------- quotes & invoices (orchestrator/invoicing.py)
+  - name: billing_docs
+    kind: builtin
+    handler: billing_docs
+    permission: billing.use
+    description: >-
+      Quotes or invoices (state: draft, pending, open, overdue, partly_paid, paid, sent, accepted, declined,
+      expired, cancelled, or unpaid), optionally for one company or matching a number/title, plus the totals:
+      receivable, overdue, paid this month, open quotes.
+    input_schema:
+      type: object
+      properties:
+        kind: {type: string, enum: [quote, invoice]}
+        state: {type: string}
+        query: {type: string}
+        company: {type: string}
+
+  - name: billing_get
+    kind: builtin
+    handler: billing_get
+    permission: billing.use
+    description: One quote or invoice with its lines, recipient, totals and payments. ref = number (R-2026-0001) or id.
+    input_schema:
+      type: object
+      properties:
+        ref: {type: string}
+      required: [ref]
+
+  - name: billing_save
+    kind: builtin
+    handler: billing_save
+    permission: billing.use
+    description: >-
+      Write a draft quote or invoice (kind, no ref) or change a draft (ref). company / contact / deal by name;
+      lines = [{product (name of a saved product or service) or description, quantity, unit, unit_price (CHF,
+      net), discount (%), vat_key}] and replace all lines. Leave unit_price out when the person didn't give
+      one: saved products and services (e.g. "web design") bring their price, and the tool says if there is
+      none, so try it before asking. Drafts never go out by themselves.
+    input_schema:
+      type: object
+      properties:
+        kind: {type: string, enum: [quote, invoice]}
+        ref: {type: string}
+        company: {type: string}
+        contact: {type: string}
+        deal: {type: string}
+        title: {type: string}
+        intro: {type: string}
+        due_date: {type: string, description: "YYYY-MM-DD (invoice: payable by; quote: valid until)"}
+        lines: {type: array, items: {type: object}}
+
+  - name: billing_action
+    kind: builtin
+    handler: billing_action
+    permission: billing.use
+    description: >-
+      send (to the client by email: needs approval), remind (payment reminder: needs approval), cancel (an
+      issued document: needs approval), issue (number and file it without sending, e.g. to post it), accept /
+      decline (a quote), payment (record a payment; amount empty = the open amount; paid_on YYYY-MM-DD),
+      to_invoice (a draft invoice from a quote). Only when the person asked for that.
+    input_schema:
+      type: object
+      properties:
+        action: {type: string, enum: [send, remind, cancel, issue, accept, decline, payment, to_invoice]}
+        ref: {type: string}
+        to: {type: string, description: "send: another address than the recipient's"}
+        message: {type: string, description: "send/remind: own email text instead of the standard one"}
+        amount: {type: string}
+        paid_on: {type: string}
+        reason: {type: string}
+      required: [action, ref]

@@ -9,6 +9,7 @@ handler runs with the approver as the actor; the requester is told the outcome.
 from __future__ import annotations
 
 import asyncio
+import inspect
 import json
 import logging
 from typing import Callable
@@ -18,9 +19,10 @@ from .identity.registry import Person
 
 log = logging.getLogger(__name__)
 
-# (area, kind) -> handler(payload, actor: Person) -> short result text; raises ValueError with a safe message
-HANDLERS: dict[tuple[str, str], Callable[[dict, Person], str]] = {}
-AREA_LABELS = {"crm": "CRM"}
+# (area, kind) -> handler(payload, actor: Person) -> short result text (or a coroutine giving it, e.g. sending
+# an email); raises ValueError with a safe message
+HANDLERS: dict[tuple[str, str], Callable] = {}
+AREA_LABELS = {"crm": "CRM", "billing": "Billing"}
 
 
 class ApprovalError(ValueError):
@@ -140,7 +142,7 @@ def pending_count(person: Person) -> int:
                         f"({','.join('?' * len(areas))})", areas)["n"]
 
 
-def decide(approval_id: int, person: Person, approve: bool, note: str = "") -> dict:
+async def decide(approval_id: int, person: Person, approve: bool, note: str = "") -> dict:
     a = get(approval_id)
     if not a:
         raise ApprovalError("No such request.")
@@ -156,6 +158,8 @@ def decide(approval_id: int, person: Person, approve: bool, note: str = "") -> d
     if approve:
         try:
             result = HANDLERS[(a["area"], a["kind"])](a["payload"], person)
+            if inspect.isawaitable(result):
+                result = await result
         except ValueError as e:
             db.execute("UPDATE approvals SET status = 'failed', result = ? WHERE id = ?", (str(e)[:500], approval_id))
         except Exception as e:  # noqa: BLE001

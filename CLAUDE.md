@@ -116,6 +116,14 @@ docs and the real homelab map are git-ignored (`docs/PROJECT_PLAN.md`, `CLAUDE.l
   entity "deal"; won/lost sets `closed_at`, `board()` and `forecast()`). Stage moves are shown on timelines from
   `crm_changes`. Leads: `orchestrator/crm_leads.py` (`crm_suggestions`, from `market_analysis.analyse` shortlists
   and inquiry senders; add/link/dismiss only by a person). Permission crm.settings for the stages.
+- Quotes and invoices (stage 3): `orchestrator/invoicing.py` (NOT billing.py: that one fetches Anthropic's billed
+  cost for the Usage tab). Settings in app_settings "billing" (address, IBAN, VAT, terms, formats, texts),
+  `billing_products`, `billing_docs` (draft -> pending -> issued -> paid/accepted/declined/cancelled; `display_status`
+  adds open/overdue/partly_paid/expired), `billing_lines`, `billing_payments`. Issuing = next number per kind and year
+  (`_next_number` in a transaction), freeze, PDF (`orchestrator/invoicing_pdf.py`: reportlab + qrbill/svglib, the QR
+  part drawn at the page bottom), filed to the company share. Sending, reminders and cancelling are approvals (area
+  "billing", async handlers send the email with the PDF). Permissions billing.use / billing.approve /
+  billing.settings. API `dashboard/api/billing.py` (`/api/billing/...`), UI `components/crm/Billing*.jsx`.
 - API `dashboard/api/crm.py` (`/api/crm/{companies|contacts|deals}...` and fixed paths under `/api/crm-actions`:
   pipeline, stages, leads, approvals, undo); UI `pages/CRM.jsx` + `components/crm/*` (same layout classes as Mail).
   Tools crm_*, crm_deals, crm_deal_save, crm_leads, crm_lead_decide and list/decide_approval.

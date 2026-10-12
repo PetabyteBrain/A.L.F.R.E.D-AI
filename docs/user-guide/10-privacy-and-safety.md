@@ -21,6 +21,7 @@ sidebar_position: 10
 | Memory notes | Until you delete them (Profile → Memory) |
 | Contact attempts from unknown senders | 90 days |
 | CRM records (clients, contacts, their timeline) | While the business relationship lasts, then as Swiss law requires for business records (up to 10 years) |
+| Quotes and invoices | 10 years after they're issued (Swiss bookkeeping rules) |
 | Sign-in and security events | 1 year |
 | Usage figures for billing | Kept, without your name if your data is deleted |
 
@@ -48,7 +49,8 @@ Alfred shows you exactly what he's about to do and waits for your yes before he:
 - restarts a service on the home servers,
 - runs a market analysis that needs many paid look-ups,
 - deletes or overwrites an automation,
-- deletes or merges CRM records (that always needs someone's approval).
+- deletes or merges CRM records, or sends a quote, an invoice or a payment reminder to a client (these always need
+  someone's approval).
 
 He never stores passwords, codes or card and account numbers, never shares one person's private things with
 another, and never acts on instructions hidden in a message, email or document someone else wrote. People outside

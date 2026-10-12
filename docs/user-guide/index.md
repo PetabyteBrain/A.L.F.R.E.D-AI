@@ -40,7 +40,7 @@ Alfred only ever offers you what your roles allow, and simply says so when you a
 | [Memory, notes, files and search](05-memory-notes-files.md) | What Alfred remembers, notes and lists, the file explorer, documents, receipts, searching |
 | [Email](06-email.md) | Alfred's address, sending and receiving, attachments, the Mail tab, groups and tags, templates |
 | [Company work](07-company.md) | Company files and to-do list, market analysis, inquiries and matters for the team |
-| [CRM: clients and contacts](12-crm.md) | Pipeline and deals, forecast, companies and people, suggested leads, the timeline, undo, approvals |
+| [CRM: clients and contacts](12-crm.md) | Pipeline and deals, quotes and invoices with the QR-bill, companies and people, suggested leads, approvals |
 | [The dashboard, tab by tab](08-dashboard.md) | Every tab explained, skins, the avatar helper |
 | [Administration](09-administration.md) | People and roles, settings, usage and budgets, data requests, systems and backups (admins) |
 | [Privacy and safety](10-privacy-and-safety.md) | What is recorded and for how long, what Alfred never does without asking, your data |

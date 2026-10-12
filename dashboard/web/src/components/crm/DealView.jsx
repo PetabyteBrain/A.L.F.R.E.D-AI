@@ -5,6 +5,7 @@ import { usePoll } from "../../hooks.js";
 import { ErrorNote, Tag } from "../common.jsx";
 import { Icon } from "../icons.jsx";
 import { OutcomeDialog } from "./Pipeline.jsx";
+import DocList from "./DocList.jsx";
 import Timeline from "./Timeline.jsx";
 
 /* One deal: stage (switch in place), money, dates, next step, the people involved, its timeline and history. */
@@ -14,7 +15,7 @@ const FIELD_WORD = { stage_id: "stage", value: "value", probability: "probabilit
                      next_step: "next step", next_step_at: "next step date", outcome_note: "outcome", company_id: "company",
                      contact_id: "contact", owner_id: "owner", group_id: "group" };
 
-export default function DealView({ id, status, onBack, onOpen, onEdit, onToast, onChanged }) {
+export default function DealView({ id, status, onBack, onOpen, onEdit, onToast, onChanged, canBilling, onNewDoc, onOpenDoc }) {
   const path = `/crm/deals/${id}`;
   const { data: d, error, reload } = usePoll(() => api(path), 0, [path]);
   const [hist, setHist] = useState(null);
@@ -123,6 +124,11 @@ export default function DealView({ id, status, onBack, onOpen, onEdit, onToast, 
             <div className="kv crm-fact"><span>Added</span><b>{fmtAgo(d.created_at)}{d.created_by_name ? ` by ${d.created_by_name}` : ""}</b></div>
           </div>
           {d.notes && <div className="crm-notes"><h3 className="sub">Notes</h3><p className="pre">{d.notes}</p></div>}
+          {canBilling && (
+            <DocList filter={`deal_id=${id}`} preset={{ deal_id: id, ...(d.company_id ? { company_id: d.company_id } : {}),
+                                                       ...(d.contact_id ? { contact_id: d.contact_id } : {}), title: d.title }}
+                     onOpenDoc={onOpenDoc} onNewDoc={onNewDoc} />
+          )}
           <section className="crm-history">
             <button type="button" className="btn ghost small" onClick={history} aria-expanded={!!hist}>History {hist ? "▴" : "▾"}</button>
             {hist && (

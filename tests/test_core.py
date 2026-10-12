@@ -5200,6 +5200,7 @@ def test_signoff_written_by_the_model_is_not_doubled():
 
 
 def test_crm_records_visibility_duplicates_undo_and_approvals():
+    import asyncio
     from orchestrator import approvals, crm, mail, permissions
     boss = permissions.Actor(0, "test", permissions.KEYS, True)
     if not registry.role_exists("sales-rep"):
@@ -5275,8 +5276,8 @@ def test_crm_records_visibility_duplicates_undo_and_approvals():
     req = crm.request(co, "merge", "company", dup["id"], merge_into=acme["id"], reason="same firm")
     assert req["status"] == "pending" and crm.request(co, "merge", "company", dup["id"], merge_into=acme["id"])["already_pending"]
     with pytest.raises(approvals.ApprovalError):
-        approvals.decide(req["id"], rep, True)
-    assert approvals.decide(req["id"], co, True)["status"] == "approved"
+        asyncio.run(approvals.decide(req["id"], rep, True))
+    assert asyncio.run(approvals.decide(req["id"], co, True))["status"] == "approved"
     merged = crm.get(co, "company", acme["id"])
     assert "second entry" in merged["notes"] and any(i["summary"] == "Note on the duplicate"
                                                      for i in crm.timeline(co, "company", acme["id"]))
@@ -5284,7 +5285,7 @@ def test_crm_records_visibility_duplicates_undo_and_approvals():
         crm.get(co, "company", dup["id"])
     gone = crm.request(rep, "delete", "company", mine["id"])
     assert approvals.list_for(rep)[0]["can_cancel"] and not approvals.list_for(rep)[0]["can_decide"]
-    assert approvals.decide(gone["id"], co, False, "keep it")["status"] == "rejected"
+    assert asyncio.run(approvals.decide(gone["id"], co, False, "keep it"))["status"] == "rejected"
     assert crm.get(rep, "company", mine["id"])
     archived = crm.set_archived(co, "contact", erika["id"], True)["record"]
     assert archived["archived"] and crm.search(co, "contact", q="erika")["total"] == 0
@@ -5306,7 +5307,7 @@ def test_crm_api_tools_and_buttons(monkeypatch):
     with TestClient(app, base_url="http://testserver") as c:
         c.post("/api/login", json={"username": "admin", "password": "correct horse battery"}, headers=CSRF)
         st = c.get("/api/crm/status").json()
-        assert st["can"] == {"edit": True, "approve": True, "view_all": True, "settings": True} and "client" in st["statuses"]
+        assert st["can"] == {"edit": True, "approve": True, "view_all": True, "settings": True, "billing": True}             and "client" in st["statuses"]
         made = c.post("/api/crm/companies", json={"fields": {"name": "Api Shop SA", "status": "lead"}}, headers=CSRF).json()
         cid = made["record"]["id"]
         r = c.post("/api/crm/companies", json={"fields": {"name": "API shop"}}, headers=CSRF)
@@ -5368,6 +5369,7 @@ def test_crm_api_tools_and_buttons(monkeypatch):
 
 
 def test_crm_pipeline_deals_forecast_and_stages():
+    import asyncio
     from datetime import date, timedelta
     from orchestrator import approvals, crm, crm_deals, permissions
     co = registry.get_person(registry.add_user("Dora Deals", "cofounder"))
@@ -5423,7 +5425,7 @@ def test_crm_pipeline_deals_forecast_and_stages():
     assert late["overdue_close"] and crm_deals.forecast(co)["overdue"]["count"] >= 1
     # Deleting a deal waits for approval.
     req = crm.request(co, "delete", "deal", late["id"])
-    assert approvals.decide(req["id"], co, True)["status"] == "approved"
+    assert asyncio.run(approvals.decide(req["id"], co, True))["status"] == "approved"
     with pytest.raises(crm.CrmError):
         crm_deals.get(co, late["id"])
 
@@ -5592,3 +5594,165 @@ async def test_tidy_look_gets_one_follow_through_nudge(monkeypatch):
     monkeypatch.setattr(agent_core, "_client", NS(messages=fake))
     assert await agent_core.respond(admin, "telegram", sid, "What notes do I have?") == "You have 4 notes."
     assert len(calls) == 3 and ran == ["notes_overview"]
+
+
+def test_billing_amounts_and_references():
+    from stdnum import iso11649
+    from orchestrator import invoicing as billing
+    s = {**billing.DEFAULTS, "vat_enabled": True}
+    t = billing.compute([{"quantity": 12.5, "unit_price": 140}, {"quantity": 1, "unit_price": 240},
+                         {"quantity": 1, "unit_price": 19.9, "discount": 10},
+                         {"quantity": 2, "unit_price": 50, "vat_key": "reduced"}], s)
+    assert [ln["net"] for ln in t["lines"]] == [1750.0, 240.0, 17.91, 100.0]
+    assert t["total_net"] == 2107.91 and t["total_vat"] == 165.24
+    assert {b["rate"]: b["vat"] for b in t["vat_breakdown"]} == {8.1: 162.64, 2.6: 2.6}
+    assert t["total"] == 2273.15 and t["rounding"] == 0.0                  # 2273.15 is already a 5-Rappen amount
+    t2 = billing.compute([{"quantity": 1, "unit_price": 10.02}], {**billing.DEFAULTS, "vat_enabled": False})
+    assert t2["total"] == 10.0 and t2["rounding"] == -0.02 and t2["vat_breakdown"] == []
+    # QR reference (recursive mod 10, the SIX example) and ISO 11649 creditor references.
+    assert billing.qr_reference(int("21000000000313947143000901")) == "210000000003139471430009017"
+    assert iso11649.is_valid(billing.creditor_reference("R-2026-0042"))
+    assert billing.is_qr_iban("CH44 3199 9123 0008 8901 2") and not billing.is_qr_iban("CH93 0076 2011 6238 5295 7")
+    assert billing.fmt_chf(12500.5) == "CHF 12’500.50"
+    assert billing._parse_address("Weg 2a\nCH-6000 Luzern") == {"street": "Weg", "house_num": "2a", "pcode": "6000",
+                                                              "city": "Luzern", "country": "CH"}
+
+
+def test_billing_documents_issue_send_pay_and_cancel(monkeypatch, tmp_path):
+    import asyncio, io
+    from pypdf import PdfReader
+    from orchestrator import approvals, crm, nas, permissions
+    from orchestrator import invoicing as billing
+    from orchestrator import nas_files
+    sent = _mail_on(monkeypatch, tmp_path)
+    monkeypatch.setattr(nas, "enabled", lambda: True)
+    monkeypatch.setattr(nas_files, "_smb", nas._smb)                         # the fake storage from _mail_on
+    co = registry.get_person(registry.add_user("Bianca Billing", "cofounder"))
+    friend = registry.lookup("telegram", "22222222")
+    boss = permissions.Actor(0, "test", permissions.KEYS, True)
+    if not registry.role_exists("bill-clerk"):
+        permissions.create_role(boss, "Bill clerk")                         # CRM but no billing
+        for p in ("crm.use", "crm.edit"):
+            permissions.set_rule(boss, "bill-clerk", p, "allow")
+    clerk = registry.get_person(registry.add_user("Carl Clerk", "bill-clerk"))
+    with pytest.raises(billing.BillingError):
+        billing.save_settings(co, {"iban": "CH00 1234"})
+    assert billing.missing_for_invoices({**billing.DEFAULTS, "name": "x"})
+    billing.save_settings(co, {"name": "Muster Studio GmbH", "street": "Musterstrasse", "house_num": "1", "pcode": "8000",
+                               "city": "Zürich", "iban": "CH93 0076 2011 6238 5295 7", "vat_enabled": True,
+                               "vat_number": "CHE-123.456.789 MWST", "invoice_format": "T-{year}-{seq:03d}"})
+    web = billing.save_product(co, {"name": "Test design hours", "unit": "h", "unit_price": 140})
+    acme = crm.save(co, "company", {"name": "Billing Acme AG", "address": "Weg 2\n6000 Luzern",
+                                    "email": "billing@acme.example"}, force=True)["record"]
+    doc = billing.save(co, {"kind": "invoice", "company_id": acme["id"], "title": "Relaunch",
+                            "lines": [{"product_id": web["id"], "quantity": 10}, {"description": "Hosting", "unit_price": 240}]})
+    assert doc["status"] == "draft" and doc["number"] is None and doc["recipient"]["city"] == "Luzern"
+    assert doc["lines"][0]["description"] == "Test design hours" and doc["total"] == round((1400 + 240) * 1.081 * 20) / 20
+    for who in (friend, clerk):
+        with pytest.raises(billing.BillingError):
+            billing.get(who, doc["id"])
+    pdf, name = billing.pdf_bytes(co, doc["id"])
+    assert name.startswith("Draft invoice") and "Payment part" in "".join(p.extract_text() for p in PdfReader(io.BytesIO(pdf)).pages)
+
+    # Sending waits for approval; approving numbers it, files the PDF and emails it with the PDF attached.
+    req = billing.request_send(co, doc["id"])
+    assert req["status"] == "pending" and billing.get(co, doc["id"])["status"] == "pending"
+    with pytest.raises(billing.BillingError):
+        billing.save(co, {"title": "changed"}, doc["id"])
+    done = asyncio.run(approvals.decide(req["id"], co, True))
+    assert done["status"] == "approved", done
+    d = billing.get(co, doc["id"])
+    year = billing._today().year
+    assert d["number"] == f"T-{year}-001" and d["state"] == "open" and d["sent_email_id"]
+    assert d["reference"].startswith("RF") and d["pdf_path"].startswith(f"company:Billing/Invoices/{year}/")
+    msg, rcpts = sent[-1]
+    assert rcpts == ["billing@acme.example"] and d["number"] in msg["Subject"]
+    assert any(p.get_content_type() == "application/pdf" for p in msg.iter_attachments())
+    assert any("issued" in i["summary"] for i in crm.timeline(co, "company", acme["id"]))
+    with pytest.raises(billing.BillingError):
+        billing.request_send(co, doc["id"])                                  # already sent
+
+    # Payments: partial, then the rest; removing one reopens it.
+    with pytest.raises(billing.BillingError):
+        billing.request_reminder(co, billing.save(co, {"kind": "invoice", "company_id": acme["id"]})["id"])
+    billing.add_payment(co, doc["id"], 500)
+    assert billing.get(co, doc["id"])["state"] == "partly_paid"
+    paid = billing.add_payment(co, doc["id"], None)                          # the open rest
+    assert paid["status"] == "paid" and paid["open_amount"] == 0
+    billing.remove_payment(co, paid["payments"][-1]["id"])
+    assert billing.get(co, doc["id"])["state"] == "partly_paid"
+    rem = billing.request_reminder(co, doc["id"])
+    assert asyncio.run(approvals.decide(rem["id"], co, True))["status"] == "approved"
+    assert billing.get(co, doc["id"])["reminders"] == 1 and "reminder" in sent[-1][0]["Subject"].lower()
+    with pytest.raises(billing.BillingError):
+        billing.request_cancel(co, doc["id"])                                # payments recorded
+
+    # Quotes: issue without sending, accept, turn into an invoice; cancel an invoice via approval; discard drafts.
+    q = billing.save(co, {"kind": "quote", "company_id": acme["id"], "lines": [{"description": "Shop", "unit_price": 5000}]})
+    q = billing.issue(co, q["id"])
+    assert q["number"].startswith("Q-") and q["state"] == "sent" and not q["sent_email_id"]
+    assert billing.set_quote_outcome(co, q["id"], True)["state"] == "accepted"
+    inv = billing.copy(co, q["id"], "invoice")
+    assert inv["kind"] == "invoice" and inv["quote_id"] == q["id"] and inv["total"] == q["total"]
+    inv = billing.issue(co, inv["id"])
+    assert inv["number"] == f"T-{year}-002"                                  # numbers without gaps
+    c = billing.request_cancel(co, inv["id"], "wrong amount")
+    asyncio.run(approvals.decide(c["id"], co, True))
+    assert billing.get(co, inv["id"])["state"] == "cancelled"
+    draft = billing.save(co, {"kind": "invoice", "company_id": acme["id"]})
+    billing.discard(co, draft["id"])
+    with pytest.raises(billing.BillingError):
+        billing.get(co, draft["id"])
+    with pytest.raises(billing.BillingError):
+        billing.discard(co, inv["id"])
+    text, fname = billing.export_csv(co, year=year)
+    assert fname == f"invoices-{year}.csv" and f"T-{year}-001" in text and "vat 8.1%" in text and "cancelled" in text
+    s = billing.summary(co)
+    assert s["receivable"] > 0 and s["quotes_open"] == 0
+
+
+def test_billing_api_and_tools(monkeypatch, tmp_path):
+    import asyncio
+    from fastapi.testclient import TestClient
+    from orchestrator import crm
+    from orchestrator import invoicing as billing
+    from orchestrator.main import app
+    from orchestrator.tools import registry as tools
+    _mail_on(monkeypatch, tmp_path)
+    admin = registry.lookup("telegram", "111")
+    billing.save_settings(admin, {"name": "Api Studio", "street": "Weg", "house_num": "3", "pcode": "3000",
+                                  "city": "Bern", "iban": "CH93 0076 2011 6238 5295 7", "vat_enabled": False})
+    billing.save_product(admin, {"name": "Api consulting", "unit": "h", "unit_price": 150})
+    crm.save(admin, "company", {"name": "Api Client AG", "address": "Bahnhofstrasse 1\n8001 Zürich",
+                                "email": "ap@client.example"}, force=True)
+    with TestClient(app, base_url="http://testserver") as c:
+        c.post("/api/login", json={"username": "admin", "password": "correct horse battery"}, headers=CSRF)
+        st = c.get("/api/billing/status").json()
+        assert st["missing"] == [] and st["can"] == {"settings": True, "approve": True}
+        d = c.post("/api/billing/docs", json={"fields": {"kind": "quote"}}, headers=CSRF).json()
+        d = c.patch(f"/api/billing/docs/{d['id']}", json={"fields": {"lines": [{"description": "Work", "quantity": 2,
+                                                                                  "unit_price": "100"}]}}, headers=CSRF).json()
+        assert d["total"] == 200.0
+        r = c.get(f"/api/billing/docs/{d['id']}/pdf")
+        assert r.status_code == 200 and r.headers["content-type"] == "application/pdf" and r.content[:4] == b"%PDF"
+        assert c.post(f"/api/billing/docs/{d['id']}/send", json={}, headers=CSRF).status_code == 400   # no recipient email
+        assert c.delete(f"/api/billing/docs/{d['id']}", headers=CSRF).json()["ok"]
+        assert c.put("/api/billing/settings", json={"settings": {"payment_days": 999}}, headers=CSRF).status_code == 400
+        assert c.get("/api/billing/export?year=2026").headers["content-type"].startswith("text/csv")
+        c.post("/api/logout", headers=CSRF)
+    ctx = tools.ToolContext(admin, None, "telegram")
+    out, err = asyncio.run(tools.execute("billing_save", {"kind": "invoice", "company": "Api Client",
+                                                          "lines": [{"product": "consulting", "quantity": 3}]}, ctx))
+    assert not err and '"total": 450.0' in out
+    out, _ = asyncio.run(tools.execute("billing_save", {"kind": "invoice", "lines": [{"product": "nothing like it"}]}, ctx))
+    assert "No single product" in out
+    out, _ = asyncio.run(tools.execute("billing_save", {"kind": "quote", "company": "Api Client",
+                                                        "lines": [{"description": "Api consulting", "quantity": 2}]}, ctx))
+    assert '"total": 300.0' in out                                           # the saved product's price
+    out, _ = asyncio.run(tools.execute("billing_save", {"kind": "quote", "lines": [{"description": "Logo", "quantity": 1}]}, ctx))
+    assert "Ask the person for the price" in out and "Api consulting" in out
+    ref = billing.search(admin, kind="invoice", q="Api Client")["items"][0]["id"]
+    out, _ = asyncio.run(tools.execute("billing_action", {"action": "send", "ref": str(ref)}, ctx))
+    assert '"approval_id"' in out and "waiting for approval" in out
+    out, _ = asyncio.run(tools.execute("billing_docs", {"state": "draft"}, ctx))
+    assert '"summary"' in out

@@ -8,6 +8,8 @@ import { Icon } from "../icons.jsx";
 /* Requests waiting for approval (deleting, merging; later quotes, invoices, employee changes). Approvers
    also get them on Telegram with buttons. The requester may approve their own (decided 2026-10-12). */
 
+const KIND_LABEL = { "crm:merge": "Merge", "crm:delete": "Delete", "billing:send": "Send to client",
+                     "billing:remind": "Payment reminder", "billing:cancel": "Cancel document" };
 const TONE = { pending: "busy", approved: "ok", rejected: "bad", failed: "bad", cancelled: "" };
 
 export default function Approvals({ onChanged }) {
@@ -42,8 +44,8 @@ export default function Approvals({ onChanged }) {
           ))}
         </div>
       </div>
-      <p className="muted small">Deleting and merging records waits here until someone with approval rights decides. You can
-        also decide with the buttons on Telegram, or ask Alfred.</p>
+      <p className="muted small">Deleting and merging records, and quotes, invoices and reminders going to clients wait here until
+        someone with approval rights decides. You can also decide with the buttons on Telegram, or ask Alfred.</p>
       {done && <div className="notice" role="status" onClick={() => setDone("")}>{done}</div>}
       <ErrorNote error={error || err} />
       {data && items.length === 0 && <Empty>{tab === "pending" ? "Nothing waiting for approval." : "No decided requests yet."}</Empty>}
@@ -52,7 +54,7 @@ export default function Approvals({ onChanged }) {
           <article key={a.id} className={`crm-approval s-${a.status}`}>
             <header>
               <span className="crm-approval-ico"><Icon name="approve" className="lab-ico" /></span>
-              <b>#{a.id} · {a.kind === "merge" ? "Merge" : a.kind === "delete" ? "Delete" : a.kind}</b>
+              <b>#{a.id} · {KIND_LABEL[`${a.area}:${a.kind}`] || a.kind}</b>
               <Tag kind={TONE[a.status]}>{a.status}</Tag>
               <span className="meta" title={fmtTime(a.created_at)}>{a.requested_by_name || "Someone"} · {fmtAgo(a.created_at)}</span>
             </header>

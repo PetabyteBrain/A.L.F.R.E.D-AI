@@ -1,6 +1,6 @@
 ---
 title: CRM: clients and contacts
-description: The sales pipeline and deals, companies and the people at them, suggested leads, the timeline, undo and approvals.
+description: The sales pipeline and deals, quotes and invoices with the QR-bill, companies and people, suggested leads, the timeline, undo and approvals.
 sidebar_position: 12
 ---
 
@@ -36,6 +36,10 @@ You can do most things just by telling Alfred:
 > "How does the pipeline look this month?"
 >
 > "Any new leads to look at?"
+>
+> "Write an invoice for Acme: 10 hours of web design." / "Make a quote for Beispiel Shop: online shop, CHF 9'000."
+>
+> "Send it." · "Acme paid invoice R-2026-0003." · "Which invoices are overdue?" · "Remind Café Muster about their invoice."
 
 Alfred looks a record up before he changes it and only uses details you give him. If something looks like a record
 that already exists, he tells you which and asks before creating a second one. He never deletes or merges anything
@@ -106,9 +110,42 @@ company** or **Add anyway**. The dropdown shows what was added, linked or dismis
 - **More**: **Archive** hides a record from the lists without deleting it (undoable; find it again with **Archive** in
   the sidebar, then **Restore**). **Merge into…** and **Delete…** send a request for approval.
 
+### Quotes & invoices
+
+**Who:** billing permissions (admins and cofounders by default): writing and recording payments, approving what
+goes to clients, and the billing settings are three separate permissions.
+
+- The top shows what's **receivable** (unpaid invoices), what's **overdue**, what was **paid this month**, the
+  **open quotes** and what's still **to finish** (drafts, documents waiting for approval). Click a figure to see those
+  documents. Switch between **Invoices** and **Quotes**, filter by state, search by number, title or client.
+  **Export (CSV)** gives the year's documents for the bookkeeping (net, VAT per rate, total, paid, status).
+- **New invoice / New quote** (also on every company and deal): pick the client (the address is filled in from the
+  company and can be adjusted; add a contact person for the "attention of" line), a title, an optional introduction,
+  and the payment date (empty = the usual terms). **Lines**: choose a saved product or service (description, unit
+  and price come along) or type freely; quantity, unit, price, discount and VAT rate. The totals update as you
+  type; saving calculates them exactly (VAT per rate, rounded to 5 Rappen).
+- **Preview PDF** shows the document as the client will get it: your company's banner and colour from the email
+  layout, the address for a window envelope, the lines, VAT and totals, and on invoices the **Swiss QR-bill** at the
+  bottom (the client scans it with their banking app). Drafts are marked DRAFT.
+- **Send…** asks for approval; once approved the document gets its number, is filed as a PDF in the company files
+  (Billing/Invoices or Billing/Quotes, by year) and goes to the client by email in the company layout. **Issue without
+  sending** numbers and files it right away, for posting or handing it over yourself.
+- Issued documents can't be changed. **Copy as new draft** starts a corrected version; **Cancel…** (with approval)
+  voids an issued one (its number stays used). Drafts can be discarded.
+- **Invoices**: record payments (partial payments too; empty amount = what's still open), remove one if it was
+  wrong, and send a **payment reminder** (with approval) when it's overdue. The state follows by itself: open,
+  partly paid, overdue, paid.
+- **Quotes**: mark them **accepted** or **declined**, and **Create invoice** turns an accepted quote into a draft
+  invoice with the same lines. Quotes past their date show as expired.
+- **Settings** (for whoever manages billing): company name and address, IBAN or QR-IBAN (both work; the reference on
+  the QR-bill follows), VAT on or off with the VAT number and rates (8.1 / 2.6 / 3.8 %), payment terms, how long
+  quotes are valid, number formats (for example R-{year}-{seq:04d}; numbers run without gaps per year), rounding to
+  5 Rappen, the footer texts and the email texts, and the **products & services** list.
+
 ## Approvals
 
-Deleting a record or a deal for good, and merging two records into one, never happen directly.
+Deleting a record or a deal for good, merging two records into one, sending a quote or an invoice, payment reminders
+and cancelling an issued document never happen directly.
 
 1. Someone asks (on the record's **More** menu, or by telling Alfred).
 2. Everyone allowed to approve gets a Telegram message with **Approve** / **Reject** buttons, and the request waits

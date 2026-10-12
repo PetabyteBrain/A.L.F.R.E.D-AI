@@ -6,6 +6,9 @@ import { Empty, ErrorNote, Tag } from "../components/common.jsx";
 import { Panel } from "../components/hud.jsx";
 import { Icon } from "../components/icons.jsx";
 import Approvals from "../components/crm/Approvals.jsx";
+import Billing from "../components/crm/Billing.jsx";
+import BillingDoc from "../components/crm/BillingDoc.jsx";
+import BillingSettings from "../components/crm/BillingSettings.jsx";
 import DealEditor from "../components/crm/DealEditor.jsx";
 import DealView from "../components/crm/DealView.jsx";
 import Leads from "../components/crm/Leads.jsx";
@@ -56,6 +59,7 @@ export default function CRM({ assistant }) {
   const [open, setOpen] = useState(null);                                // {entity, id}
   const [editor, setEditor] = useState(null);                            // {entity, record?, presetCompany?}
   const [stagesOpen, setStagesOpen] = useState(false);
+  const [billingSettings, setBillingSettings] = useState(false);
   const [toast, setToast] = useState(null);
   const [viewRev, setViewRev] = useState(0);                             // reloads the open record after edits/undo
   const [showFilters, setShowFilters] = useState(false);                 // phones: filters folded away
@@ -63,6 +67,15 @@ export default function CRM({ assistant }) {
   const searchRef = useRef(null);
   const listing = view === "company" || view === "contact";
   const canEdit = !!st?.can?.edit;
+  const canBilling = !!st?.can?.billing;
+  const { data: bill, reload: reloadBill } = usePoll(() => (canBilling ? api("/billing/status") : Promise.resolve(null)), 60000, [canBilling]);
+  async function newDoc(kind, preset = {}) {
+    setErr("");
+    try {
+      const d = await api("/billing/docs", { method: "POST", body: { fields: { kind, ...preset } } });
+      setViewState("billing"); setOpen({ entity: "billing", id: d.id }); reloadBill();
+    } catch (e) { setErr(e.message); }
+  }
 
   const setView = (v) => { setViewState(v); if (v !== "approvals" && v !== "leads") setSavedView(v); setOpen(null); setOffset(0); };
   const url = useMemo(() => {
@@ -78,6 +91,7 @@ export default function CRM({ assistant }) {
   const { data, error, reload } = usePoll(() => (url ? api(url) : Promise.resolve(null)), 30000, [url]);
   const items = data?.items || [];
   const changed = useCallback(() => { reload(); reloadStatus(); }, [reload, reloadStatus]);
+  const billChanged = () => { reloadBill(); reloadStatus(); };
   const showToast = useCallback((text, changeId = null) => setToast({ text, changeId, at: Date.now() }), []);
 
   async function undo() {
@@ -130,6 +144,13 @@ export default function CRM({ assistant }) {
               <span className="mail-count plain">{counts[v.count] ?? ""}</span>
             </button>
           ))}
+          {canBilling && (
+            <button type="button" className={`mail-side-box${view === "billing" ? " active" : ""}`} onClick={() => setView("billing")}>
+              <Icon name="doc" className="lab-ico" />Quotes &amp; invoices
+              {bill?.summary?.overdue_count > 0 ? <b className="mail-count warn" title="Overdue invoices">{bill.summary.overdue_count}</b>
+                : bill?.summary?.unpaid_count > 0 ? <span className="mail-count plain">{bill.summary.unpaid_count}</span> : null}
+            </button>
+          )}
           {canEdit && Object.keys(st?.leads || {}).length > 0 && (
             <button type="button" className={`mail-side-box${view === "leads" ? " active" : ""}`} onClick={() => setView("leads")}>
               <Icon name="inbox" className="lab-ico" />Leads
@@ -184,8 +205,17 @@ export default function CRM({ assistant }) {
         </nav>
 
         <section className="mail-main">
-          {open?.entity === "deal" ? (
+          {open?.entity === "billing" ? (
+            <BillingDoc key={`bill:${open.id}`} id={open.id} billing={bill} onBack={() => setOpen(null)}
+                        onOpenRecord={(entity, id) => setOpen({ entity, id })} onOpenDoc={(id) => setOpen({ entity: "billing", id })}
+                        onToast={showToast} onChanged={billChanged} />
+          ) : view === "billing" && !open ? (
+            <Billing billing={bill} onOpen={(id) => setOpen({ entity: "billing", id })} onNew={(kind) => newDoc(kind)}
+                     onSettings={() => setBillingSettings(true)} />
+          ) : open?.entity === "deal" ? (
             <DealView key={`deal:${open.id}:${viewRev}`} id={open.id} status={st} onBack={() => setOpen(null)}
+                      canBilling={canBilling} onNewDoc={(kind, preset) => newDoc(kind, preset)}
+                      onOpenDoc={(id) => setOpen({ entity: "billing", id })}
                       onOpen={(entity, id) => setOpen({ entity, id })} onEdit={(deal) => setEditor({ entity: "deal", record: deal })}
                       onToast={showToast} onChanged={changed} />
           ) : view === "approvals" && !open ? <Approvals onChanged={changed} />
@@ -212,6 +242,8 @@ export default function CRM({ assistant }) {
                         onEdit={(record) => setEditor({ entity: open.entity, record })}
                         onAddContact={(company) => setEditor({ entity: "contact", presetCompany: { id: company.id, name: company.name } })}
                         onAddDeal={(company) => setEditor({ entity: "deal", presetCompany: { id: company.id, name: company.name } })}
+                        canBilling={canBilling} onNewDoc={(kind, preset) => newDoc(kind, preset)}
+                        onOpenDoc={(id) => setOpen({ entity: "billing", id })}
                         onToast={showToast} onChanged={changed} />
           ) : (
             <>
@@ -284,6 +316,7 @@ export default function CRM({ assistant }) {
                       if (isNew && !editor.presetCompany) setOpen({ entity: "deal", id: out.record.id });
                     }} />
       )}
+      {billingSettings && <BillingSettings onClose={() => setBillingSettings(false)} onChanged={billChanged} />}
       {stagesOpen && <StagesDialog onClose={() => setStagesOpen(false)} onChanged={() => { reloadStatus(); setViewRev((n) => n + 1); }} />}
       {editor && editor.entity !== "deal" && (
         <RecordEditor entity={editor.entity} record={editor.record} presetCompany={editor.presetCompany} status={st}

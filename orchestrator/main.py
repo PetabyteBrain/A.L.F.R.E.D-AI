@@ -42,6 +42,7 @@ from dashboard.api.viewas import router as viewas_router
 from dashboard.api.settings_admin import router as settings_router
 from dashboard.api.access import router as access_router
 from dashboard.api.crm import actions as crm_actions_router, router as crm_router
+from dashboard.api.billing import router as billing_router
 from dashboard.api.continuity import router as continuity_router
 from dashboard.api.routes import router as dashboard_router
 from dashboard.api.security import SecurityMiddleware
@@ -223,6 +224,7 @@ app.include_router(settings_router)
 app.include_router(access_router)
 app.include_router(crm_router)
 app.include_router(crm_actions_router)
+app.include_router(billing_router)
 app.include_router(continuity_router)
 app.include_router(google_router)
 app.include_router(chat_router)

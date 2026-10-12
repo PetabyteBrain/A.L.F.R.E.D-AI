@@ -288,6 +288,31 @@ def fake_mail() -> None:
                                "street": "Bahnhofplatz 2", "postcode": "6003", "town": "Luzern", "score": 6,
                                "website": "http://coiffeur.example", "reasons": ["website not mobile-friendly"]}],
                              "Luzern, Switzerland", date.today().isoformat())
+    if not db.query_one("SELECT 1 FROM billing_products LIMIT 1"):       # quotes & invoices demo (#58 stage 3)
+        from orchestrator import invoicing as billing
+        boss = reg.get_person(db.query_one("SELECT user_id FROM user_identifiers WHERE type = 'dashboard' "
+                                           "AND value = 'cofounder'")["user_id"])
+        billing.save_settings(boss, {"name": "Muster Studio GmbH", "street": "Musterstrasse", "house_num": "1",
+                                     "pcode": "8000", "city": "Zürich", "iban": "CH93 0076 2011 6238 5295 7",
+                                     "vat_enabled": True, "vat_number": "CHE-123.456.789 MWST",
+                                     "email": "billing@studio.example"})
+        web = billing.save_product(boss, {"name": "Web design", "unit": "h", "unit_price": 140,
+                                          "description": "Design and implementation"})
+        billing.save_product(boss, {"name": "Hosting", "unit": "year", "unit_price": 240})
+        cos = {r["name"]: r["id"] for r in db.query("SELECT id, name FROM crm_companies")}
+        if cos.get("Café Muster"):
+            db.execute("UPDATE crm_companies SET address = ?, email = ? WHERE id = ?",
+                       ("Hauptgasse 5\n6000 Luzern", "info@cafe-muster.example", cos["Café Muster"]))
+        inv = billing.save(boss, {"kind": "invoice", "company_id": cos.get("Café Muster"), "title": "Menu website",
+                                  "lines": [{"product_id": web["id"], "quantity": 24},
+                                            {"description": "Domain and setup", "unit_price": 90}]})
+        billing.issue(boss, inv["id"])
+        billing.save(boss, {"kind": "invoice", "company_id": cos.get("Atelier Nord"), "title": "Brand refresh, part 1",
+                            "lines": [{"product_id": web["id"], "quantity": 10}]})
+        q = billing.save(boss, {"kind": "quote", "company_id": cos.get("Beispiel Shop GmbH"), "title": "Online shop",
+                                "intro": "Thank you for your inquiry. We're glad to offer:",
+                                "lines": [{"product_id": web["id"], "quantity": 80}, {"description": "Shop setup", "unit_price": 1800}]})
+        billing.issue(boss, q["id"])
     if db.query_one("SELECT 1 FROM emails LIMIT 1"):
         return
     admin = db.query_one("SELECT id FROM users WHERE role='admin'")["id"]

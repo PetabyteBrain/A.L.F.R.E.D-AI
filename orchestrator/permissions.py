@@ -58,6 +58,10 @@ _CATALOGUE = [
     ("crm.settings", "CRM", "CRM: set up the sales pipeline (stages)", "c"),
     ("crm.approve", "CRM", "CRM: approve deletions, merges and anything sent to clients", "c"),
 
+    ("billing.use", "Billing", "Quotes and invoices: write, issue and record payments", "c"),
+    ("billing.approve", "Billing", "Approve sending quotes, invoices and reminders to clients", "c"),
+    ("billing.settings", "Billing", "Billing settings: bank account, VAT, numbering, products", "c"),
+
     ("automations.view", "Automations", "See n8n workflows and their runs", "c"),
     ("automations.run", "Automations", "Run n8n workflows", "c"),
     ("automations.edit", "Automations", "Create, edit and switch n8n workflows on/off", "c"),

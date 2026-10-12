@@ -294,7 +294,7 @@ async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if kind == "apv" and action in ("yes", "no") and rid.isdigit():
         from . import approvals
         try:
-            a = approvals.decide(int(rid), person, action == "yes")
+            a = await approvals.decide(int(rid), person, action == "yes")
             note = {"approved": "✓ Approved", "rejected": "✕ Rejected", "failed": "Approved, but it failed"}[a["status"]]
             if a["status"] == "failed" and a.get("result"):
                 note += f": {a['result']}"

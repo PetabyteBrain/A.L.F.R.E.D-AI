@@ -976,7 +976,7 @@ async def list_approvals(ctx, status: str = "pending") -> dict:
 async def decide_approval(ctx, approval_id: int, approve: bool, note: str = "") -> dict:
     from .. import approvals
     try:
-        a = approvals.decide(int(approval_id), ctx.person, bool(approve), note)
+        a = await approvals.decide(int(approval_id), ctx.person, bool(approve), note)
     except approvals.ApprovalError as e:
         return {"error": str(e)}
     return {"approval_id": a["id"], "status": a["status"], "result": a["result"]}
@@ -1057,3 +1057,139 @@ async def crm_lead_decide(ctx, action: str, ids: list[int], link_to: str = "", f
         return out
     except crm.CrmError as e:
         return {"error": str(e)}
+
+
+
+# --- quotes and invoices (orchestrator/invoicing.py, roadmap #58 stage 3) ----------------------------------
+
+def _doc_brief(d: dict) -> dict:
+    keys = ("id", "kind", "number", "label", "state", "title", "company_name", "contact_name", "issue_date", "due_date",
+            "total", "total_vat", "paid_amount", "open_amount", "reminders")
+    return {k: d[k] for k in keys if d.get(k) not in (None, "", 0, 0.0) or k in ("total", "state")}
+
+
+def _billing_find(person, ref, kind: str = ""):
+    from .. import invoicing as billing
+    s = str(ref or "").strip()
+    if s.isdigit():
+        return billing.get(person, int(s))
+    hits = [d for d in billing.search(person, kind=kind, q=s, limit=8)["items"]]
+    exact = [d for d in hits if (d["number"] or "").lower() == s.lower()]
+    if len(exact) == 1 or len(hits) == 1:
+        return billing.get(person, (exact or hits)[0]["id"])
+    if not hits:
+        raise billing.BillingError(f"I found no quote or invoice matching “{ref}”.")
+    raise billing.BillingError("Several match: " + "; ".join(f"#{d['id']} {d['label']} {d['company_name'] or ''}"
+                                                            for d in hits) + ". Which one?")
+
+
+@handler
+async def billing_docs(ctx, kind: str = "invoice", state: str = "", query: str = "", company: str = "") -> dict:
+    from .. import crm, invoicing as billing
+    try:
+        company_id = crm.find_one(ctx.person, "company", company)["id"] if company else None
+        res = billing.search(ctx.person, kind=kind if kind in ("quote", "invoice") else "", state=state, q=query,
+                             company_id=company_id, limit=25)
+        return {"total": res["total"], "documents": [_doc_brief(d) for d in res["items"]],
+                "summary": billing.summary(ctx.person), "currency": "CHF"}
+    except (billing.BillingError, crm.CrmError) as e:
+        return {"error": str(e)}
+
+
+@handler
+async def billing_get(ctx, ref: str) -> dict:
+    from .. import invoicing as billing
+    try:
+        d = _billing_find(ctx.person, ref)
+    except billing.BillingError as e:
+        return {"error": str(e)}
+    out = _doc_brief(d)
+    out["lines"] = [{k: ln[k] for k in ("description", "quantity", "unit", "unit_price", "discount", "vat_rate", "net")}
+                    for ln in d["lines"]]
+    out["recipient"] = d["recipient"]
+    out["payments"] = [{"amount": p["amount"], "paid_on": p["paid_on"]} for p in d["payments"]]
+    if d.get("pending_approval"):
+        out["waiting_for_approval"] = d["pending_approval"]["summary"]
+    return out
+
+
+@handler
+async def billing_save(ctx, kind: str = "", ref: str = "", company: str = "", contact: str = "", deal: str = "",
+                       title: str = None, intro: str = None, due_date: str = None, lines: list = None) -> dict:
+    from .. import crm, crm_deals, invoicing as billing
+    data: dict = {}
+    try:
+        if company:
+            data["company_id"] = crm.find_one(ctx.person, "company", company)["id"]
+        if contact:
+            data["contact_id"] = crm.find_one(ctx.person, "contact", contact)["id"]
+        if deal:
+            data["deal_id"] = crm_deals.find_one(ctx.person, deal)["id"]
+        for k, v in (("title", title), ("intro", intro), ("due_date", due_date)):
+            if v is not None:
+                data[k] = v
+        if lines is not None:
+            clean = []
+            names = ", ".join(f"{x['name']} ({x['unit_price']:g}/{x['unit'] or 'unit'})" for x in billing.products()) or "none saved yet"
+            for ln in lines:
+                ln = dict(ln or {})
+                prod = ln.pop("product", None)
+                if prod:
+                    p = billing.find_product(prod)
+                    if not p:
+                        return {"error": f"No single product or service matches “{prod}”. Products: {names}."}
+                    ln["product_id"] = p["id"]
+                elif ln.get("unit_price") in (None, ""):
+                    # No price given: a saved product of that name has one; otherwise the person has to say it.
+                    p = billing.find_product(ln.get("description", ""))
+                    if not p:
+                        return {"error": f"There's no price for “{ln.get('description', '')}” and no saved product of "
+                                         f"that name. Ask the person for the price. Products: {names}."}
+                    ln["product_id"] = p["id"]
+                clean.append({k: v for k, v in ln.items() if k in ("product_id", "description", "quantity", "unit",
+                                                                   "unit_price", "discount", "vat_key")})
+            data["lines"] = clean
+        if ref:
+            d = billing.save(ctx.person, data, _billing_find(ctx.person, ref)["id"])
+        else:
+            if kind not in ("quote", "invoice"):
+                return {"error": "Say whether it's a quote or an invoice."}
+            d = billing.save(ctx.person, {"kind": kind, **data})
+    except (billing.BillingError, crm.CrmError) as e:
+        return {"error": str(e)}
+    return {"saved": True, "draft": _doc_brief(d), "lines": len(d["lines"]),
+            "next": "It's a draft: show the person the total and lines. Sending it to the client needs approval "
+                    "(billing_action send); nothing has gone out."}
+
+
+@handler
+async def billing_action(ctx, action: str, ref: str, to: str = "", message: str = "", amount: str = "",
+                         paid_on: str = "", reason: str = "") -> dict:
+    from .. import invoicing as billing
+    try:
+        d = _billing_find(ctx.person, ref)
+        if action == "send":
+            a = billing.request_send(ctx.person, d["id"], to=to, message=message)
+        elif action == "remind":
+            a = billing.request_reminder(ctx.person, d["id"], message=message)
+        elif action == "cancel":
+            a = billing.request_cancel(ctx.person, d["id"], reason)
+        elif action == "issue":
+            d = billing.issue(ctx.person, d["id"])
+            return {"issued": d["number"], "total": d["total"], "note": "Numbered and filed; nothing was sent."}
+        elif action in ("accept", "decline"):
+            d = billing.set_quote_outcome(ctx.person, d["id"], action == "accept")
+            return {"quote": d["number"], "state": d["state"]}
+        elif action == "payment":
+            d = billing.add_payment(ctx.person, d["id"], amount or None, paid_on or None)
+            return {"invoice": d["number"], "paid": d["paid_amount"], "open": d["open_amount"], "state": d["state"]}
+        elif action == "to_invoice":
+            n = billing.copy(ctx.person, d["id"], "invoice")
+            return {"draft_invoice": _doc_brief(n), "next": "A draft invoice with the quote's lines; check it with the person."}
+        else:
+            return {"error": "Action must be send, remind, cancel, issue, accept, decline, payment or to_invoice."}
+    except billing.BillingError as e:
+        return {"error": str(e)}
+    return {"approval_id": a["id"], "status": a["status"], "summary": a["summary"],
+            "already_pending": bool(a.get("already_pending")),
+            "next": "Tell the person it's waiting for approval (Telegram and the dashboard); nothing has been sent yet."}

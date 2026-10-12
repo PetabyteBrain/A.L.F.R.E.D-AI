@@ -546,6 +546,80 @@ CREATE TABLE IF NOT EXISTS crm_suggestions (
     UNIQUE (source, source_ref)
 );
 
+-- Quotes and invoices (orchestrator/billing.py, #58 stage 3). Amounts in CHF; lines hold net prices.
+CREATE TABLE IF NOT EXISTS billing_products (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    name        TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    unit        TEXT NOT NULL DEFAULT '',
+    unit_price  REAL NOT NULL DEFAULT 0,
+    vat_key     TEXT NOT NULL DEFAULT 'standard',
+    active      INTEGER NOT NULL DEFAULT 1,
+    created_at  TEXT NOT NULL,
+    updated_at  TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS billing_docs (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    kind            TEXT NOT NULL CHECK (kind IN ('quote','invoice')),
+    number          TEXT UNIQUE,                       -- given when it's issued
+    status          TEXT NOT NULL DEFAULT 'draft'
+                    CHECK (status IN ('draft','pending','issued','accepted','declined','paid','cancelled')),
+    company_id      INTEGER REFERENCES crm_companies(id) ON DELETE SET NULL,
+    contact_id      INTEGER REFERENCES crm_contacts(id) ON DELETE SET NULL,
+    deal_id         INTEGER REFERENCES crm_deals(id) ON DELETE SET NULL,
+    quote_id        INTEGER REFERENCES billing_docs(id) ON DELETE SET NULL,   -- the quote an invoice came from
+    title           TEXT NOT NULL DEFAULT '',
+    intro           TEXT NOT NULL DEFAULT '',
+    footer          TEXT NOT NULL DEFAULT '',
+    currency        TEXT NOT NULL DEFAULT 'CHF',
+    issue_date      TEXT,
+    due_date        TEXT,                              -- invoice: payable by; quote: valid until
+    recipient       TEXT NOT NULL DEFAULT '{}',        -- name, attention, street, house_num, pcode, city, country, email
+    reference       TEXT NOT NULL DEFAULT '',          -- QR-bill reference (QRR or SCOR)
+    total_net       REAL NOT NULL DEFAULT 0,
+    total_vat       REAL NOT NULL DEFAULT 0,
+    total           REAL NOT NULL DEFAULT 0,
+    vat_breakdown   TEXT NOT NULL DEFAULT '[]',
+    rounding        REAL NOT NULL DEFAULT 0,
+    paid_amount     REAL NOT NULL DEFAULT 0,
+    paid_at         TEXT,
+    reminders       INTEGER NOT NULL DEFAULT 0,
+    last_reminder_at TEXT,
+    pdf_path        TEXT,                              -- company:<path> on the NAS once issued
+    sent_email_id   INTEGER,
+    owner_id        INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    created_by      INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    created_at      TEXT NOT NULL,
+    updated_at      TEXT NOT NULL,
+    issued_at       TEXT,
+    closed_at       TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_billing_docs_company ON billing_docs(company_id);
+CREATE INDEX IF NOT EXISTS idx_billing_docs_status ON billing_docs(kind, status);
+CREATE TABLE IF NOT EXISTS billing_lines (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    doc_id      INTEGER NOT NULL REFERENCES billing_docs(id) ON DELETE CASCADE,
+    position    INTEGER NOT NULL DEFAULT 0,
+    product_id  INTEGER REFERENCES billing_products(id) ON DELETE SET NULL,
+    description TEXT NOT NULL DEFAULT '',
+    quantity    REAL NOT NULL DEFAULT 1,
+    unit        TEXT NOT NULL DEFAULT '',
+    unit_price  REAL NOT NULL DEFAULT 0,
+    discount    REAL NOT NULL DEFAULT 0,               -- percent
+    vat_key     TEXT NOT NULL DEFAULT '',
+    vat_rate    REAL NOT NULL DEFAULT 0,
+    net         REAL NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS billing_payments (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    doc_id     INTEGER NOT NULL REFERENCES billing_docs(id) ON DELETE CASCADE,
+    amount     REAL NOT NULL,
+    paid_on    TEXT NOT NULL,
+    note       TEXT NOT NULL DEFAULT '',
+    user_id    INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    created_at TEXT NOT NULL
+);
+
 -- Drafts that need someone with the area's approve permission (orchestrator/approvals.py).
 CREATE TABLE IF NOT EXISTS approvals (
     id           INTEGER PRIMARY KEY AUTOINCREMENT,

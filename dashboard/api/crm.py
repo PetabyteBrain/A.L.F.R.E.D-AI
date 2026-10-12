@@ -74,7 +74,8 @@ async def status(person: Person = Depends(current_person)) -> dict:
     gids = None if person.can("crm.view_all") else {g["id"] for g in permissions.groups_of(person.id)}
     return {"counts": _run(crm.counts, person), "statuses": crm.STATUSES, "activity_kinds": crm.ACTIVITY_KINDS,
             "can": {"edit": person.can("crm.edit"), "approve": person.can("crm.approve"),
-                    "view_all": person.can("crm.view_all"), "settings": person.can("crm.settings")},
+                    "view_all": person.can("crm.view_all"), "settings": person.can("crm.settings"),
+                    "billing": person.can("billing.use")},
             "stages": crm_deals.stages(), "leads": crm_leads.counts(person),
             "deals_open": _run(crm_deals.search, person, status="open", limit=1)["total"],
             "approvals_pending": approvals.pending_count(person),
@@ -283,7 +284,10 @@ async def list_approvals(person: Person = Depends(current_person),
 
 @actions.post("/approvals/{approval_id}")
 async def decide(body: Decision, approval_id: int = Path(ge=1), person: Person = Depends(current_person)) -> dict:
-    return _run(approvals.decide, approval_id, person, body.approve, body.note)
+    try:
+        return await approvals.decide(approval_id, person, body.approve, body.note)
+    except (crm.CrmError, approvals.ApprovalError) as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @actions.delete("/approvals/{approval_id}")
