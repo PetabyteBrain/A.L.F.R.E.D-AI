@@ -34,7 +34,8 @@ def _print_people() -> None:
         print("(registry is empty)")
     for p in people:
         flag = "" if p["active"] else "  [disabled]"
-        print(f"#{p['id']}  {p['display_name']}  ({p['role']}){flag}")
+        from .. import permissions
+        print(f"#{p['id']}  {p['display_name']}  ({', '.join(permissions.roles_of(p['id'])) or p['role']}){flag}")
         for i in registry.identifiers_for(p["id"]):
             print(f"     id={i['id']:<4} {i['type']:<10} {i['value']}")
 
@@ -154,16 +155,22 @@ def main(argv: list[str] | None = None) -> None:
         print("Removed.")
 
     elif args.cmd == "roles":
-        for r in db.query("SELECT * FROM roles ORDER BY name"):
-            chans = [c for c, col in (("telegram", "can_telegram"), ("call", "can_call"), ("dashboard", "can_dashboard")) if r[col]]
-            print(f"{r['name']:<10} channels={','.join(chans) or '-'}  {r['description']}")
+        from .. import permissions
+        for r in permissions.role_rows(include_archived=True):
+            chans = [c for c in ("telegram", "call", "email", "dashboard") if f"channel.{c}" in r["effective"]]
+            extra = (f"  inherits={r['parent']}" if r["parent"] else "") + ("  [archived]" if r["archived"] else "")
+            print(f"{r['name']:<12} channels={','.join(chans) or '-'}  permissions={len(r['effective'])}{extra}  "
+                  f"{r['description']}")
 
     elif args.cmd == "add-role":
-        db.execute(
-            "INSERT INTO roles(name, description, can_telegram, can_call, can_dashboard) VALUES (?,?,?,?,?)",
-            (args.name, args.desc, int(not args.no_telegram), int(not args.no_call), int(args.dashboard)),
-        )
-        print(f"Role '{args.name}' created. Grant it tools in tools/registry.yaml.")
+        # Like a new friend (own things only) with the chosen channels; edit it on Settings -> Roles and groups.
+        from .. import permissions
+        system = permissions.Actor(0, "admin CLI", permissions.KEYS, True)
+        name = permissions.create_role(system, args.name, description=args.desc, copy_from="friend")
+        for channel, on in (("telegram", not args.no_telegram), ("call", not args.no_call),
+                            ("dashboard", args.dashboard)):
+            permissions.set_rule(system, name, f"channel.{channel}", "allow" if on else None)
+        print(f"Role '{name}' created. Set its permissions on the dashboard (Settings -> Roles and groups).")
 
     elif args.cmd == "hash-password":
         print(registry.hash_password(_prompt_password()))

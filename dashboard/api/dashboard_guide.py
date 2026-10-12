@@ -30,21 +30,25 @@ PAGES: dict[str, tuple[str, str]] = {
     "activity": ("Log", "the event log of everything that happened; admins can export it."),
     "health": ("Systems", "health of the services, Pis, Jetson and backups; admins also see the monthly "
                          "update report (Check now; report only, nothing is installed)."),
-    "people": ("Personnel", "admins: people, roles, connections, logins, access attempts, data requests."),
-    "usage": ("Usage", "admins: API usage, costs and monthly budgets."),
-    "settings": ("Settings", "admins: role permissions (e.g. n8n for cofounders), view as role, household "
-                             "quiet hours, how Alfred answers email from outside, call screening and blocked numbers."),
+    "people": ("Personnel", "people, their roles (several each) and groups, connections, logins, access attempts, "
+                            "data requests."),
+    "usage": ("Usage", "API usage, costs and monthly budgets."),
+    "settings": ("Settings", "Roles: create, copy and edit roles (each permission allowed, denied or not set; a role "
+                             "can inherit from a parent), groups of people that get roles, 'who can do X / what can "
+                             "Y do', view as a role or a person; plus household quiet hours, how Alfred answers "
+                             "email from outside, call screening and blocked numbers."),
     "profile": ("Profile", "own name, connections (several email addresses, each verified with an emailed "
                            "code, one primary), password, two-factor sign-in, Google Calendar, quiet hours, "
                            "voice replies, morning briefing, memory notes, download or delete own data."),
 }
-ADMIN_ONLY = {"people", "usage", "settings"}
-TEAM_ONLY = {"mail"}                    # admins and cofounders
+# Tabs that need a permission (any of them); the dashboard's App.jsx uses the same rules.
+TAB_PERMISSIONS = {"people": ("people.manage",), "usage": ("usage.view",), "mail": ("mail.tab",),
+                   "settings": ("settings.manage", "roles.manage")}
 
 
 def context(person: Person, page: str) -> str:
     tabs = [f"{label}: {desc}" for pid, (label, desc) in PAGES.items()
-            if person.is_admin or (pid not in ADMIN_ONLY and (pid not in TEAM_ONLY or person.role == "cofounder"))]
+            if any(person.can(p) for p in TAB_PERMISSIONS.get(pid, ())) or pid not in TAB_PERMISSIONS]
     label = PAGES.get(page, ("the dashboard", ""))[0]
     return ("This message comes from the helper on the web dashboard (a small popup with Alfred's portrait). "
             f"The person is currently on the {label} page. If they ask how to do something on the dashboard, "

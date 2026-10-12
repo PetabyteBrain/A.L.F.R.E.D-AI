@@ -1,7 +1,7 @@
 """Dashboard API: auth, live sessions, history, recordings, tasks, activity, health, registry.
 
-Admins see everything; other roles with dashboard access only see their own sessions,
-recordings and activity.
+What a person sees follows their permissions (orchestrator/permissions.py): with everyone.view they
+see everyone's sessions, recordings and activity, otherwise only their own.
 """
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request, Res
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, ConfigDict, Field
 
-from orchestrator import ai_config, db, health, sessions
+from orchestrator import ai_config, db, health, permissions, sessions
 from orchestrator.config import settings
 from orchestrator.identity import mfa, registry
 from orchestrator.identity.registry import Person
@@ -36,9 +36,9 @@ def real_person(request: Request) -> Person:
     """The signed-in person as they are (never the role an admin is previewing)."""
     uid = security.session_user_id(request)
     person = registry.get_person(uid) if uid else None
-    if person is None or not registry.role_allows_channel(person.role, "dashboard"):
+    if person is None or not registry.allows_channel(person, "dashboard"):
         raise HTTPException(status_code=401)
-    if mfa.required_for(person.role) and not request.url.path.startswith(_SETUP_PATHS) \
+    if mfa.required_for(person) and not request.url.path.startswith(_SETUP_PATHS) \
             and not mfa.enabled(person.id):
         raise HTTPException(status_code=403, detail="Set up two-factor sign-in on your Profile first.")
     return person
@@ -48,22 +48,43 @@ def real_person(request: Request) -> Person:
 _VIEW_AS_OPEN = ("/api/me", "/api/view-as", "/api/chat", "/api/session", "/api/logout")
 
 
+def preview(real: Person, view_as: str | None) -> Person | None:
+    """"View as": a role ("friend") or a person ("user:7"), applied to the real person's own account.
+    The permissions are capped to the real person's own, so a preview can only ever lower them."""
+    if not view_as or not real.can("roles.manage"):
+        return None
+    if view_as.startswith("user:") and view_as[5:].isdigit():
+        target = registry.get_person(int(view_as[5:]))
+        if target is None or target.id == real.id:
+            return None
+        roles = tuple(permissions.all_roles_of(target.id)) or (target.role,)
+    elif registry.role_exists(view_as):
+        roles = (view_as,)
+    else:
+        return None
+    perms = permissions.resolve(roles) & permissions.for_person(real)
+    return dataclasses.replace(real, role=roles[0], roles=tuple(r for r in roles if r != permissions.ADMIN)
+                               or (roles[0],), perms=perms)
+
+
 def current_person(request: Request) -> Person:
-    """Everyone's permissions come from here. An admin previewing a role ("view as") gets that
-    role's permissions on their own account: never more than they have, only less."""
+    """Everyone's permissions come from here (see preview() for "view as")."""
     person = real_person(request)
-    role = security.session_view_as(request) if person.is_admin else None
-    if role and role != person.role and registry.role_exists(role):
-        if not registry.role_allows_channel(role, "dashboard") and not request.url.path.startswith(_VIEW_AS_OPEN):
-            raise HTTPException(status_code=403, detail=f"The {role} role has no dashboard access.")
-        return dataclasses.replace(person, role=role)
-    return person
+    shown = preview(person, security.session_view_as(request))
+    if shown is None:
+        return person
+    if "channel.dashboard" not in shown.perms and not request.url.path.startswith(_VIEW_AS_OPEN):
+        raise HTTPException(status_code=403, detail="This preview has no dashboard access.")
+    return shown
 
 
-def admin_only(person: Person = Depends(current_person)) -> Person:
-    if not person.is_admin:
-        raise HTTPException(status_code=403)
-    return person
+def requires(permission: str):
+    """Route dependency: the signed-in person (or the preview) needs this permission."""
+    def check(person: Person = Depends(current_person)) -> Person:
+        if not person.can(permission):
+            raise HTTPException(status_code=403)
+        return person
+    return check
 
 
 class Strict(BaseModel):
@@ -100,9 +121,12 @@ async def login(body: LoginBody, request: Request, response: Response) -> dict:
 
 
 def _me_view(person: Person) -> dict:
+    roles = list(person.roles or (person.role,))
     return {"id": person.id, "display_name": person.display_name, "role": person.role,
+            "roles": [{"name": r, "label": permissions.label_of(r)} for r in roles],
+            "permissions": sorted(permissions.for_person(person)), "is_admin": person.is_admin,
             "assistant_name": settings.assistant_name, "can_request_calls": _may_request_calls(person),
-            "mfa_setup_required": mfa.required_for(person.role) and not mfa.enabled(person.id)}
+            "mfa_setup_required": mfa.required_for(person) and not mfa.enabled(person.id)}
 
 
 @router.post("/logout")
@@ -117,7 +141,7 @@ async def session_state(request: Request) -> dict:
     """Public, minimal: lets the homepage swap "Sign in" for "Open Alfred". Never errors."""
     uid = security.session_user_id(request)
     person = registry.get_person(uid) if uid else None
-    if person is None or not registry.role_allows_channel(person.role, "dashboard"):
+    if person is None or not registry.allows_channel(person, "dashboard"):
         return {"authenticated": False}
     return {"authenticated": True, "first_name": person.display_name.split()[0]}
 
@@ -126,9 +150,13 @@ async def session_state(request: Request) -> dict:
 async def me(request: Request, person: Person = Depends(current_person)) -> dict:
     out = _me_view(person)
     real = real_person(request)
-    if real.role != person.role:                 # an admin previewing another role
-        out.update(viewing_as=person.role, real_role=real.role,
-                   role_has_dashboard=registry.role_allows_channel(person.role, "dashboard"))
+    out["can_preview"] = real.can("roles.manage")
+    if person.perms is not None:                 # previewing a role or a person ("view as")
+        view_as = security.session_view_as(request) or ""
+        label = (registry.get_person(int(view_as[5:])) or person).display_name if view_as.startswith("user:") \
+            else permissions.label_of(view_as)
+        out.update(viewing_as=label, viewing_as_key=view_as, real_role=real.role,
+                   role_has_dashboard="channel.dashboard" in person.perms)
     else:
         out.update(viewing_as=None, real_role=real.role)
     return out
@@ -137,7 +165,7 @@ async def me(request: Request, person: Person = Depends(current_person)) -> dict
 # --- helpers -----------------------------------------------------------------------------
 
 def _scope(person: Person, alias: str = "s") -> tuple[str, list]:
-    return ("", []) if person.is_admin else (f" AND {alias}.user_id = ?", [person.id])
+    return ("", []) if person.can("everyone.view") else (f" AND {alias}.user_id = ?", [person.id])
 
 
 def _seconds_since(iso: str) -> int:
@@ -149,7 +177,7 @@ def _own_session(person: Person, session_id: str) -> dict:
         "SELECT s.*, u.display_name, (SELECT c.caller FROM screened_calls c WHERE c.session_id = s.id) AS screened_caller "
         "FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.id = ?", (session_id,)
     )
-    if not row or (not person.is_admin and row["user_id"] != person.id):
+    if not row or (not person.can("everyone.view") and row["user_id"] != person.id):
         raise HTTPException(status_code=404)
     return row
 
@@ -257,8 +285,9 @@ async def session_detail(session_id: str = Path(max_length=64), person: Person =
 
 
 @router.post("/sessions/{session_id}/end")
-async def end_session_route(session_id: str = Path(max_length=64), person: Person = Depends(admin_only)) -> dict:
-    """Admin kill switch: hang up a call (via Twilio) or close a stuck/unwanted session."""
+async def end_session_route(session_id: str = Path(max_length=64),
+                            person: Person = Depends(requires("everyone.view"))) -> dict:
+    """Kill switch: hang up a call (via Twilio) or close a stuck/unwanted session."""
     row = _own_session(person, session_id)
     if row["status"] != "active":
         raise HTTPException(status_code=409, detail="Session is not active.")
@@ -281,12 +310,8 @@ class CallBody(Strict):
 
 
 def _may_request_calls(person: Person) -> bool:
-    """Same rule as Alfred's place_call tool (roles listed in tools/registry.yaml)."""
-    from orchestrator.tools import registry as tools
-    if not tools._TOOLS:
-        tools.load()
-    spec = tools._TOOLS.get("place_call")
-    return bool(spec and spec.allowed_for(person.role))
+    """Same rule as Alfred's place_call tool."""
+    return person.can("others.contact")
 
 
 @router.post("/calls")
@@ -309,15 +334,14 @@ async def place_call(body: CallBody, person: Person = Depends(current_person)) -
 
 @router.get("/calls/targets")
 async def call_targets(person: Person = Depends(current_person)) -> list[dict]:
-    """People a caller may ask Alfred to phone: active, with a phone and a role allowed on calls."""
+    """People a caller may ask Alfred to phone: active, with a phone and roles allowed on calls."""
     if not _may_request_calls(person):
         return []
     rows = db.query(
         "SELECT DISTINCT u.id, u.display_name FROM users u JOIN user_identifiers i ON i.user_id = u.id "
-        "JOIN roles r ON r.name = u.role WHERE u.active = 1 AND i.type = 'phone' AND i.verified_at IS NOT NULL "
-        "AND r.can_call = 1 "
-        "ORDER BY u.display_name")
-    return rows
+        "WHERE u.active = 1 AND i.type = 'phone' AND i.verified_at IS NOT NULL ORDER BY u.display_name")
+    callable_ids = {p["id"] for p in permissions.people_with("channel.call")}
+    return [r for r in rows if r["id"] in callable_ids]
 
 
 @router.get("/calls/scheduled")
@@ -404,11 +428,10 @@ class TaskDone(Strict):
 async def tasks(person: Person = Depends(current_person), include_done: bool = Query(default=False)) -> dict:
     from orchestrator import tasks as task_mod
     out: dict = {"local": task_mod.list_for(person, include_done=include_done)}
-    from orchestrator import permissions
-    if settings.n8n_enabled and permissions.allowed(person.role, "n8n_view"):
+    if settings.n8n_enabled and person.can("automations.view"):
         from orchestrator.tools import n8n_tool
-        out["n8n_can_edit"] = permissions.allowed(person.role, "n8n_edit")
-        out["n8n_can_run"] = permissions.allowed(person.role, "n8n_run")
+        out["n8n_can_edit"] = person.can("automations.edit")
+        out["n8n_can_run"] = person.can("automations.run")
         if out["n8n_can_edit"]:
             out["n8n_url"] = settings.n8n_base_url.rstrip("/")
         try:
@@ -475,7 +498,7 @@ async def delete_task(task_id: int = Path(ge=1), person: Person = Depends(curren
 
 @router.get("/activity")
 async def activity(person: Person = Depends(current_person), limit: int = Query(default=100, ge=1, le=500)) -> list[dict]:
-    where, params = ("", []) if person.is_admin else (" AND a.user_id = ?", [person.id])
+    where, params = ("", []) if person.can("everyone.view") else (" AND a.user_id = ?", [person.id])
     return db.query(
         "SELECT a.id, a.ts, a.kind, a.summary, a.session_id, u.display_name AS user FROM activity a "
         "LEFT JOIN users u ON u.id = a.user_id WHERE 1=1" + where + " ORDER BY a.id DESC LIMIT ?",
@@ -484,10 +507,10 @@ async def activity(person: Person = Depends(current_person), limit: int = Query(
 
 
 def _health_rows(person: Person) -> list[dict]:
-    """Alfred's own systems for everyone with dashboard access; homelab machines for admins only."""
+    """Alfred's own systems for everyone with dashboard access; homelab machines with homelab.manage."""
     from orchestrator import homelab
     rows = db.query("SELECT service, ok, detail, checked_at FROM health ORDER BY service")
-    return homelab.host_rows_visible(rows, person.is_admin)
+    return homelab.host_rows_visible(rows, person.can("homelab.manage"))
 
 
 @router.get("/health")
@@ -496,7 +519,7 @@ async def get_health(person: Person = Depends(current_person)) -> list[dict]:
 
 
 @router.post("/health/refresh")
-async def refresh_health(person: Person = Depends(admin_only)) -> list[dict]:
+async def refresh_health(person: Person = Depends(requires("homelab.manage"))) -> list[dict]:
     from orchestrator import homelab
     await health.check_all()
     if homelab.enabled():
@@ -505,13 +528,13 @@ async def refresh_health(person: Person = Depends(admin_only)) -> list[dict]:
 
 
 @router.get("/updates")
-async def get_updates(person: Person = Depends(admin_only)) -> dict:
+async def get_updates(person: Person = Depends(requires("homelab.manage"))) -> dict:
     from orchestrator import update_check
     return update_check.last()
 
 
 @router.post("/updates/check")
-async def check_updates(person: Person = Depends(admin_only)) -> dict:
+async def check_updates(person: Person = Depends(requires("homelab.manage"))) -> dict:
     from orchestrator import homelab, update_check
     if not homelab.enabled():
         raise HTTPException(status_code=400, detail="The homelab key isn't set up on this server.")
@@ -532,7 +555,7 @@ async def overview(person: Person = Depends(current_person)) -> dict:
     blocked = db.query_one(
         "SELECT COUNT(*) AS n FROM access_attempts WHERE resolved = 0 AND substr(ts,1,10) = ?", (today,)
     )
-    team = person.role in ("admin", "cofounder")       # emails received today: own, plus company mail for the team
+    team = person.can("mail.tab")                 # emails received today: own, plus company mail for the team
     emails = db.query_one(
         "SELECT COUNT(*) AS n FROM emails WHERE direction = 'in' AND kind NOT IN ('spam','automated') "
         "AND substr(created_at,1,10) = ? AND ((scope = 'personal' AND user_id = ?) OR (scope = 'company' AND ?))",
@@ -542,7 +565,7 @@ async def overview(person: Person = Depends(current_person)) -> dict:
         "calls_today": counts.get("calls_today") or 0,
         "chats_today": counts.get("chats_today") or 0,
         "emails_today": (emails or {}).get("n", 0) if settings.mail_enabled else None,
-        "blocked_today": (blocked or {}).get("n", 0) if person.is_admin else None,
+        "blocked_today": (blocked or {}).get("n", 0) if person.can("everyone.view") else None,
         "channels": {
             "telegram": settings.telegram_enabled,
             "phone": settings.twilio_enabled and settings.speech_enabled,
@@ -555,7 +578,8 @@ async def overview(person: Person = Depends(current_person)) -> dict:
 
 
 @router.get("/usage")
-async def usage_report(person: Person = Depends(admin_only), days: int = Query(default=30, ge=1, le=366)) -> dict:
+async def usage_report(person: Person = Depends(requires("usage.view")),
+                       days: int = Query(default=30, ge=1, le=366)) -> dict:
     """Metered API usage (tokens, characters, minutes, requests) + Twilio's own month-to-date bill."""
     from orchestrator import usage
     data = usage.report(days)
@@ -566,7 +590,8 @@ async def usage_report(person: Person = Depends(admin_only), days: int = Query(d
 
 
 @router.get("/access-attempts")
-async def access_attempts(person: Person = Depends(admin_only), limit: int = Query(default=100, ge=1, le=500)) -> list[dict]:
+async def access_attempts(person: Person = Depends(requires("people.manage")),
+                          limit: int = Query(default=100, ge=1, le=500)) -> list[dict]:
     return db.query(
         "SELECT ts, channel, raw_identifier, resolved, detail FROM access_attempts ORDER BY id DESC LIMIT ?",
         (limit,),

@@ -35,7 +35,7 @@ You can use whichever is handiest; Alfred is the same everywhere. See [Talking t
 3. Enter your second factor (see below), if you have one.
 
 Sessions end after 60 minutes without activity and after 12 hours at the latest. Signing out, changing your
-password or a change to your role signs you out everywhere.
+password or a change to your roles or groups signs you out everywhere.
 
 ### Two-factor sign-in
 

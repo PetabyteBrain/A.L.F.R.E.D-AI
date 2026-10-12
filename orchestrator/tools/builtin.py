@@ -36,8 +36,7 @@ async def list_tasks(ctx, include_finished: bool = False) -> dict:
         {k: t[k] for k in ("id", "title", "status", "owner_name", "requester_name", "due_local", "follow_up",
                            "follow_up_local", "follow_ups", "result", "schedule") if t[k] not in (None, "", "none")}
         for t in tasks.list_for(ctx.person, include_done=include_finished, limit=40)]}
-    from .. import permissions
-    if settings.n8n_enabled and permissions.allowed(ctx.person.role, "n8n_view"):
+    if settings.n8n_enabled and ctx.person.can("automations.view"):
         from . import n8n_tool
         try:
             out["active_n8n_workflows"] = [
@@ -352,8 +351,8 @@ async def search_conversations(ctx, query: str, person: str = "", channel: str =
 @handler
 async def homelab_updates(ctx, check_now: bool = False) -> dict:
     from .. import homelab, update_check
-    if not ctx.person.is_admin:
-        return {"error": "Only an admin can see the update report."}
+    if not ctx.person.can("homelab.manage"):
+        return {"error": "You don't have permission to see the update report."}
     if check_now:
         if not homelab.enabled():
             return {"error": "The homelab key isn't set up."}

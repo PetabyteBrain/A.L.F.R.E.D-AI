@@ -60,6 +60,9 @@ def collect(user_id: int) -> dict:
         "person": user,
         "connections": _rows("SELECT type, value, verified_at FROM user_identifiers WHERE user_id = ?",
                              (user_id,)),
+        "roles": _rows("SELECT role FROM user_roles WHERE user_id = ?", (user_id,)),
+        "groups": _rows("SELECT g.name FROM group_members m JOIN people_groups g ON g.id = m.group_id "
+                        "WHERE m.user_id = ?", (user_id,)),
         "conversations": sessions,
         "memories": _rows("SELECT text, created_at, updated_at FROM memories WHERE user_id = ?", (user_id,)),
         "reminders": _rows("SELECT * FROM reminders WHERE user_id = ?", (user_id,)),

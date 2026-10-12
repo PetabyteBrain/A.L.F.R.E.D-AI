@@ -30,7 +30,6 @@ from .identity.registry import Person
 CONFIRM_TTL_S = 6 * 3600
 PER_PERSON_PER_DAY = 30
 MAX_ATTACHMENTS = 5
-COMPANY_ROLES = ("admin", "cofounder")
 _SELF = {"me", "myself", "my email", "my address", "self"}
 _pending: dict[int, dict] = {}
 
@@ -129,7 +128,7 @@ async def prepare(person: Person, session_id: str | None, *, to: list | str | No
         if not subject:
             subject = parent["subject"] if re.match(r"(?i)^re\s*:", parent["subject"] or "") \
                 else f"Re: {parent['subject']}"
-        if parent["scope"] == "company" and person.role in COMPANY_ROLES and not template:
+        if parent["scope"] == "company" and person.can("mail.tab") and not template:
             template = "company"
     refs = [to] if isinstance(to, str) else list(to or [])
     if not refs:
@@ -139,8 +138,8 @@ async def prepare(person: Person, session_id: str | None, *, to: list | str | No
     if not layout:
         names = ", ".join(x["name"] for x in email_templates.catalogue(person)["layouts"])
         raise MailRequestError(f"There is no active layout called “{template}”. Active: {names}.")
-    if layout["company"] and person.role not in COMPANY_ROLES:
-        raise MailRequestError(f"Only admins and cofounders can write in {settings.company_name}'s name.")
+    if layout["company"] and not person.can("mail.tab"):
+        raise MailRequestError(f"You don't have permission to write in {settings.company_name}'s name.")
     if tpl:
         first = registry.get_person(recipients[0][2]) if recipients[0][2] else None
         values = {"sender": person.display_name, **({"name": first.display_name} if first else {}),
@@ -160,7 +159,7 @@ async def prepare(person: Person, session_id: str | None, *, to: list | str | No
         raise MailRequestError("What should the email say?")
     copies = [_recipient(person, r) for r in (cc or [])]
     only_self = all(uid == person.id for _, _, uid in recipients + copies)
-    if not only_self and person.role not in COMPANY_ROLES:
+    if not only_self and not person.can("email.others"):
         raise MailRequestError("You can only have me email you, not other people.")
     if _sent_today(person) >= PER_PERSON_PER_DAY:
         raise MailRequestError(f"That's the limit of {PER_PERSON_PER_DAY} emails a day.")

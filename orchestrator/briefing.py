@@ -150,12 +150,10 @@ async def _weather(lat: float, lon: float) -> dict:
             "rain_chance_pct": d["precipitation_probability_max"][0], "precip_mm": d["precipitation_sum"][0]}
 
 
-def _uses_tool(role: str, tool: str) -> bool:
+def _uses_tool(person: Person, tool: str) -> bool:
     from .tools import registry as tools
-    if not tools._TOOLS:
-        tools.load()
-    spec = tools._TOOLS.get(tool)
-    return bool(spec and spec.allowed_for(role))
+    spec = tools.spec(tool)
+    return bool(spec and spec.allowed_for(person))
 
 
 async def gather(person: Person) -> dict:
@@ -201,15 +199,14 @@ async def gather(person: Person) -> dict:
     if done:
         out["call_outcomes_last_24h"] = [{"to": c["target"], "status": c["status"], "result": c["result"]} for c in done]
 
-    if _uses_tool(person.role, "list_tasks"):
+    if _uses_tool(person, "list_tasks"):
         out["open_tasks"] = [t["title"] for t in db.query("SELECT title FROM tasks WHERE status = 'active' ORDER BY id LIMIT 15")]
 
     company = await _company_todo(person, now)
     if company:
         out["company_todo"] = company
 
-    from . import permissions
-    if settings.n8n_enabled and permissions.allowed(person.role, "n8n_view"):
+    if settings.n8n_enabled and person.can("automations.view"):
         try:
             from .tools import n8n_tool
             runs = await n8n_tool.run_action("list_executions", {"status": "error", "limit": 20})
@@ -231,7 +228,7 @@ async def _company_todo(person: Person, now: datetime) -> dict | None:
     for 2+ weeks (tracked here, since the workbook has no dates)."""
     import asyncio
     from . import nas, company_todo
-    if person.role not in nas.COMPANY_ROLES or not nas.enabled():
+    if not person.can("files.company") or not nas.enabled():
         return None
     try:
         todo = await asyncio.to_thread(company_todo.show, person)

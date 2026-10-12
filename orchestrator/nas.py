@@ -29,7 +29,6 @@ from .identity.registry import Person
 
 log = logging.getLogger(__name__)
 
-COMPANY_ROLES = ("admin", "cofounder")
 NOTES, LISTS, TRASH = "Notes", "Lists", ".trash"
 TEXT_EXT = (".md", ".txt", ".csv", ".json", ".log")
 READABLE_EXT = TEXT_EXT + (".docx", ".xlsx", ".pdf")
@@ -121,11 +120,11 @@ def personal_folder(person: Person) -> str:
 
 def check_scope(person: Person, scope: str) -> None:
     if scope == "company":
-        if person.role not in COMPANY_ROLES:
-            raise NasError("The company files are only for admins and cofounders.")
-    elif scope == "people":                    # every personal folder: admins only (dashboard explorer)
-        if not person.is_admin:
-            raise NasError("Only admins can open everyone's folders.")
+        if not person.can("files.company"):
+            raise NasError("You don't have access to the company files.")
+    elif scope == "people":                    # every personal folder (dashboard explorer)
+        if not person.can("files.people"):
+            raise NasError("You don't have access to everyone's folders.")
     elif scope != "personal":
         raise NasError("Scope must be 'personal' or 'company'.")
 

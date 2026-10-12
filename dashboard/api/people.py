@@ -1,13 +1,14 @@
 """User management (admin) and self-service profile (everyone with dashboard access).
 
 Rules enforced here, not in the UI:
-- Only admins can create/edit/disable/delete people, change roles, or manage other people's
-  connections and dashboard logins.
+- Only people with people.manage (admins by default) can create/edit/disable/delete people, change
+  their roles, or manage other people's connections and dashboard logins. Someone who isn't an admin
+  can't change an admin, and can only give roles that grant nothing they lack (permissions.py).
 - Everyone can edit their own name and phone/email/Telegram connections and change their own
   password (current password required).
 - The last active admin can't be demoted, disabled or deleted; nobody can delete themselves or
   remove their own dashboard login.
-- Any change to someone's role, status, password or login revokes their dashboard sessions.
+- Any change to someone's roles, status, password or login revokes their dashboard sessions.
 - New or changed phone/Telegram/email connections stay inactive until verified with a code
   (orchestrator/identity/verification.py); only admins can mark one verified by hand.
 """
@@ -18,12 +19,12 @@ from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException, Path, Request
 from pydantic import BaseModel, ConfigDict, Field
 
-from orchestrator import db
+from orchestrator import db, permissions
 from orchestrator.identity import mfa, registry, verification
 from orchestrator.identity.registry import Person, RegistryError
 
 from . import security
-from .routes import admin_only, current_person
+from .routes import current_person, requires
 
 router = APIRouter(prefix="/api")
 
@@ -71,20 +72,38 @@ def _person_view(user_id: int) -> dict:
     last = db.query_one("SELECT MAX(last_seen_at) AS t FROM dashboard_sessions WHERE user_id = ?", (user_id,))
     row["last_dashboard_seen"] = last["t"] if last else None
     row["mfa"] = mfa.status(user_id)["enabled"]
+    row["roles"] = permissions.roles_of(user_id) or [row["role"]]
+    row["group_roles"] = [r for r in permissions.group_roles_of(user_id) if r not in row["roles"]]
+    row["groups"] = permissions.groups_of(user_id)
+    perms = permissions.resolve(row["roles"] + row["group_roles"])
+    row["channels"] = [c for c in ("telegram", "call", "email", "dashboard") if f"channel.{c}" in perms]
+    row["is_admin"] = permissions.ADMIN in row["roles"]
     return row
+
+
+def _guard_target(actor: Person, user_id: int) -> None:
+    """Only an admin may change an admin."""
+    if not actor.is_admin and permissions.is_admin_user(user_id):
+        raise HTTPException(status_code=403, detail="Only an admin can change an admin.")
+
+
+def _perm_fail(e: permissions.PermissionError_) -> HTTPException:
+    return HTTPException(status_code=400, detail=str(e))
 
 
 # ============================================================================ admin
 
 class PersonCreate(Strict):
     display_name: str = Field(min_length=1, max_length=80)
-    role: str = Field(min_length=1, max_length=40)
+    role: str | None = Field(default=None, min_length=1, max_length=40)
+    roles: list[str] | None = Field(default=None, max_length=20)          # several roles; first = primary
     notes: str = Field(default="", max_length=500)
 
 
 class PersonUpdate(Strict):
     display_name: str | None = Field(default=None, min_length=1, max_length=80)
     role: str | None = Field(default=None, min_length=1, max_length=40)
+    roles: list[str] | None = Field(default=None, max_length=20)
     active: bool | None = None
     notes: str | None = Field(default=None, max_length=500)
 
@@ -108,46 +127,71 @@ class LoginSet(Strict):
 
 
 @router.get("/roles")
-async def roles(person: Person = Depends(admin_only)) -> list[dict]:
-    rows = db.query("SELECT name, description, can_telegram, can_call, can_dashboard FROM roles ORDER BY name")
-    order = {"admin": 0, "cofounder": 1, "friend": 9}
-    for r in rows:
-        r["channels"] = [c for c, k in (("telegram", "can_telegram"), ("call", "can_call"),
-                                        ("dashboard", "can_dashboard")) if r[k]]
-    return sorted(rows, key=lambda r: (order.get(r["name"], 5), r["name"]))
+async def roles(person: Person = Depends(requires("people.manage"))) -> list[dict]:
+    """Roles to choose from on Personnel (active ones), with what each one opens up."""
+    mine = permissions.for_person(person)
+    out = []
+    for r in permissions.role_rows():
+        eff = set(r["effective"])
+        out.append({"name": r["name"], "label": r["label"], "description": r["description"],
+                    "channels": [c for c in ("telegram", "call", "email", "dashboard") if f"channel.{c}" in eff],
+                    "assignable": person.is_admin or (r["name"] != permissions.ADMIN and eff <= mine)})
+    return out
 
 
 @router.get("/people")
-async def list_people(person: Person = Depends(admin_only)) -> list[dict]:
+async def list_people(person: Person = Depends(requires("people.manage"))) -> list[dict]:
     return [_person_view(r["id"]) for r in db.query("SELECT id FROM users ORDER BY active DESC, id")]
 
 
 @router.post("/people")
-async def create_person(body: PersonCreate, person: Person = Depends(admin_only)) -> dict:
+async def create_person(body: PersonCreate, person: Person = Depends(requires("people.manage"))) -> dict:
+    roles = [r for r in (body.roles or [body.role]) if r]
+    if not roles:
+        raise HTTPException(status_code=400, detail="Give the person at least one role.")
+    actor = permissions.actor_for(person)
     try:
-        uid = registry.add_user(body.display_name, body.role, body.notes)
+        for r in roles:
+            if not registry.role_exists(r):
+                raise RegistryError(f"Unknown role '{r}'.")
+            if not actor.admin:
+                permissions._check_role_cap(actor, r)
+        uid = registry.add_user(body.display_name, roles[0], body.notes)
+        if len(roles) > 1:
+            permissions.set_person_roles(actor, uid, roles)
     except RegistryError as e:
         raise _fail(e)
-    db.log_activity("system", f"Registry: {person.display_name} added {body.display_name} ({body.role})", user_id=uid)
+    except permissions.PermissionError_ as e:
+        raise _perm_fail(e)
+    db.log_activity("system", f"Registry: {person.display_name} added {body.display_name} "
+                              f"({', '.join(permissions.label_of(r) for r in roles)})", user_id=uid)
     return _person_view(uid)
 
 
 @router.patch("/people/{user_id}")
-async def update_person(body: PersonUpdate, user_id: int = Path(ge=1), person: Person = Depends(admin_only)) -> dict:
+async def update_person(body: PersonUpdate, request: Request, user_id: int = Path(ge=1),
+                        person: Person = Depends(requires("people.manage"))) -> dict:
+    _guard_target(person, user_id)
+    roles = body.roles if body.roles is not None else ([body.role] if body.role else None)
+    roles_changed = False
     try:
-        result = registry.update_user(user_id, display_name=body.display_name, role=body.role,
-                                      active=body.active, notes=body.notes)
+        if roles is not None:
+            roles_changed = permissions.set_person_roles(permissions.actor_for(person), user_id, roles)
+        result = registry.update_user(user_id, display_name=body.display_name, active=body.active, notes=body.notes)
     except RegistryError as e:
         raise _fail(e)
-    if result["access_changed"]:
-        security.revoke_user_sessions(user_id)
+    except permissions.PermissionError_ as e:
+        raise _perm_fail(e)
+    if result["access_changed"] or roles_changed:
+        security.revoke_user_sessions(user_id, keep=request if user_id == person.id else None)
     changes = ", ".join(k for k, v in body.model_dump(exclude_none=True).items())
     db.log_activity("system", f"Registry: {person.display_name} updated #{user_id} ({changes})", user_id=user_id)
     return _person_view(user_id)
 
 
 @router.delete("/people/{user_id}")
-async def delete_person(user_id: int = Path(ge=1), person: Person = Depends(admin_only)) -> dict:
+async def delete_person(user_id: int = Path(ge=1), person: Person = Depends(requires("people.manage"))) -> dict:
+    _guard_target(person, user_id)
     if user_id == person.id:
         raise HTTPException(status_code=400, detail="You can't delete yourself.")
     name = (db.query_one("SELECT display_name FROM users WHERE id = ?", (user_id,)) or {}).get("display_name", "?")
@@ -161,8 +205,9 @@ async def delete_person(user_id: int = Path(ge=1), person: Person = Depends(admi
 
 @router.post("/people/{user_id}/connections")
 async def admin_add_connection(body: ConnectionCreate, user_id: int = Path(ge=1),
-                               person: Person = Depends(admin_only)) -> dict:
+                               person: Person = Depends(requires("people.manage"))) -> dict:
     _person_view(user_id)  # 404 if unknown
+    _guard_target(person, user_id)
     try:
         registry.add_identifier(user_id, body.type, body.value)
     except RegistryError as e:
@@ -171,17 +216,19 @@ async def admin_add_connection(body: ConnectionCreate, user_id: int = Path(ge=1)
     return _person_view(user_id)
 
 
-def _editable_connection(identifier_id: int, owner: int | None) -> dict:
+def _editable_connection(identifier_id: int, owner: int | None, actor: Person | None = None) -> dict:
     ident = registry.get_identifier(identifier_id)
     if not ident or ident["type"] == "dashboard" or (owner is not None and ident["user_id"] != owner):
         raise HTTPException(status_code=404, detail="Unknown connection.")
+    if actor is not None:
+        _guard_target(actor, ident["user_id"])
     return ident
 
 
 @router.patch("/connections/{identifier_id}")
 async def admin_update_connection(body: ConnectionUpdate, identifier_id: int = Path(ge=1),
-                                  person: Person = Depends(admin_only)) -> dict:
-    ident = _editable_connection(identifier_id, None)
+                                  person: Person = Depends(requires("people.manage"))) -> dict:
+    ident = _editable_connection(identifier_id, None, person)
     try:
         registry.update_identifier(identifier_id, body.value)
     except RegistryError as e:
@@ -192,8 +239,8 @@ async def admin_update_connection(body: ConnectionUpdate, identifier_id: int = P
 
 
 @router.delete("/connections/{identifier_id}")
-async def admin_delete_connection(identifier_id: int = Path(ge=1), person: Person = Depends(admin_only)) -> dict:
-    ident = _editable_connection(identifier_id, None)
+async def admin_delete_connection(identifier_id: int = Path(ge=1), person: Person = Depends(requires("people.manage"))) -> dict:
+    ident = _editable_connection(identifier_id, None, person)
     registry.delete_identifier(identifier_id)
     db.log_activity("system", f"Registry: {person.display_name} removed a {ident['type']} from #{ident['user_id']}",
                     user_id=ident["user_id"])
@@ -216,14 +263,14 @@ def _check_code(ident: dict, code: str) -> dict:
 
 
 @router.post("/connections/{identifier_id}/verify")
-async def admin_start_verification(identifier_id: int = Path(ge=1), person: Person = Depends(admin_only)) -> dict:
-    return await _start_verification(_editable_connection(identifier_id, None), person)
+async def admin_start_verification(identifier_id: int = Path(ge=1), person: Person = Depends(requires("people.manage"))) -> dict:
+    return await _start_verification(_editable_connection(identifier_id, None, person), person)
 
 
 @router.post("/connections/{identifier_id}/verify/check")
 async def admin_check_code(body: CodeCheck, identifier_id: int = Path(ge=1),
-                           person: Person = Depends(admin_only)) -> dict:
-    return _check_code(_editable_connection(identifier_id, None), body.code)
+                           person: Person = Depends(requires("people.manage"))) -> dict:
+    return _check_code(_editable_connection(identifier_id, None, person), body.code)
 
 
 def _make_primary(ident: dict, person: Person) -> None:
@@ -236,16 +283,16 @@ def _make_primary(ident: dict, person: Person) -> None:
 
 
 @router.post("/connections/{identifier_id}/primary")
-async def admin_make_primary(identifier_id: int = Path(ge=1), person: Person = Depends(admin_only)) -> dict:
-    ident = _editable_connection(identifier_id, None)
+async def admin_make_primary(identifier_id: int = Path(ge=1), person: Person = Depends(requires("people.manage"))) -> dict:
+    ident = _editable_connection(identifier_id, None, person)
     _make_primary(ident, person)
     return _person_view(ident["user_id"])
 
 
 @router.post("/connections/{identifier_id}/mark-verified")
-async def admin_mark_verified(identifier_id: int = Path(ge=1), person: Person = Depends(admin_only)) -> dict:
+async def admin_mark_verified(identifier_id: int = Path(ge=1), person: Person = Depends(requires("people.manage"))) -> dict:
     """Admin override, e.g. for a number the admin knows personally. Logged."""
-    ident = _editable_connection(identifier_id, None)
+    ident = _editable_connection(identifier_id, None, person)
     registry.mark_verified(identifier_id)
     db.log_activity("access", f"Registry: {person.display_name} marked a {ident['type']} of #{ident['user_id']} "
                     "verified without a code", user_id=ident["user_id"])
@@ -254,10 +301,11 @@ async def admin_mark_verified(identifier_id: int = Path(ge=1), person: Person = 
 
 @router.put("/people/{user_id}/login")
 async def admin_set_login(body: LoginSet, request: Request, user_id: int = Path(ge=1),
-                          person: Person = Depends(admin_only)) -> dict:
+                          person: Person = Depends(requires("people.manage"))) -> dict:
+    _guard_target(person, user_id)
     target = _person_view(user_id)
-    if not registry.role_allows_channel(target["role"], "dashboard"):
-        raise HTTPException(status_code=400, detail=f"The '{target['role']}' role has no dashboard access.")
+    if "dashboard" not in target["channels"]:
+        raise HTTPException(status_code=400, detail="This person's roles have no dashboard access.")
     try:
         registry.set_dashboard_login(user_id, body.username, body.password or None)
     except RegistryError as e:
@@ -271,7 +319,8 @@ async def admin_set_login(body: LoginSet, request: Request, user_id: int = Path(
 
 
 @router.delete("/people/{user_id}/login")
-async def admin_remove_login(user_id: int = Path(ge=1), person: Person = Depends(admin_only)) -> dict:
+async def admin_remove_login(user_id: int = Path(ge=1), person: Person = Depends(requires("people.manage"))) -> dict:
+    _guard_target(person, user_id)
     if user_id == person.id:
         raise HTTPException(status_code=400, detail="You can't remove your own dashboard login.")
     db.execute("DELETE FROM user_identifiers WHERE user_id = ? AND type = 'dashboard'", (user_id,))

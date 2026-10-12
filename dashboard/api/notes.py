@@ -67,9 +67,9 @@ async def _run(fn, *args):
 @router.get("/status")
 async def status(person: Person = Depends(current_person)) -> dict:
     return {"enabled": nas.enabled(),
-            "scopes": ["personal"] + (["company"] if person.role in nas.COMPANY_ROLES else [])
-                      + (["people"] if person.is_admin else []),
-            "company_todo": person.role in nas.COMPANY_ROLES, "company_name": settings.company_name}
+            "scopes": ["personal"] + (["company"] if person.can("files.company") else [])
+                      + (["people"] if person.can("files.people") else []),
+            "company_todo": person.can("files.company"), "company_name": settings.company_name}
 
 
 # --- explorer (orchestrator/nas_files.py) --------------------------------------------------------

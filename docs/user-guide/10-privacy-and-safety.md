@@ -31,7 +31,8 @@ recognition and Alfred's voice run on your operator's own hardware where possibl
 - **Your personal notes, files, mail and memory notes** are yours alone. Even admins can't open your personal mail.
   Admins can see everyone's personal folder in the file explorer (for administration) and all conversations in the
   Archive.
-- **Company files, company mail and the company to-do list**: admins and cofounders.
+- **Company files, company mail and the company to-do list**: admins and cofounders (or other roles an admin
+  allows).
 - **Your calendar**: only you, through Alfred. With free/busy sharing on, colleagues learn only when you're busy.
 - **Calls Alfred makes for someone**: the person who asked gets a summary.
 
@@ -63,7 +64,7 @@ sign-in and sessions that time out.
 
 - **Download my data**: a ZIP with everything stored about you (profile, connections, conversations and
   transcripts, notes, reminders, tasks, meetings, email, settings, activity, usage) plus your call recordings and
-  your files.
+  your files. Your roles and groups are included.
 - **Delete my data** (needs your password): either your **history** (conversations, recordings, notes, reminders,
   tasks, meetings, personal mail and files, settings; your account stays so Alfred still knows you) or your **whole
   account**. An admin confirms the request; you're told when it's done.

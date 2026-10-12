@@ -10,7 +10,7 @@ from orchestrator.config import settings
 from orchestrator.identity import registry
 from orchestrator.identity.registry import Person
 
-from .routes import admin_only, current_person
+from .routes import current_person, requires
 
 router = APIRouter(prefix="/api/screening")
 
@@ -29,12 +29,12 @@ def _view() -> dict:
 
 
 @router.get("")
-async def get_screening(person: Person = Depends(admin_only)) -> dict:
+async def get_screening(person: Person = Depends(requires("settings.manage"))) -> dict:
     return _view()
 
 
 @router.post("/block")
-async def block(body: Number, person: Person = Depends(admin_only)) -> dict:
+async def block(body: Number, person: Person = Depends(requires("settings.manage"))) -> dict:
     number = registry.normalize_phone(body.number)
     if not screening._NUMBER.match(number):
         raise HTTPException(status_code=400, detail="That isn't a valid phone number.")
@@ -43,7 +43,7 @@ async def block(body: Number, person: Person = Depends(admin_only)) -> dict:
 
 
 @router.post("/unblock")
-async def unblock(body: Number, person: Person = Depends(admin_only)) -> dict:
+async def unblock(body: Number, person: Person = Depends(requires("settings.manage"))) -> dict:
     screening.unblock(registry.normalize_phone(body.number), person)
     return _view()
 
@@ -54,7 +54,7 @@ outside = APIRouter(prefix="/api/external-calls")
 
 
 def _caller_roles(person: Person = Depends(current_person)) -> Person:
-    if person.role not in external_calls.ROLES:
+    if not person.can("calls.outside"):
         raise HTTPException(status_code=403)
     return person
 

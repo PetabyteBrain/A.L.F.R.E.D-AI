@@ -65,11 +65,7 @@ def _parse(value: str, what: str) -> datetime:
 
 
 def _may_organize(person: Person) -> bool:
-    from .tools import registry as tools
-    if not tools._TOOLS:
-        tools.load()
-    spec = tools._TOOLS.get("place_call")       # same people who may have Alfred contact others
-    return bool(spec and spec.allowed_for(person.role))
+    return person.can("meetings.organize")
 
 
 def _people(organizer: Person, refs: list) -> list[Person]:
@@ -468,7 +464,7 @@ def list_for(person: Person, include_done: bool = False) -> list[dict]:
 
 async def cancel(meeting_id: int, person: Person) -> dict:
     m = get(meeting_id)
-    if not m or not (person.is_admin or m["organizer_id"] == person.id):
+    if not m or not (person.can("everyone.view") or m["organizer_id"] == person.id):
         raise MeetingError("No such meeting.")
     if m["status"] not in ("proposed", "no_match"):
         raise MeetingError(f"That meeting is already {m['status']}; change it in the calendar.")

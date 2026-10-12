@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { api } from "../api.js";
 import { usePoll } from "../hooks.js";
-import { Empty, ErrorNote, Tag } from "./common.jsx";
+import { can, Empty, ErrorNote, Tag } from "./common.jsx";
 import { CategorySelect } from "./categories.jsx";
 
 const FOLLOW = { none: "No follow-up", telegram: "Telegram check-in", call: "Phone check-in" };
@@ -34,7 +34,7 @@ export default function TaskList({ me, assistant }) {
       follow_up: form.due ? form.follow_up : "none", notes: form.notes } }));
     if (ok) setForm(null);
   };
-  const canEdit = (x) => me.role === "admin" || [x.owner_user_id, x.requested_by].includes(me.id) || (!x.owner_user_id && me.can_request_calls);
+  const canEdit = (x) => can(me, "everyone.view") || [x.owner_user_id, x.requested_by].includes(me.id) || (!x.owner_user_id && me.can_request_calls);
   const others = (targets || []).filter((p) => p.id !== me.id);
   const rows = t?.local || [];
 

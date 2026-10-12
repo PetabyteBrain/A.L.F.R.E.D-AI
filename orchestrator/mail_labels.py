@@ -16,7 +16,6 @@ from .identity.registry import Person
 
 KINDS = ("group", "tag")
 COLORS = ("slate", "blue", "teal", "green", "amber", "orange", "red", "pink", "purple")
-TEAM = ("admin", "cofounder")
 BOXES = ("inbox", "unread", "starred", "inquiries", "sent", "archived", "all")
 MAX_LABELS = 60
 
@@ -26,7 +25,7 @@ class LabelError(ValueError):
 
 
 def _team(person: Person) -> bool:
-    return person.role in TEAM
+    return person.can("mail.tab")
 
 
 def _clean_name(name: str) -> str:
@@ -80,7 +79,7 @@ def create_label(person: Person, *, kind: str, scope: str, name: str, color: str
     if kind not in KINDS:
         raise LabelError("Choose group or tag.")
     if scope == "company" and not _team(person):
-        raise LabelError("Only admins and cofounders manage the company's groups and tags.")
+        raise LabelError("You don't have permission to manage the company's groups and tags.")
     if scope not in ("personal", "company"):
         raise LabelError("Scope must be personal or company.")
     name = _clean_name(name)
@@ -98,7 +97,7 @@ def create_label(person: Person, *, kind: str, scope: str, name: str, color: str
 def _editable(person: Person, label_id: int) -> dict:
     row = get_label(person, label_id)
     if row["scope"] == "company" and not _team(person):
-        raise LabelError("Only admins and cofounders manage the company's groups and tags.")
+        raise LabelError("You don't have permission to manage the company's groups and tags.")
     return row
 
 
@@ -246,7 +245,7 @@ def search(person: Person, *, box: str = "inbox", group: int | None = None, tag:
         raise LabelError("Unknown box.")
     team = _team(person)
     if box == "inquiries" and not team:
-        raise LabelError("Only admins and cofounders see the company's mail.")
+        raise LabelError("You don't have access to the company's mail.")
     own = "(e.scope = 'personal' AND e.user_id = ?)"
     seen = f"({own} OR (e.scope = 'company' AND ?))"
     where, params = [], []

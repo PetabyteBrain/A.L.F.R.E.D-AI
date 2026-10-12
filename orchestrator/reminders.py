@@ -91,11 +91,7 @@ def next_occurrence(due: datetime, recurrence: str) -> datetime:
 # --- create / list / change ------------------------------------------------------------------
 
 def _may_remind_others(person: Person) -> bool:
-    from .tools import registry as tools
-    if not tools._TOOLS:
-        tools.load()
-    spec = tools._TOOLS.get("place_call")  # same people who may have Alfred call someone
-    return bool(spec and spec.allowed_for(person.role))
+    return person.can("others.assign")
 
 
 def create(*, created_by: Person, text: str, when: str, target_ref=None, recurrence: str | None = None,
@@ -148,9 +144,10 @@ def get(reminder_id: int) -> dict | None:
 
 
 def list_for(person: Person, *, include_done: bool = False, limit: int = 50, everyone: bool = False) -> list[dict]:
-    """Own reminders plus ones this person set for others; admins may ask for everyone's."""
-    where = "1=1" if (everyone and person.is_admin) else "(r.user_id = ? OR r.created_by = ?)"
-    params: list = [] if (everyone and person.is_admin) else [person.id, person.id]
+    """Own reminders plus ones this person set for others; with everyone.view, everyone's on request."""
+    everyone = everyone and person.can("everyone.view")
+    where = "1=1" if everyone else "(r.user_id = ? OR r.created_by = ?)"
+    params: list = [] if everyone else [person.id, person.id]
     status = "" if include_done else " AND r.status IN ('pending','sent')"
     rows = db.query(
         "SELECT r.*, u.display_name AS person_name FROM reminders r JOIN users u ON u.id = r.user_id WHERE "
@@ -164,7 +161,7 @@ def list_for(person: Person, *, include_done: bool = False, limit: int = 50, eve
 
 def _owned(reminder_id: int, person: Person) -> dict:
     row = get(reminder_id)
-    if not row or not (person.is_admin or person.id in (row["user_id"], row["created_by"])):
+    if not row or not (person.can("everyone.view") or person.id in (row["user_id"], row["created_by"])):
         raise ReminderError("No such reminder.")
     return row
 
@@ -179,9 +176,9 @@ def cancel(reminder_id: int, person: Person) -> dict:
 
 
 def acknowledge(reminder_id: int, person: Person, snooze_minutes: int = 0) -> dict:
-    """Done (snooze 0) or snooze a delivered reminder. Only its recipient (or an admin)."""
+    """Done (snooze 0) or snooze a delivered reminder. Only its recipient (or someone with everyone.view)."""
     row = get(reminder_id)
-    if not row or not (person.is_admin or person.id == row["user_id"]):
+    if not row or not (person.can("everyone.view") or person.id == row["user_id"]):
         raise ReminderError("No such reminder.")
     if row["status"] not in ("sent", "pending"):
         raise ReminderError(f"That reminder is already {row['status']}.")
@@ -219,7 +216,7 @@ async def _via_call(row: dict, *, escalated: bool = False) -> bool:
     if not (settings.twilio_enabled and settings.speech_enabled and settings.public_base_url):
         return False
     person = registry.get_person(row["user_id"])
-    if not person or not registry.phone_for(person.id) or not registry.role_allows_channel(person.role, "call"):
+    if not person or not registry.phone_for(person.id) or not registry.allows_channel(person, "call"):
         return False
     from . import scheduler
     setter = registry.get_person(row["created_by"]) if row["created_by"] else None

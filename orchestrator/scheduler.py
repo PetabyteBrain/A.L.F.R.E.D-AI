@@ -82,8 +82,8 @@ def resolve_person(ref) -> Person:
 def _check_callable(target: Person) -> None:
     if not registry.phone_for(target.id):
         raise ScheduleError(f"{target.display_name} has no verified phone number in the registry.")
-    if not registry.role_allows_channel(target.role, "call"):
-        raise ScheduleError(f"{target.display_name}'s role ({target.role}) has no phone access.")
+    if not registry.allows_channel(target, "call"):
+        raise ScheduleError(f"{target.display_name} has no phone access (their roles don't allow calls).")
 
 
 def _part_of_day(dt: datetime) -> str:
@@ -180,8 +180,9 @@ def list_for(person: Person, *, include_done: bool = True, limit: int = 50, arch
              q: str = "") -> list[dict]:
     """Admins see all; everyone else sees calls they requested or that target them.
     archived=True: only finished calls, optionally filtered by words in name/purpose/result."""
-    where = "" if person.is_admin else " AND (c.requested_by = ? OR c.target_user_id = ?)"
-    params: list = [] if person.is_admin else [person.id, person.id]
+    everyone = person.can("everyone.view")
+    where = "" if everyone else " AND (c.requested_by = ? OR c.target_user_id = ?)"
+    params: list = [] if everyone else [person.id, person.id]
     status = "" if include_done else " AND c.status IN ('pending', 'dialing')"
     if archived:
         status = " AND c.status NOT IN ('pending', 'dialing', 'finishing')"
@@ -200,7 +201,7 @@ def list_for(person: Person, *, include_done: bool = True, limit: int = 50, arch
 
 def cancel(request_id: int, person: Person) -> dict:
     row = get(request_id)
-    if not row or not (person.is_admin or row["requested_by"] == person.id):
+    if not row or not (person.can("everyone.view") or row["requested_by"] == person.id):
         raise ScheduleError("No such scheduled call.")
     if row["status"] != "pending":
         raise ScheduleError(f"That call is already {row['status']} and can't be cancelled.")

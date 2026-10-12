@@ -86,7 +86,8 @@ export default function Profile({ assistant, refreshMe }) {
               </label>
               <button className="btn small" type="submit" disabled={busy || name.trim() === me.display_name}>Save</button>
             </form>
-            <div className="kv"><span>Role</span><Tag>{me.role}</Tag></div>
+            <div className="kv"><span>{(me.roles || []).length > 1 ? "Roles" : "Role"}</span>
+              <span>{(me.roles || [{ name: me.role, label: me.role }]).map((r) => <Tag key={r.name}>{r.label}</Tag>)}</span></div>
             <div className="kv"><span>Login</span><b>{me.dashboard_username}</b></div>
           </>,
         )}

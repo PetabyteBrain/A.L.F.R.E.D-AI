@@ -15,7 +15,7 @@ from orchestrator.identity.registry import Person, RegistryError
 
 from . import security
 from .people import _person_view
-from .routes import _me_view, admin_only, current_person
+from .routes import _me_view, current_person, requires
 
 router = APIRouter(prefix="/api")
 
@@ -69,7 +69,7 @@ async def login_second_step(body: CodeBody, request: Request, response: Response
         db.log_activity("access", f"Dashboard sign-in: wrong second-factor code from {ip}", user_id=uid)
         raise HTTPException(status_code=401, detail=str(e))
     person = registry.get_person(uid)
-    if person is None or not registry.role_allows_channel(person.role, "dashboard"):
+    if person is None or not registry.allows_channel(person, "dashboard"):
         raise HTTPException(status_code=401, detail="Access denied")
     security.ip_throttle.reset(ip)
     security.user_throttle.reset(key)
@@ -93,7 +93,7 @@ async def login_send_telegram(body: ChallengeBody, request: Request) -> dict:
 # --- self-service ------------------------------------------------------------------------
 
 def _view(person: Person) -> dict:
-    return {**mfa.status(person.id), "required": mfa.required_for(person.role)}
+    return {**mfa.status(person.id), "required": mfa.required_for(person)}
 
 
 def _check_password(person: Person, password: str | None) -> None:
@@ -109,7 +109,7 @@ def _check_password(person: Person, password: str | None) -> None:
 def _guard_last_method(person: Person, removing: str) -> None:
     st = mfa.status(person.id)
     others = (st["totp"] and removing != "totp") or (st["telegram"] and removing != "telegram")
-    if mfa.required_for(person.role) and not others:
+    if mfa.required_for(person) and not others:
         raise HTTPException(status_code=400, detail=f"Your role ({person.role}) requires two-factor sign-in: "
                                                     "switch the other method on first.")
 
@@ -183,10 +183,13 @@ async def backup_codes(body: PasswordBody, request: Request, person: Person = De
 # --- admin -------------------------------------------------------------------------------
 
 @router.post("/people/{user_id}/2fa/reset")
-async def admin_reset(user_id: int = Path(ge=1), person: Person = Depends(admin_only)) -> dict:
+async def admin_reset(user_id: int = Path(ge=1), person: Person = Depends(requires("people.manage"))) -> dict:
     if user_id == person.id:
         raise HTTPException(status_code=400, detail="Manage your own two-factor sign-in on your Profile.")
     _person_view(user_id)  # 404 for unknown people
+    from orchestrator import permissions
+    if not person.is_admin and permissions.is_admin_user(user_id):
+        raise HTTPException(status_code=403, detail="Only an admin can change an admin.")
     mfa.reset(user_id)
     security.revoke_user_sessions(user_id)
     db.log_activity("access", f"Registry: {person.display_name} reset the two-factor sign-in of #{user_id}",

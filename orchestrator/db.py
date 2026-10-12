@@ -22,6 +22,15 @@ CREATE TABLE IF NOT EXISTS roles (
     can_dashboard INTEGER NOT NULL DEFAULT 0
 );
 
+-- Roles and permissions (orchestrator/permissions.py, roadmap #57). roles.can_* are the pre-#57 channel
+-- switches, kept only so the one-time migration can read them.
+CREATE TABLE IF NOT EXISTS role_permissions (
+    role       TEXT NOT NULL REFERENCES roles(name) ON DELETE CASCADE,
+    permission TEXT NOT NULL,
+    effect     TEXT NOT NULL CHECK (effect IN ('allow','deny')),
+    PRIMARY KEY (role, permission)
+);
+
 CREATE TABLE IF NOT EXISTS users (
     id           INTEGER PRIMARY KEY AUTOINCREMENT,
     display_name TEXT NOT NULL,
@@ -29,6 +38,31 @@ CREATE TABLE IF NOT EXISTS users (
     active       INTEGER NOT NULL DEFAULT 1,
     notes        TEXT NOT NULL DEFAULT '',
     created_at   TEXT NOT NULL
+);
+
+-- Every role a person holds; users.role is the primary one (admin if they have it).
+CREATE TABLE IF NOT EXISTS user_roles (
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    role    TEXT NOT NULL REFERENCES roles(name),
+    PRIMARY KEY (user_id, role)
+);
+
+-- Named sets of people (teams, projects); members get the group's roles.
+CREATE TABLE IF NOT EXISTS people_groups (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    name        TEXT NOT NULL UNIQUE,
+    description TEXT NOT NULL DEFAULT '',
+    created_at  TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS group_members (
+    group_id INTEGER NOT NULL REFERENCES people_groups(id) ON DELETE CASCADE,
+    user_id  INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    PRIMARY KEY (group_id, user_id)
+);
+CREATE TABLE IF NOT EXISTS group_roles (
+    group_id INTEGER NOT NULL REFERENCES people_groups(id) ON DELETE CASCADE,
+    role     TEXT NOT NULL REFERENCES roles(name),
+    PRIMARY KEY (group_id, role)
 );
 
 CREATE TABLE IF NOT EXISTS user_identifiers (
@@ -520,9 +554,9 @@ CREATE TABLE IF NOT EXISTS health (
 
 DEFAULT_ROLES = [
     # name, description, telegram, call, dashboard
-    ("admin", "Full access to every tool and channel.", 1, 1, 1),
-    ("cofounder", "Just under admin: all tools except n8n workflow management; own dashboard.", 1, 1, 1),
-    ("friend", "Chat and call; only tools explicitly granted to 'friend'.", 1, 1, 0),
+    ("admin", "Fixed: every permission.", 1, 1, 1),
+    ("cofounder", "Just under admin: the team's tools, company files and mail, automations, roles.", 1, 1, 1),
+    ("friend", "Chat, call and email Alfred for their own things.", 1, 1, 0),
 ]
 
 
@@ -629,6 +663,9 @@ ADDED_COLUMNS = [
     ("user_identifiers", "preferred", "INTEGER NOT NULL DEFAULT 0"),     # the email address Alfred writes to
     ("emails", "layout_id", "INTEGER"),                                  # email_templates: layout and text used
     ("emails", "template_id", "INTEGER"),
+    ("roles", "label", "TEXT"),                                   # display name (renaming keeps the key)
+    ("roles", "parent", "TEXT"),                                  # inherits that role's permissions
+    ("roles", "archived", "INTEGER NOT NULL DEFAULT 0"),
 ]
 
 
@@ -657,6 +694,9 @@ def init_db() -> None:
             DEFAULT_ROLES,
         )
     _add_missing_columns()
+    from . import permissions
+    with tx() as conn:
+        permissions.migrate(conn)
     _build_search_index()
 
 

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "../api.js";
 import { usePoll } from "../hooks.js";
-import { Empty, ErrorNote, Tag } from "./common.jsx";
+import { can, Empty, ErrorNote, Tag } from "./common.jsx";
 import CallDialog from "./CallDialog.jsx";
 
 const STATUS_KIND = { pending: "", dialing: "busy", done: "ok", voicemail: "busy", no_answer: "bad", failed: "bad", cancelled: "" };
@@ -65,7 +65,7 @@ export default function CallQueue({ me, assistant }) {
               </div>
               {c.result && <div className="call-result">{c.result}</div>}
             </div>
-            {c.status === "pending" && (me.role === "admin" || c.requested_by === me.id) && (
+            {c.status === "pending" && (can(me, "everyone.view") || c.requested_by === me.id) && (
               <button className="btn danger small" onClick={() => cancel(c.id)}>Cancel</button>
             )}
           </div>

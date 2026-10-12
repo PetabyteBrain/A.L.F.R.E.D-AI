@@ -31,7 +31,6 @@ from .identity.registry import Person
 
 log = logging.getLogger(__name__)
 
-ROLES = ("admin", "cofounder")
 MAX_ATTEMPTS = 2
 RETRY_MINUTES = 30
 PER_REQUESTER_PER_DAY = 10
@@ -113,8 +112,8 @@ def _last_user_turn(session_id: str | None) -> int:
 async def request(person: Person, session_id: str | None, *, number: str, contact: str, task: str,
                   share: str = "", when: str | None = None) -> dict:
     """Step 1: check everything and prepare the call; nothing is dialled. Returns the read-back."""
-    if person.role not in ROLES:
-        raise ExternalCallError("Only admins and cofounders can have me call numbers outside the registry.")
+    if not person.can("calls.outside"):
+        raise ExternalCallError("You don't have permission to have me call numbers outside the registry.")
     if not settings.external_calls:
         raise ExternalCallError("Calls to numbers outside the registry are switched off (EXTERNAL_CALLS).")
     if not (settings.twilio_enabled and settings.speech_enabled and settings.public_base_url):
@@ -199,8 +198,9 @@ def get(call_id: int) -> dict | None:
 
 
 def list_for(person: Person, include_done: bool = True, limit: int = 30) -> list[dict]:
-    where = "" if person.is_admin else " AND e.requested_by = ?"
-    params: list = [] if person.is_admin else [person.id]
+    everyone = person.can("everyone.view")
+    where = "" if everyone else " AND e.requested_by = ?"
+    params: list = [] if everyone else [person.id]
     status = "" if include_done else " AND e.status IN ('pending', 'dialing')"
     rows = db.query("SELECT e.*, u.display_name AS requester_name FROM external_calls e LEFT JOIN users u "
                     f"ON u.id = e.requested_by WHERE 1=1{where}{status} ORDER BY e.id DESC LIMIT ?", (*params, limit))
@@ -211,7 +211,7 @@ def list_for(person: Person, include_done: bool = True, limit: int = 30) -> list
 
 def cancel(call_id: int, person: Person) -> dict:
     row = get(call_id)
-    if not row or not (person.is_admin or row["requested_by"] == person.id):
+    if not row or not (person.can("everyone.view") or row["requested_by"] == person.id):
         raise ExternalCallError("No such call.")
     if row["status"] != "pending":
         raise ExternalCallError(f"That call is already {row['status']}.")
@@ -271,7 +271,7 @@ async def dispatch(call_id: int) -> None:
     if not row or row["status"] != "pending":
         return
     requester = registry.get_person(row["requested_by"]) if row["requested_by"] else None
-    if requester is None or requester.role not in ROLES:
+    if requester is None or not requester.can("calls.outside"):
         _set(call_id, status="failed", result="The requester can no longer request outside calls.")
         return
     window = next_window(_now())

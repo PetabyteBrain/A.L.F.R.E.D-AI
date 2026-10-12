@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 import os
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from argon2 import PasswordHasher
 from argon2.exceptions import InvalidHashError, VerificationError
@@ -23,9 +23,6 @@ IDENTIFIER_TYPES = ("telegram", "phone", "email", "dashboard")
 # Connections that let someone reach (or be reached by) the assistant only count once their
 # owner proved control of them with a confirmation code (identity/verification.py).
 VERIFY_TYPES = ("phone", "telegram", "email")
-# The web chat lives in the dashboard, so it follows dashboard access.
-CHANNEL_PERMISSION = {"telegram": "can_telegram", "call": "can_call", "dashboard": "can_dashboard",
-                      "web": "can_dashboard", "email": "can_email"}
 DEFAULT_COUNTRY_CODE = os.environ.get("DEFAULT_COUNTRY_CODE", "41")
 
 _hasher = PasswordHasher()
@@ -35,11 +32,24 @@ _hasher = PasswordHasher()
 class Person:
     id: int
     display_name: str
-    role: str
+    role: str                                   # the primary role (admin if they have it)
+    roles: tuple[str, ...] = ()                 # every role held directly; empty = just `role`
+    # A fixed permission set ("view as" preview); None = resolved from the roles (orchestrator/permissions.py).
+    perms: frozenset | None = field(default=None, compare=False)
 
     @property
     def is_admin(self) -> bool:
-        return self.role == "admin"
+        return "admin" in (self.roles or (self.role,))
+
+    def can(self, permission: str) -> bool:
+        from .. import permissions
+        return permissions.can(self, permission)
+
+
+def _person(row: dict) -> Person:
+    from .. import permissions
+    return Person(id=row["id"], display_name=row["display_name"], role=row["role"],
+                  roles=tuple(permissions.roles_of(row["id"])))
 
 
 # --- normalisation -----------------------------------------------------------------------
@@ -84,7 +94,7 @@ def lookup(id_type: str, value: str) -> Person | None:
         "WHERE i.type = ? AND i.value = ? AND u.active = 1 AND i.verified_at IS NOT NULL",
         (id_type, normalize(id_type, value)),
     )
-    return Person(**row) if row else None
+    return _person(row) if row else None
 
 
 def is_pending_verification(id_type: str, value: str) -> bool:
@@ -93,10 +103,9 @@ def is_pending_verification(id_type: str, value: str) -> bool:
         (id_type, normalize(id_type, value))))
 
 
-def role_allows_channel(role: str, channel: str) -> bool:
-    col = CHANNEL_PERMISSION[channel]
-    row = db.query_one(f"SELECT {col} AS ok FROM roles WHERE name = ?", (role,))
-    return bool(row and row["ok"])
+def allows_channel(person: Person, channel: str) -> bool:
+    from .. import permissions
+    return permissions.can_use_channel(person, channel)
 
 
 def resolve(channel: str, id_type: str, value: str, *, record_success: bool = False) -> Person | None:
@@ -106,8 +115,8 @@ def resolve(channel: str, id_type: str, value: str, *, record_success: bool = Fa
         detail = "not yet verified" if is_pending_verification(id_type, value) else "unregistered"
         _record_attempt(channel, f"{id_type}:{value}", False, detail)
         return None
-    if not role_allows_channel(person.role, channel):
-        _record_attempt(channel, f"{id_type}:{value}", False, f"role '{person.role}' has no {channel} access")
+    if not allows_channel(person, channel):
+        _record_attempt(channel, f"{id_type}:{value}", False, f"no {channel} access for their roles")
         return None
     if record_success:
         _record_attempt(channel, f"{id_type}:{value}", True, person.display_name)
@@ -116,7 +125,7 @@ def resolve(channel: str, id_type: str, value: str, *, record_success: bool = Fa
 
 def get_person(user_id: int) -> Person | None:
     row = db.query_one("SELECT id, display_name, role FROM users WHERE id = ? AND active = 1", (user_id,))
-    return Person(**row) if row else None
+    return _person(row) if row else None
 
 
 def identifiers_for(user_id: int) -> list[dict]:
@@ -182,9 +191,9 @@ def verify_dashboard_login(username: str, password: str) -> Person | None:
     if not row or not ok:
         _record_attempt("dashboard", f"dashboard:{uname}", False, "bad credentials")
         return None
-    person = Person(id=row["id"], display_name=row["display_name"], role=row["role"])
-    if not role_allows_channel(person.role, "dashboard"):
-        _record_attempt("dashboard", f"dashboard:{uname}", False, f"role '{person.role}' has no dashboard access")
+    person = _person(row)
+    if not allows_channel(person, "dashboard"):
+        _record_attempt("dashboard", f"dashboard:{uname}", False, "no dashboard access for their roles")
         return None
     _record_attempt("dashboard", f"dashboard:{uname}", True, person.display_name)
     return person
@@ -243,31 +252,35 @@ def role_exists(role: str) -> bool:
 
 
 def active_admin_count(excluding: int | None = None) -> int:
-    row = db.query_one(
-        "SELECT COUNT(*) AS n FROM users WHERE role = 'admin' AND active = 1 AND (? IS NULL OR id != ?)",
-        (excluding, excluding),
-    )
-    return row["n"] if row else 0
+    from .. import permissions
+    return permissions.admin_count(excluding)
+
+
+def _is_admin_user(user_id: int) -> bool:
+    from .. import permissions
+    return permissions.is_admin_user(user_id)
 
 
 def add_user(display_name: str, role: str, notes: str = "") -> int:
     if not role_exists(role):
         raise RegistryError(f"Unknown role '{role}'. Create it first.")
-    return db.execute(
-        "INSERT INTO users(display_name, role, notes, created_at) VALUES (?,?,?,?)",
-        (validate_name(display_name), role, (notes or "")[:500], db.now_iso()),
-    )
+    with db.tx() as conn:
+        uid = conn.execute("INSERT INTO users(display_name, role, notes, created_at) VALUES (?,?,?,?)",
+                           (validate_name(display_name), role, (notes or "")[:500], db.now_iso())).lastrowid
+        conn.execute("INSERT INTO user_roles(user_id, role) VALUES (?,?)", (uid, role))
+    return uid
 
 
 def update_user(user_id: int, *, display_name: str | None = None, role: str | None = None,
                 active: bool | None = None, notes: str | None = None) -> dict:
-    """Admin edit. Returns {'access_changed': bool} so callers know to revoke sessions."""
+    """Admin edit (trusted: the CLI, and the Personnel tab after its own checks). `role` replaces every role
+    the person holds with that one. Returns {'access_changed': bool} so callers know to revoke sessions."""
     row = db.query_one("SELECT id, role, active FROM users WHERE id = ?", (user_id,))
     if not row:
         raise RegistryError("Unknown person.")
     if role is not None and not role_exists(role):
         raise RegistryError(f"Unknown role '{role}'.")
-    losing_admin = row["role"] == "admin" and row["active"] and (
+    losing_admin = _is_admin_user(user_id) and row["active"] and (
         (role is not None and role != "admin") or active is False)
     if losing_admin and active_admin_count(excluding=user_id) == 0:
         raise RegistryError("This is the last active admin. Make someone else admin first.")
@@ -286,7 +299,12 @@ def update_user(user_id: int, *, display_name: str | None = None, role: str | No
         params.append(notes[:500])
     if sets:
         db.execute(f"UPDATE users SET {', '.join(sets)} WHERE id = ?", (*params, user_id))
-    access_changed = (role is not None and role != row["role"]) or (
+    old_roles = [r["role"] for r in db.query("SELECT role FROM user_roles WHERE user_id = ?", (user_id,))]
+    if role is not None and old_roles != [role]:
+        with db.tx() as conn:
+            conn.execute("DELETE FROM user_roles WHERE user_id = ?", (user_id,))
+            conn.execute("INSERT INTO user_roles(user_id, role) VALUES (?,?)", (user_id, role))
+    access_changed = (role is not None and old_roles != [role]) or (
         active is not None and int(active) != row["active"])
     return {"access_changed": access_changed}
 
@@ -295,7 +313,7 @@ def delete_user(user_id: int) -> None:
     row = db.query_one("SELECT role, active FROM users WHERE id = ?", (user_id,))
     if not row:
         raise RegistryError("Unknown person.")
-    if row["role"] == "admin" and row["active"] and active_admin_count(excluding=user_id) == 0:
+    if _is_admin_user(user_id) and row["active"] and active_admin_count(excluding=user_id) == 0:
         raise RegistryError("This is the last active admin and can't be deleted.")
     if db.query_one("SELECT 1 FROM sessions WHERE user_id = ? LIMIT 1", (user_id,)):
         raise RegistryError("This person has call/chat history. Disable them instead, so the records are kept.")

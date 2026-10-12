@@ -2,7 +2,7 @@ import { useState } from "react";
 import { api } from "../api.js";
 import { fmtTime } from "../format.js";
 import { usePoll } from "../hooks.js";
-import { Empty, ErrorNote } from "../components/common.jsx";
+import { can, Empty, ErrorNote } from "../components/common.jsx";
 import { Panel } from "../components/hud.jsx";
 
 const PERIODS = [[7, "7 days"], [30, "30 days"], [90, "90 days"], [365, "1 year"], [0, "everything"]];
@@ -31,7 +31,8 @@ function ExportBar() {
   );
 }
 
-export default function Activity({ isAdmin }) {
+export default function Activity({ me }) {
+  const isAdmin = can(me, "everyone.view");
   const { data, error } = usePoll(() => api("/activity?limit=150"), 5000);
   return (
     <Panel code="05" title="Event log" actions={isAdmin && <ExportBar />}>

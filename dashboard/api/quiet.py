@@ -9,7 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from orchestrator import db, quiet
 from orchestrator.identity.registry import Person
 
-from .routes import admin_only, current_person
+from .routes import current_person, requires
 
 router = APIRouter(prefix="/api/quiet-hours")
 
@@ -45,7 +45,7 @@ async def put_own(body: Own, person: Person = Depends(current_person)) -> dict:
 
 
 @router.put("/default")
-async def put_default(body: Default, person: Person = Depends(admin_only)) -> dict:
+async def put_default(body: Default, person: Person = Depends(requires("settings.manage"))) -> dict:
     try:
         value = quiet.set_default(enabled=body.enabled, start=body.start, end=body.end)
     except quiet.QuietError as e:

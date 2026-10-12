@@ -36,7 +36,6 @@ MAX_SECONDS = 150             # hard limit on a screened call
 PER_NUMBER_PER_DAY = 3
 PER_DAY = 20
 CALLBACK_DAYS = 14            # a call from a number Alfred called within this time is a call-back
-RELAY_ROLES = ("admin", "cofounder")
 END = "[END]"
 _BLOCK_KEY = "blocked_callers"
 _NUMBER = re.compile(r"^\+\d{6,15}$")
@@ -182,8 +181,8 @@ def _escape(text: str) -> str:
 
 
 def _relay_people() -> list[dict]:
-    return db.query("SELECT id, display_name, role FROM users WHERE active = 1 AND role IN (%s) ORDER BY id"
-                    % ",".join("?" * len(RELAY_ROLES)), RELAY_ROLES)
+    from . import permissions
+    return permissions.people_with("screening.relay")
 
 
 def match_recipient(name: str) -> dict | None:
@@ -256,8 +255,8 @@ async def report(session_id: str, caller: str, boss: Person) -> None:
 
 
 def block_from_button(screen_id: int, by: Person) -> str:
-    if by.role not in RELAY_ROLES:
-        return "Only admins and cofounders can block numbers."
+    if not by.can("screening.relay"):
+        return "You don't have permission to block numbers."
     row = db.query_one("SELECT caller FROM screened_calls WHERE id = ?", (screen_id,))
     if not row:
         return "That call is no longer on record."

@@ -1,6 +1,7 @@
 import { api } from "../api.js";
 import { usePoll, useStoredState } from "../hooks.js";
 import { Panel } from "../components/hud.jsx";
+import { can } from "../components/common.jsx";
 import AgendaCalendar from "../components/AgendaCalendar.jsx";
 import CallQueue from "../components/CallQueue.jsx";
 import N8nPanel from "../components/N8nPanel.jsx";
@@ -29,7 +30,7 @@ export default function Tasks({ me, assistant }) {
           <Meetings me={me} assistant={assistant} />
           <Reminders me={me} assistant={assistant} />
           <CallQueue me={me} assistant={assistant} />
-          {(me.role === "admin" || me.role === "cofounder") && <OutsideCalls assistant={assistant} />}
+          {can(me, "calls.outside") && <OutsideCalls assistant={assistant} />}
           {t && "n8n_can_edit" in t && <N8nPanel t={t} assistant={assistant} />}
         </>
       )}

@@ -1,28 +1,34 @@
 import { Panel } from "../components/hud.jsx";
+import { can } from "../components/common.jsx";
 import AiModelCard from "../components/AiModelCard.jsx";
 import QuietDefaultCard from "../components/QuietDefaultCard.jsx";
-import RolePermissionsCard from "../components/RolePermissionsCard.jsx";
+import RolesManager from "../components/RolesManager.jsx";
 import ScreeningCard from "../components/ScreeningCard.jsx";
 import MailSettingsCard from "../components/MailSettingsCard.jsx";
 import ViewAsCard from "../components/ViewAsCard.jsx";
 
-/* Admin: settings that apply to everyone (personal settings stay on each person's profile). */
+/* Settings that apply to everyone (settings.manage) and the role editor (roles.manage);
+   personal settings stay on each person's profile. */
 export default function Settings({ me, assistant, refreshMe }) {
+  const general = can(me, "settings.manage");
+  const roles = can(me, "roles.manage");
   return (
     <Panel code="11" title="Settings">
       <p className="muted small">Settings for the whole household. Each person's own settings are on their profile.</p>
-      <div className="settings-grid">
-        <div>
-          <AiModelCard assistant={assistant} />
-          <RolePermissionsCard assistant={assistant} />
-          <section className="settings-block"><ViewAsCard me={me} onChanged={refreshMe} /></section>
+      {general && (
+        <div className="settings-grid">
+          <div>
+            <AiModelCard assistant={assistant} />
+            <QuietDefaultCard assistant={assistant} />
+          </div>
+          <div>
+            <MailSettingsCard assistant={assistant} />
+            <ScreeningCard assistant={assistant} />
+          </div>
         </div>
-        <div>
-          <QuietDefaultCard assistant={assistant} />
-          <MailSettingsCard assistant={assistant} />
-          <ScreeningCard assistant={assistant} />
-        </div>
-      </div>
+      )}
+      {roles && <RolesManager />}
+      <section className="settings-block"><ViewAsCard me={me} onChanged={refreshMe} /></section>
     </Panel>
   );
 }

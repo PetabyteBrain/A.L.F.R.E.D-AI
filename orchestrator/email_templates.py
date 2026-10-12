@@ -24,7 +24,6 @@ from .config import settings
 from .identity.registry import Person
 
 KINDS = ("layout", "text")
-TEAM = ("admin", "cofounder")
 STYLE_KEYS = ("page", "card", "ink", "muted", "accent", "foot_bg", "foot_ink", "foot_muted")
 FONTS = ("serif", "sans")
 MAX_BANNER_BYTES = 1_000_000
@@ -63,8 +62,8 @@ class TemplateError(ValueError):
 
 
 def _team(person: Person) -> None:
-    if person.role not in TEAM:
-        raise TemplateError("Only admins and cofounders manage email templates.")
+    if not person.can("mail.templates"):
+        raise TemplateError("You don't have permission to manage email templates.")
 
 
 def _now() -> str:
@@ -381,7 +380,7 @@ def set_banner(person: Person, template_id: int, data: bytes | None) -> dict:
 
 def catalogue(person: Person) -> dict:
     """Active layouts and texts as the model sees them (list_email_templates)."""
-    team = person.role in TEAM
+    team = person.can("mail.tab")
     lays = [t for t in list_all(kind="layout", active_only=True) if team or not t["company"]]
     texts = [t for t in list_all(kind="text", active_only=True) if t["builtin"] != "inquiry_ack"]
     names = {t["id"]: t["name"] for t in lays}

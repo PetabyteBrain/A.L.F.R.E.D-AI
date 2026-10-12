@@ -66,7 +66,7 @@ def search(person: Person, query: str, *, about: Person | None = None, channel: 
         raise SearchError("Channel must be call, telegram or web.")
     limit = max(1, min(int(limit or 8), MAX_RESULTS))
     where, params = [], []
-    if person.is_admin:
+    if person.can("everyone.view"):
         if about is not None:
             where.append("(s.user_id = ? OR sc.requested_by = ?)")
             params += [about.id, about.id]

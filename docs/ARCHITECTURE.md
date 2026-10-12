@@ -9,8 +9,9 @@ working on the code are in [CLAUDE.md](../CLAUDE.md).
 |---|---|---|
 | Orchestrator | FastAPI app: webhooks, WebSocket media stream, dashboard API, background loops | `orchestrator/main.py` |
 | Agent Core | Claude conversation loop with tools, prompt caching, date checks | `orchestrator/agent_core.py` |
-| Identity registry | People, roles, connections (phone, Telegram, dashboard, email), verification | `orchestrator/identity/` |
-| Tools | Declared in YAML, role-gated twice (offered + executed); built-ins, n8n webhooks, n8n API | `orchestrator/tools/` |
+| Identity registry | People, connections (phone, Telegram, dashboard, email), verification | `orchestrator/identity/` |
+| Permissions | Named permissions, editable roles (allow/deny, inheritance), several roles per person, groups | `orchestrator/permissions.py` |
+| Tools | Declared in YAML with the permission they need, checked twice (offered + executed); built-ins, n8n webhooks, n8n API | `orchestrator/tools/` |
 | Telephony | Twilio Media Streams (8 kHz mu-law), streamed sentence-by-sentence speech | `orchestrator/call_handler.py` |
 | Speech | STT/TTS swap point; self-hosted Whisper + Kokoro on a GPU box, ElevenLabs as fallback | `orchestrator/stt_tts/`, `speech_server/` |
 | Telegram | Long polling; text, voice notes, files, photos; validated HTML formatting | `orchestrator/telegram_handler.py` |
@@ -34,14 +35,15 @@ Email ─► provider ─► /mail/inbound/<token> (validated once) ─► sende
    (an access attempt is recorded); unknown callers may leave a message with no tools involved.
 2. Agent Core builds the prompt: a byte-stable static system prompt (cached), then per-request
    context (person, channel, local time, upcoming dates, memory notes, recent turns on other channels).
-3. Tools are filtered by role, per-role switches, channel and what the person has linked (e.g. Google
+3. Tools are filtered by the person's permissions (all their roles), channel and what they have linked (e.g. Google
    Calendar). Acting tools pass a weekday/date check before they run; risky actions (outside calls,
    restarts, notes tidy-ups) are prepared first and run only after the person's yes in a later message.
 4. Every API call is metered (tokens, characters, minutes) for the Usage tab and budget warnings.
 
 ## Data
 
-- `users`, `user_identifiers` (connections, verified flag), `roles`
+- `users`, `user_identifiers` (connections, verified flag), `roles`, `role_permissions`, `user_roles`,
+  `people_groups`, `group_members`, `group_roles`
 - `sessions`, `transcripts` (+ FTS5 index for conversation search), `recordings`
 - `emails` (log of every message; the .eml itself on the NAS), `email_attachments` (index; bytes stay in the .eml),
   `mail_labels` / `email_labels` / `email_state` (groups, tags, per-viewer read/star/archive), `mail_templates`
@@ -52,7 +54,8 @@ Email ─► provider ─► /mail/inbound/<token> (validated once) ─► sende
 
 ## Security model
 
-- Registry-only access; roles decide channels and tools; per-role permission switches for admins.
+- Registry-only access; permissions (from a person's roles and groups) decide channels, tools, routes and tabs;
+  role editing is capped to what the editor holds, the admin role is fixed.
 - Dashboard: Argon2id passwords, server-side sessions (HMAC'd tokens), idle/absolute timeouts,
   2FA (TOTP or Telegram codes, backup codes), throttled logins, strict CSP (no inline scripts),
   CSRF header + origin check on every state-changing request.

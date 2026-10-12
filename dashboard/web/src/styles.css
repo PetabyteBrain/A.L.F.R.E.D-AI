@@ -1555,3 +1555,39 @@ main[hidden], [hidden] { display: none !important; }
   .tm-preview { position: static; }
   .tm-new { margin-left: 0; }
 }
+
+/* Settings → Roles (RolesManager.jsx) */
+.roles-manager { margin-top: 18px; }
+.roles-tabs { width: fit-content; margin: 10px 0 14px; }
+.roles-tabs button { padding: 7px 14px; }
+.roles-layout { display: grid; grid-template-columns: minmax(200px, 260px) 1fr; gap: 18px; align-items: start; }
+.roles-list { display: flex; flex-direction: column; gap: 4px; }
+.role-item { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; padding: 8px 10px;
+  border: 1px solid var(--line); background: transparent; color: var(--text); cursor: pointer; text-align: left; font: inherit; }
+.role-item:hover { border-color: var(--accent); }
+.role-item.active { background: rgb(var(--accent-rgb) / .14); border-color: var(--accent); color: var(--text-strong); }
+.role-item .meta { font-size: 11px; }
+.roles-list .field-row { flex-direction: column; align-items: stretch; margin-top: 10px; }
+.perm-group { margin-top: 12px; }
+.perm-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 5px 0;
+  border-bottom: 1px solid rgb(var(--accent-rgb) / .08); }
+.perm-row .perm-label { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.perm-seg { flex: none; }
+.perm-seg button { padding: 4px 10px; min-width: 52px; }
+.perm-seg button.active.allow { background: rgb(80 200 120 / .25); }
+.perm-seg button.active.deny { background: rgb(230 80 80 / .28); }
+.perm-seg button:disabled { opacity: .45; cursor: not-allowed; }
+.group-card { border: 1px solid var(--line); padding: 10px 12px; margin-top: 10px; }
+.group-head { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.group-head b { color: var(--text-strong); }
+.group-head .btn:first-of-type { margin-left: auto; }
+.pick-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 8px; }
+.chips-label { font-size: 11px; color: var(--muted); margin-top: 8px; text-transform: uppercase; letter-spacing: .12em; }
+.explain-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; align-items: start; }
+.explain-grid > .error { grid-column: 1 / -1; }
+.explain-list { list-style: none; padding: 0; margin: 8px 0; display: flex; flex-direction: column; gap: 4px; }
+.explain-list li.off { opacity: .6; }
+@media (max-width: 760px) {
+  .roles-layout, .explain-grid { grid-template-columns: 1fr; }
+  .perm-row { flex-direction: column; align-items: flex-start; }
+}

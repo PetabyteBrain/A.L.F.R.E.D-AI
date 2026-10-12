@@ -373,10 +373,10 @@ async def _route(row: dict, p: Parsed, own: str, rest: str) -> None:
     sent_for = parent if parent and parent["direction"] == "out" and parent["kind"] == "sent" and parent["user_id"] \
         else None
     if sender and authentic and not (sent_for and sent_for["user_id"] != sender.id):
-        if registry.role_allows_channel(sender.role, "email"):
+        if registry.allows_channel(sender, "email"):
             await _request(row, p, own, rest, sender, parent)
             return
-        registry._record_attempt("email", f"email:{p.from_addr}", False, f"role '{sender.role}' has no email access")
+        registry._record_attempt("email", f"email:{p.from_addr}", False, "no email access for their roles")
     if sent_for:
         await _relay_reply(row, p, own, sent_for, authentic)
         return

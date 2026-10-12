@@ -40,6 +40,7 @@ from dashboard.api.notes import router as notes_router
 from dashboard.api.agenda import router as agenda_router
 from dashboard.api.viewas import router as viewas_router
 from dashboard.api.settings_admin import router as settings_router
+from dashboard.api.access import router as access_router
 from dashboard.api.continuity import router as continuity_router
 from dashboard.api.routes import router as dashboard_router
 from dashboard.api.security import SecurityMiddleware
@@ -218,6 +219,7 @@ app.include_router(notes_router)
 app.include_router(agenda_router)
 app.include_router(viewas_router)
 app.include_router(settings_router)
+app.include_router(access_router)
 app.include_router(continuity_router)
 app.include_router(google_router)
 app.include_router(chat_router)

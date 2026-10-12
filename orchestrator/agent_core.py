@@ -65,16 +65,14 @@ Channels:
 - email: the person wrote to your own email address; your reply goes back by email (details
   in the request). Markdown is rendered.
 
-Roles:
-- admin: the owner. Full access to every tool, including n8n workflow management.
-- cofounder: the owner's co-founder and closest partner. Near-admin: operational tools,
-  calls and messages, and n8n workflows as far as the admin allows (see the tools you get).
-  Cannot delete n8n workflows.
-- friend: a trusted person with limited access. Only the tools you are given are available
-  to them; don't reveal details about other people, the owner's data, system internals,
-  or tools they can't use.
-Other roles may exist; the tool list you receive is always exactly what the current person
-is allowed to use. Never claim to have done something you have no tool for.
+Roles: a person can hold several roles; admins and cofounders set what each role may do.
+- admin: the owner. Full access to every tool.
+- cofounder: the owner's co-founder and closest partner. Near-admin by default: the team's tools,
+  calls and messages, company files and mail, automations.
+- friend: a trusted person with limited access.
+Other roles may exist. The tool list you receive is always exactly what the current person is
+allowed to use: don't reveal details about other people, the owner's data, system internals, or
+tools they can't use. Never claim to have done something you have no tool for.
 
 Tools:
 - Use tools when they are the reliable way to answer; don't guess system state.
@@ -147,7 +145,7 @@ Tools:
   company_todo for the company to-do list. Answer questions from documents with nas_files (find,
   then read) and name the file. Never reveal one person's personal notes to someone else.
 - Files sent on Telegram arrive as "upload #N": save them with nas_save_upload where the person
-  says (ask "your files or company, and which folder?" if unclear; company only for admins/cofounders).
+  says (ask "your files or company, and which folder?" if unclear; company only for people who have access to it).
   For receipts read date, shop, total and currency from the image and use log_receipt (it also
   files the image); confirm what you logged. Never invent values you can't read.
 - Email (your own address): send_email to "me" goes out at once; to anyone else it only prepares the
@@ -177,9 +175,10 @@ def _dynamic_system(person: Person, channel: str, extra: str | None) -> str:
     today = datetime.now(ZoneInfo(settings.timezone)).date()
     days = ", ".join((today + timedelta(days=i)).strftime("%a %d %b") for i in range(1, 15))
     lines = [
-        f"Current person: {person.display_name} (user id {person.id}, role: {person.role}).",
+        f"Current person: {person.display_name} (user id {person.id}, "
+        f"role: {', '.join(person.roles or (person.role,))}).",
         *([f"The company is called {settings.company_name}: its files are scope company, its to-do list is "
-           "company_todo."] if person.role in ("admin", "cofounder") else
+           "company_todo."] if person.can("files.company") else
           ["This person has no access to the company files: never use scope company for them."]),
         f"Channel: {channel}.",
         f"Local time: {now} ({settings.timezone}).",
@@ -291,7 +290,7 @@ async def _run(person: Person, channel: str, session_id: str, user_text: str, ex
     if attachments:                    # e.g. a photo sent on Telegram: shown to the model for this turn only
         messages[-1] = {"role": "user", "content": [*attachments, {"type": "text", "text": messages[-1]["content"]}]}
     model = ai_config.model_for(channel)
-    tools = tool_registry.tools_for(person.role, channel, person.id)
+    tools = tool_registry.tools_for(person, channel)
     tools = [{**t, "type": ai_config.web_search_type(model)} if t.get("type", "").startswith("web_search_") else t
              for t in tools]
     system = [

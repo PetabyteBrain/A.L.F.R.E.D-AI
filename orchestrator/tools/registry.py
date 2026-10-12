@@ -24,12 +24,15 @@ class ToolSpec:
     kind: str
     description: str
     input_schema: dict
-    roles: tuple[str, ...]
+    permission: str | None = None   # orchestrator/permissions.py; None = everyone
     config: dict = field(default_factory=dict)
     channels: tuple[str, ...] = ()  # empty = every channel
 
-    def allowed_for(self, role: str) -> bool:
-        return "*" in self.roles or role in self.roles
+    def allowed_for(self, person: Person) -> bool:
+        if not self.permission:
+            return True
+        from .. import permissions
+        return permissions.can(person, self.permission)
 
     def api_definition(self) -> dict:
         if self.kind == "anthropic_server":   # runs on Anthropic's side (e.g. web search): no schema
@@ -57,12 +60,17 @@ def load() -> dict[str, ToolSpec]:
         if kind == "builtin" and entry.get("handler") not in builtin.HANDLERS:
             log.error("Tool %s: unknown builtin handler %r — skipped", name, entry.get("handler"))
             continue
+        from .. import permissions
+        perm = entry.pop("permission", None)
+        if perm is not None and perm not in permissions.KEYS:
+            log.error("Tool %s: unknown permission %r — skipped", name, perm)
+            continue
         tools[name] = ToolSpec(
             name=name,
             kind=kind,
             description=entry.pop("description", "").strip(),
             input_schema=entry.pop("input_schema", {"type": "object", "properties": {}}),
-            roles=tuple(entry.pop("roles", ["admin"])),
+            permission=perm,
             channels=tuple(entry.pop("channels", [])),
             config=entry,
         )
@@ -103,25 +111,29 @@ def _available(spec: ToolSpec, person_id: int | None = None) -> bool:
     return True
 
 
-def _permitted(spec: ToolSpec, role: str) -> bool:
-    """Per-role switches from the Settings tab (orchestrator/permissions.py)."""
-    perm = spec.config.get("permission")
-    if not perm:
-        return True
-    from .. import permissions
-    return permissions.allowed(role, perm)
+def spec(name: str) -> ToolSpec | None:
+    if not _TOOLS:
+        load()
+    return _TOOLS.get(name)
 
 
-def tools_for(role: str, channel: str | None = None, person_id: int | None = None) -> list[dict]:
-    """Tools this person may use on this channel.
+def tools_for(person: Person | str, channel: str | None = None, person_id: int | None = None) -> list[dict]:
+    """Tools this person may use on this channel. A role name instead of a person = what that one role
+    gets (role editor, tests); then `person_id` optionally checks that person's own Google link.
 
     Deterministic (sorted) so the prompt-cache prefix stays stable between requests.
     """
     if not _TOOLS:
         load()
+    from .. import permissions
+    if isinstance(person, str):
+        perms, link_id = permissions.resolve([person]), person_id
+    else:
+        perms, link_id = permissions.for_person(person), person.id
     return [s.api_definition() for s in sorted(_TOOLS.values(), key=lambda s: s.name)
-            if s.allowed_for(role) and _permitted(s, role)
-            and (not s.channels or channel is None or channel in s.channels) and _available(s, person_id)]
+            if (not s.permission or s.permission in perms)
+            and (not s.channels or channel is None or channel in s.channels)
+            and _available(s, link_id)]
 
 
 def _truncate(result: Any) -> str:
@@ -152,8 +164,7 @@ async def execute(name: str, args: dict, ctx: ToolContext) -> tuple[str, bool]:
     if not _TOOLS:
         load()
     spec = _TOOLS.get(name)
-    if spec is None or not spec.allowed_for(ctx.person.role) or not _permitted(spec, ctx.person.role) \
-            or (spec.channels and ctx.channel not in spec.channels):
+    if spec is None or not spec.allowed_for(ctx.person) or (spec.channels and ctx.channel not in spec.channels):
         # Defence in depth: the model only sees permitted tools, but re-check anyway.
         result, is_error = f"Tool '{name}' is not available to this user.", True
         db.log_tool_call(name, args, result, True, ctx.session_id, ctx.person.id)
@@ -184,7 +195,8 @@ async def _run_webhook(spec: ToolSpec, args: dict, ctx: ToolContext) -> Any:
     payload = {
         "tool": spec.name,
         "input": args,
-        "user": {"id": ctx.person.id, "name": ctx.person.display_name, "role": ctx.person.role},
+        "user": {"id": ctx.person.id, "name": ctx.person.display_name, "role": ctx.person.role,
+                 "roles": list(ctx.person.roles or (ctx.person.role,))},
         "session_id": ctx.session_id,
         "channel": ctx.channel,
     }

@@ -16,7 +16,7 @@ says who it applies to.
 
 ## Who can do what
 
-Alfred knows three kinds of people. Your operator decides which one you are.
+Alfred comes with three roles. Your operator decides which role, or roles, you have.
 
 | Role | In short |
 |---|---|
@@ -24,9 +24,10 @@ Alfred knows three kinds of people. Your operator decides which one you are.
 | **Cofounder** | Nearly everything an admin can do for daily work: company files and to-do list, calls to businesses, meetings, the mailbox, market analyses. Not: managing people, settings or costs. |
 | **Friend** | Telegram, calls and email with Alfred for their own things: reminders, tasks, notes, files, calendar, memory. No dashboard, no company files. |
 
-Throughout this guide, **Who:** tells you which roles a feature is for. Your operator may also have set up other
-roles; in that case Alfred only offers you what your role allows, and simply says so when you ask for something
-outside it.
+Throughout this guide, **Who:** tells you which of these roles get a feature by default. Admins and cofounders can
+change what each role may do, create new roles (an "Intern" role, say), give one person several roles, and put
+people in groups that bring roles with them (see [Roles and permissions](09-administration.md#roles-and-permissions)).
+Alfred only ever offers you what your roles allow, and simply says so when you ask for something outside them.
 
 ## Contents
 

@@ -77,15 +77,11 @@ def get(task_id: int) -> dict | None:
 
 
 def _may_assign_others(person: Person) -> bool:
-    from .tools import registry as tools
-    if not tools._TOOLS:
-        tools.load()
-    spec = tools._TOOLS.get("place_call")  # same people who may have Alfred call someone
-    return bool(spec and spec.allowed_for(person.role))
+    return person.can("others.assign")
 
 
 def _may_edit(task: dict, person: Person) -> bool:
-    return person.is_admin or person.id in (task["owner_user_id"], task["requested_by"]) or (
+    return person.can("everyone.view") or person.id in (task["owner_user_id"], task["requested_by"]) or (
         task["owner_user_id"] is None and _may_assign_others(person))
 
 
@@ -129,8 +125,9 @@ def create(*, created_by: Person, title: str, owner_ref=None, due: str | None = 
 
 def list_for(person: Person, *, include_done: bool = False, limit: int = 100) -> list[dict]:
     """Admins see everything; others see tasks they own or asked for, plus the shared (unowned) list."""
-    scope = "" if person.is_admin else " AND (t.owner_user_id = ? OR t.requested_by = ? OR t.owner_user_id IS NULL)"
-    params: list = [] if person.is_admin else [person.id, person.id]
+    everyone = person.can("everyone.view")
+    scope = "" if everyone else " AND (t.owner_user_id = ? OR t.requested_by = ? OR t.owner_user_id IS NULL)"
+    params: list = [] if everyone else [person.id, person.id]
     status = "" if include_done else " AND t.status = 'active'"
     rows = db.query(f"SELECT {_COLS} {_FROM} WHERE 1=1{scope}{status} ORDER BY CASE WHEN t.status = 'active' "
                     "THEN 0 ELSE 1 END, COALESCE(t.due_at, t.next_run_at, t.created_at) LIMIT ?", (*params, limit))

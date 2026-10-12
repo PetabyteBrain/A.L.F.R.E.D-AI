@@ -19,7 +19,7 @@ from orchestrator.identity import registry
 from orchestrator.identity.registry import Person
 
 from . import security
-from .routes import admin_only, current_person
+from .routes import current_person, requires
 
 router = APIRouter(prefix="/api")
 
@@ -120,26 +120,34 @@ async def cancel_request(person: Person = Depends(current_person)) -> dict:
 # --- admin -------------------------------------------------------------------------------
 
 @router.get("/data-requests")
-async def list_requests(person: Person = Depends(admin_only)) -> list[dict]:
+async def list_requests(person: Person = Depends(requires("people.manage"))) -> list[dict]:
     return privacy.pending_all()
 
 
 @router.post("/data-requests/{request_id}")
-async def decide(body: Decision, request_id: int = Path(ge=1), person: Person = Depends(admin_only)) -> dict:
+async def decide(body: Decision, request_id: int = Path(ge=1), person: Person = Depends(requires("people.manage"))) -> dict:
     try:
         return await privacy.decide(request_id, person, body.approve)
     except privacy.PrivacyError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
 
+def _not_an_admin_unless_admin(person: Person, user_id: int) -> None:
+    from orchestrator import permissions
+    if not person.is_admin and permissions.is_admin_user(user_id):
+        raise HTTPException(status_code=403, detail="Only an admin can do this for an admin.")
+
+
 @router.get("/people/{user_id}/export")
-async def export_person(user_id: int = Path(ge=1), person: Person = Depends(admin_only)) -> Response:
+async def export_person(user_id: int = Path(ge=1), person: Person = Depends(requires("people.manage"))) -> Response:
+    _not_an_admin_unless_admin(person, user_id)
     return _zip(user_id, person)
 
 
 @router.post("/people/{user_id}/erase")
 async def erase_person(body: Erase, user_id: int = Path(ge=1),
-                       person: Person = Depends(admin_only)) -> dict:
+                       person: Person = Depends(requires("people.manage"))) -> dict:
+    _not_an_admin_unless_admin(person, user_id)
     _password(person, body.password)
     if user_id == person.id and body.scope == "account":
         raise HTTPException(status_code=400, detail="Delete your own account through a request on Profile.")
@@ -152,12 +160,12 @@ async def erase_person(body: Erase, user_id: int = Path(ge=1),
 
 
 @router.get("/budgets")
-async def get_budgets(person: Person = Depends(admin_only)) -> dict:
+async def get_budgets(person: Person = Depends(requires("settings.manage"))) -> dict:
     return await budgets.status()
 
 
 @router.put("/budgets")
-async def put_budgets(body: Budgets, person: Person = Depends(admin_only)) -> dict:
+async def put_budgets(body: Budgets, person: Person = Depends(requires("settings.manage"))) -> dict:
     budgets.set_budgets(body.model_dump())
     db.log_activity("system", f"Usage: {person.display_name} changed the monthly budgets", user_id=person.id)
     await budgets.check(force=True)

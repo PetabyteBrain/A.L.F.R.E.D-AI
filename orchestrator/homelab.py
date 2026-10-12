@@ -116,8 +116,8 @@ async def status(name: str | None = None) -> list[dict]:
 
 
 async def logs(person: Person, host: str, container: str, lines: int = 50) -> dict:
-    if not person.is_admin:
-        raise HomelabError("Only an admin can read service logs.")
+    if not person.can("homelab.manage"):
+        raise HomelabError("You don't have permission to read service logs.")
     return await _ops(_host(host), "logs", container, str(max(1, min(int(lines or 50), 200))))
 
 
@@ -131,8 +131,8 @@ def _last_user_turn(session_id: str | None) -> int:
 async def restart(person: Person, session_id: str | None, host: str, container: str, confirmed: bool) -> dict:
     """Two-step: the first call only asks; the restart runs on a later call with confirmed=true,
     after the admin has replied in the conversation (a new user turn since the question)."""
-    if not person.is_admin:
-        raise HomelabError("Only an admin can restart services.")
+    if not person.can("homelab.manage"):
+        raise HomelabError("You don't have permission to restart services.")
     h = _host(host)
     key = (person.id, h["name"], container)
     pending = _pending_restarts.get(key)
@@ -239,7 +239,8 @@ async def poll_and_alert() -> None:
 
 
 def host_rows_visible(rows: list[dict], is_admin: bool) -> list[dict]:
-    """Systems rows for the dashboard: grouped, host rows only for admins and only configured hosts."""
+    """Systems rows for the dashboard: grouped, host rows only for people with homelab.manage (`is_admin`)
+    and only configured hosts."""
     configured = hosts()
     roles = {f"host {h['name']}": h.get("role", "") for h in configured}
     rank = {f"host {h['name']}": i for i, h in enumerate(configured)}

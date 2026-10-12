@@ -8,7 +8,26 @@ import CallDialog from "../components/CallDialog.jsx";
 import { ConfirmDialog, Panel } from "../components/hud.jsx";
 import { DataRequests, PersonData } from "../components/DataRequests.jsx";
 
-/* ---------------------------------------------------------------- editor (admin) */
+/* Several roles per person, as toggles; the first one picked is the primary role. Roles that would
+   give more than the editor has are greyed out (the server refuses them anyway). */
+function RolePicker({ roles, value, onChange }) {
+  const toggle = (name) => onChange(value.includes(name) ? value.filter((r) => r !== name) : [...value, name]);
+  return (
+    <div className="pick-chips" role="group" aria-label="Roles">
+      {roles.map((r) => (
+        <button key={r.name} type="button" aria-pressed={value.includes(r.name)}
+                className={`chip${value.includes(r.name) ? "" : " off"}`}
+                disabled={!r.assignable && !value.includes(r.name)}
+                title={`${r.description || r.label} · channels: ${r.channels.join(", ") || "none"}`}
+                onClick={() => toggle(r.name)}>
+          {r.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/* ---------------------------------------------------------------- editor (people.manage) */
 function PersonEditor({ personId, roles, me, onClose, onChanged }) {
   const [p, setP] = useState(null);
   const [form, setForm] = useState(null);
@@ -20,7 +39,7 @@ function PersonEditor({ personId, roles, me, onClose, onChanged }) {
 
   const load = (view) => {
     setP(view);
-    setForm({ display_name: view.display_name, role: view.role, active: view.active, notes: view.notes || "" });
+    setForm({ display_name: view.display_name, roles: view.roles, active: view.active, notes: view.notes || "" });
     setLogin({ username: view.dashboard_username || "", password: "" });
   };
   const refresh = useCallback(() => api("/people")
@@ -58,9 +77,8 @@ function PersonEditor({ personId, roles, me, onClose, onChanged }) {
       </div>
     );
   }
-  const role = roles.find((r) => r.name === form.role);
-  const canDashboard = role?.channels.includes("dashboard");
-  const dirty = form.display_name !== p.display_name || form.role !== p.role
+  const canDashboard = p.channels.includes("dashboard");
+  const dirty = form.display_name !== p.display_name || form.roles.join() !== p.roles.join()
     || form.active !== p.active || form.notes !== (p.notes || "");
 
   return (
@@ -78,12 +96,10 @@ function PersonEditor({ personId, roles, me, onClose, onChanged }) {
           <label className="field"><span>Name</span>
             <input value={form.display_name} maxLength={80} required onChange={(e) => setForm({ ...form, display_name: e.target.value })} />
           </label>
-          <label className="field"><span>Role</span>
-            <select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })}>
-              {roles.map((r) => <option key={r.name} value={r.name}>{r.name} — {r.channels.join(", ")}</option>)}
-            </select>
-          </label>
-          <label className="field wide"><span>Notes (only admins see these)</span>
+          <div className="field wide"><span>Roles</span>
+            <RolePicker roles={roles} value={form.roles} onChange={(v) => setForm({ ...form, roles: v })} />
+          </div>
+          <label className="field wide"><span>Notes (only people who manage Personnel see these)</span>
             <input value={form.notes} maxLength={500} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
           </label>
           <label className="toggle wide">
@@ -94,7 +110,11 @@ function PersonEditor({ personId, roles, me, onClose, onChanged }) {
             <button className="btn primary small" type="submit" disabled={busy || !dirty}>Save changes</button>
           </div>
         </form>
-        {role && <p className="muted tiny">{role.description}</p>}
+        <p className="muted tiny">
+          Can reach {p.channels.length ? `them by ${p.channels.join(", ")}` : "no channel"}.
+          {p.group_roles.length > 0 && <> From groups ({p.groups.map((g) => g.name).join(", ")}): {p.group_roles.join(", ")}.</>}
+          {" "}Edit roles and groups on Settings → Roles.
+        </p>
 
         <h3 className="sub">Connections</h3>
         <Connections
@@ -109,7 +129,7 @@ function PersonEditor({ personId, roles, me, onClose, onChanged }) {
         />
 
         <h3 className="sub">Dashboard login</h3>
-        {!canDashboard && <p className="muted small">The <b>{form.role}</b> role has no dashboard access.</p>}
+        {!canDashboard && <p className="muted small">Their roles have no dashboard access.</p>}
         {canDashboard && (
           <form className="form-grid" onSubmit={async (e) => {
             e.preventDefault();
@@ -172,7 +192,7 @@ function PersonEditor({ personId, roles, me, onClose, onChanged }) {
 
 /* ---------------------------------------------------------------- new person */
 function NewPerson({ roles, onCreated, onCancel }) {
-  const [form, setForm] = useState({ display_name: "", role: "friend", notes: "" });
+  const [form, setForm] = useState({ display_name: "", roles: ["friend"], notes: "" });
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   async function submit(e) {
@@ -192,16 +212,14 @@ function NewPerson({ roles, onCreated, onCancel }) {
       <label className="field"><span>Name</span>
         <input value={form.display_name} maxLength={80} required autoFocus onChange={(e) => setForm({ ...form, display_name: e.target.value })} />
       </label>
-      <label className="field"><span>Role</span>
-        <select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })}>
-          {roles.map((r) => <option key={r.name} value={r.name}>{r.name}</option>)}
-        </select>
-      </label>
+      <div className="field wide"><span>Roles</span>
+        <RolePicker roles={roles} value={form.roles} onChange={(v) => setForm({ ...form, roles: v })} />
+      </div>
       <label className="field wide"><span>Notes (optional)</span>
         <input value={form.notes} maxLength={500} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
       </label>
       <div className="form-actions wide">
-        <button className="btn primary small" type="submit" disabled={busy}>Create</button>
+        <button className="btn primary small" type="submit" disabled={busy || !form.roles.length}>Create</button>
         <button className="btn ghost small" type="button" onClick={onCancel} disabled={busy}>Cancel</button>
       </div>
       {err && <p className="error wide">{err}</p>}
@@ -218,6 +236,7 @@ export default function People({ assistant, me }) {
   const [adding, setAdding] = useState(false);
   const [callee, setCallee] = useState(null);
   const [notice, setNotice] = useState("");
+  const roleLabel = (name) => (roles || []).find((r) => r.name === name)?.label || name;
 
   return (
     <Panel code="07" title="Personnel registry" actions={
@@ -235,7 +254,8 @@ export default function People({ assistant, me }) {
           <div className={`row person-row${p.active ? "" : " inactive"}`} key={p.id}>
             <div>
               <div>
-                #{p.id} {p.display_name} <Tag>{p.role}</Tag>{" "}
+                #{p.id} {p.display_name} {p.roles.map((r) => <Tag key={r}>{roleLabel(r)}</Tag>)}{" "}
+                {p.groups.map((g) => <Tag key={`g${g.id}`} kind="busy">{g.name}</Tag>)}{" "}
                 {!p.active && <Tag kind="bad">disabled</Tag>}{" "}
                 {p.dashboard_username && <Tag kind="ok">login: {p.dashboard_username}</Tag>}{" "}
                 {p.dashboard_username && (p.mfa ? <Tag kind="ok">2FA</Tag> : <Tag>no 2FA</Tag>)}

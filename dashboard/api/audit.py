@@ -18,7 +18,7 @@ from orchestrator import db
 from orchestrator.config import settings
 from orchestrator.identity.registry import Person
 
-from .routes import admin_only
+from .routes import requires
 
 router = APIRouter(prefix="/api")
 
@@ -47,7 +47,7 @@ def to_csv(header: list[str], rows: list[list]) -> str:
 
 
 @router.get("/audit/export")
-async def export(person: Person = Depends(admin_only),
+async def export(person: Person = Depends(requires("everyone.view")),
                  source: Literal["activity", "access"] = "activity",
                  kind: str | None = Query(default=None, pattern="^[a-z_]{1,20}$"),
                  days: int = Query(default=90, ge=0, le=3660)) -> Response:

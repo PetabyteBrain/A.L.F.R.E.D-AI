@@ -10,6 +10,7 @@ import AlfredAvatar from "./components/AlfredAvatar.jsx";
 import Backdrop from "./components/Backdrop.jsx";
 import { Icon } from "./components/icons.jsx";
 import { Clock, DecodeText, Emblem } from "./components/hud.jsx";
+import { can } from "./components/common.jsx";
 import Live from "./pages/Live.jsx";
 import Recordings from "./pages/Recordings.jsx";
 import Tasks from "./pages/Tasks.jsx";
@@ -29,12 +30,13 @@ const TABS = [
   { id: "history", label: "Archive", title: "Archive", kicker: "Recordings & transcripts", Page: Recordings },
   { id: "tasks", label: "Tasks", title: "Tasks & calls", kicker: "Reminders, calls & tasks", Page: Tasks },
   { id: "notes", label: "Files", title: "Notes & files", kicker: "On the NAS", Page: Notes },
-  { id: "mail", label: "Mail", title: "Mail", kicker: "Alfred's mailbox", Page: Mail, team: true },
+  { id: "mail", label: "Mail", title: "Mail", kicker: "Alfred's mailbox", Page: Mail, perms: ["mail.tab"] },
   { id: "activity", label: "Log", title: "Event log", kicker: "Everything that happened", Page: Activity },
   { id: "health", label: "Systems", title: "Systems", kicker: "Diagnostics", Page: Health },
-  { id: "people", label: "Personnel", title: "Personnel", kicker: "Registry & access", Page: People, admin: true },
-  { id: "usage", label: "Usage", title: "API usage", kicker: "Tokens, minutes & cost", Page: Usage, admin: true },
-  { id: "settings", label: "Settings", title: "Settings", kicker: "Household & permissions", Page: Settings, admin: true },
+  { id: "people", label: "Personnel", title: "Personnel", kicker: "Registry & access", Page: People, perms: ["people.manage"] },
+  { id: "usage", label: "Usage", title: "API usage", kicker: "Tokens, minutes & cost", Page: Usage, perms: ["usage.view"] },
+  { id: "settings", label: "Settings", title: "Settings", kicker: "Household, roles & permissions", Page: Settings,
+    perms: ["settings.manage", "roles.manage"] },
   { id: "profile", label: "Profile", title: "My profile", kicker: "Identity & connections", Page: Profile },
 ];
 
@@ -131,10 +133,9 @@ export default function App() {
     );
   }
 
-  const isAdmin = me.role === "admin";
-  // Previewing a role without dashboard access: only the chat (to test what Alfred lets them do).
-  const isTeam = isAdmin || me.role === "cofounder";
-  const tabs = TABS.filter((t) => (!t.admin || isAdmin) && (!t.team || isTeam)
+  // A tab with `perms` needs any one of them (dashboard_guide.py has the same rules). Previewing someone
+  // without dashboard access: only the chat (to test what Alfred lets them do).
+  const tabs = TABS.filter((t) => (!t.perms || t.perms.some((p) => can(me, p)))
     && (me.role_has_dashboard !== false || t.id === "chat"));
   const refreshMe = () => api("/me").then(setMe).catch(() => {});
   const stopViewAs = () => api("/view-as", { method: "DELETE" }).then(refreshMe).catch(() => {});
@@ -175,7 +176,7 @@ export default function App() {
             <ThemeSwitch theme={theme} setTheme={setTheme} />
             <div className="operator">
               <div>
-                <span className="op-label">Operator · {me.role}</span>
+                <span className="op-label">Operator · {(me.roles || []).map((r) => r.label).join(", ") || me.role}</span>
                 <span className="op-name">{me.display_name}</span>
               </div>
               <button className="icon-btn" onClick={logout} title="Sign out" aria-label="Sign out"><Icon name="logout" /></button>
@@ -210,14 +211,14 @@ export default function App() {
             <main key={active.id} className="page-enter">
               {active.id === "live" && theme === "alfred" && <ButlerGreeting me={me} assistant={assistant} />}
               {active.id === "live" && <Stats />}
-              <Page me={me} isAdmin={isAdmin} assistant={assistant} refreshMe={refreshMe} />
+              <Page me={me} assistant={assistant} refreshMe={refreshMe} />
             </main>
           )}
           {tabs.filter((t) => KEEP_ALIVE.has(t.id) && (t.id === active.id || visited.has(t.id))).map((t) => (
             // keyed by who is looking, so a role preview starts the page afresh
             <main key={`${t.id}:${me.id}:${me.viewing_as || ""}`} className="page-enter" hidden={t.id !== active.id}>
               <PageActive.Provider value={t.id === active.id}>
-                <t.Page me={me} isAdmin={isAdmin} assistant={assistant} refreshMe={refreshMe} />
+                <t.Page me={me} assistant={assistant} refreshMe={refreshMe} />
               </PageActive.Provider>
             </main>
           ))}

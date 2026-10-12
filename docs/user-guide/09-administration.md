@@ -1,31 +1,65 @@
 ---
 title: Administration
-description: People and roles, settings, usage and budgets, data requests, logs, systems, backups and automations.
+description: People, roles and permissions, groups, settings, usage and budgets, data requests, logs, systems, backups and automations.
 sidebar_position: 9
 ---
 
 # Administration
 
-**Who:** admins only.
+**Who:** admins by default. Admins can hand single parts to other roles (see
+[Roles and permissions](#roles-and-permissions)); roles and groups are also open to cofounders.
 
 ## People and roles
 
 **Personnel** lists everyone in the registry.
 
-- **Add a person**: name, role, optional notes. Then add their connections (phone, Telegram, email). New
+- **Add a person**: name, one or more roles, optional notes. Then add their connections (phone, Telegram, email). New
   connections must be confirmed with a code (see
   [Connecting](01-getting-started.md#connecting-your-phone-telegram-and-email)); you can start the code for them,
   or **Mark verified** if you know the connection is theirs (logged).
-- **Dashboard login**: give someone a username and password (only roles with dashboard access can use it).
+- **Dashboard login**: give someone a username and password (only if one of their roles has dashboard access).
   **Reset 2FA** helps someone who lost their phone: they sign in with the password only and set it up again.
-- **Change role, disable, delete**: a person with history can only be disabled, not deleted. The last active admin
-  can't be demoted, disabled or deleted. Changing someone's role, password or status signs them out everywhere.
+- **Change roles, disable, delete**: tap the roles to switch them on or off (the first one is shown as their main
+  role). A person with history can only be disabled, not deleted. The last active admin can't lose the admin role,
+  be disabled or deleted. Changing someone's roles, password or status signs them out everywhere.
 - **Call** next to a person rings them now (with a purpose, if you like).
 - **Access attempts**: who tried to reach Alfred without being registered (kept 90 days).
 
-**Roles**: *admin*, *cofounder* and *friend* come built in. Each role decides which channels work (Telegram, calls,
-dashboard, email) and which of Alfred's abilities it gets. New roles and their abilities are set up by whoever runs
-the server (see the README).
+## Roles and permissions
+
+**Settings → Roles and groups** (admins and cofounders by default).
+
+Everything Alfred can do is a named **permission**, sorted into groups: channels (Telegram, calls, email,
+dashboard), everyday things (own tasks, reminders, calendar, email, files…), team abilities (calling or messaging
+other people, calls to businesses, company files, the mailbox, templates, escalations, market analysis…),
+automations (see, run, edit, delete) and administration (Personnel, roles, settings, usage, home servers, seeing
+everyone's records). A **role** is a set of these permissions.
+
+- **Roles tab**: pick a role on the left. Each permission can be **Allow**, **—** (not set: left to the person's
+  other roles) or **Deny** (taken away, even if another role allows it). Changes apply immediately, in the chat and
+  on the dashboard.
+- **New role**: give it a name and start from nothing or from a copy of another role, then adjust. Example: an
+  *Intern* role copied from Cofounder with **Deny** on "Calls to businesses".
+- **Inherits from**: a role can build on a parent role; it gets everything the parent allows and denies, plus its
+  own rules. The list on the left shows the family tree. A role can't inherit from itself, directly or in a circle.
+- **Rename** a role any time; **Archive** one nobody uses any more (and no other role builds on).
+- **Several roles per person** (on Personnel): their permissions add up, and any Deny wins.
+- **Groups tab**: a group is a set of people (a team, a client project). Tap roles to give them to the group and
+  tap people to make them members; every member gets the group's roles on top of their own.
+- **Who can what**: pick a person to see every permission they have and which role gives it ("What can Ivo do?"),
+  or pick a permission to see everyone who has it ("Who can call businesses?").
+
+**Rules that always apply:**
+
+- The **admin** role is fixed: it has every permission and can't be edited, copied, inherited or given to a group.
+- Nobody can change a permission they don't have themselves, or give a role that grants more than they have.
+  Only admins can change admins.
+- Nobody can take away their own access to the role editor by accident.
+- Changing someone's roles or groups signs them out of the dashboard; every change is in the **Log**.
+
+**View as** (on the same page): preview the dashboard, and talk to Alfred in the Chat tab, as a **role** or as a
+**person** (all their roles together), using your own account's data. You never see more than you're allowed to
+yourself. A banner shows it's a preview; **Back to my view** ends it.
 
 ## Settings
 
@@ -34,8 +68,6 @@ the server (see the README).
 | Card | What it does |
 |---|---|
 | **AI model & billing** | Which API key pays, which Claude model answers chats (Haiku, Sonnet, Opus, Fable), how hard the bigger models think, and a separate model for phone calls (fast by default). |
-| **Role permissions** | Switches that narrow a role, e.g. whether cofounders may see, run or edit automations. Admins always have everything. |
-| **View as role** | See the dashboard and the chat with another role's permissions, to check what they can do. A banner shows it's a preview; **Back to my view** ends it. |
 | **Household quiet hours** | The default quiet hours everyone follows unless they set their own (see [Quiet hours](03-your-day.md#quiet-hours)). |
 | **Email** | How Alfred answers mail from outside (*answer what public information covers*, *acknowledge only*, *no replies*), automatic filing of inquiry attachments, and how long mail is kept. See [Inquiries from outside](07-company.md#inquiries-from-outside). |
 | **Call screening** | Whether unknown callers can leave a message, recent screened calls, and **blocked numbers** (block / unblock). |
@@ -84,7 +116,7 @@ that opens in Excel. Sign-in and security events are kept a year. Each export is
 
 Alfred is connected to your automation server. Ask him to list workflows, show their runs, run one, or even build
 or change one ("make a workflow that emails me the weather every Monday"); he asks before deleting or overwriting
-anything. Cofounders get these abilities as far as the **Role permissions** allow; deleting workflows stays
-admin-only. The Tasks tab shows the workflows with their last run and failures.
+anything. Each part (see, run, edit, delete) is its own permission; by default cofounders may see, run and edit, and
+deleting stays with admins. The Tasks tab shows the workflows with their last run and failures.
 
 Next: [Privacy and safety](10-privacy-and-safety.md).

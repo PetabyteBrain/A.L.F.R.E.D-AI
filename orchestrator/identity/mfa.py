@@ -100,8 +100,9 @@ def enabled(user_id: int) -> bool:
     return status(user_id)["enabled"]
 
 
-def required_for(role: str) -> bool:
-    return role in settings.mfa_required_roles
+def required_for(person) -> bool:
+    """Two-factor sign-in is required if any role the person holds is in DASHBOARD_2FA_REQUIRED_ROLES."""
+    return bool(set(person.roles or (person.role,)) & settings.mfa_required_roles)
 
 
 def _upsert(user_id: int, **cols) -> None:

@@ -114,15 +114,19 @@ Usually you'll do this on the dashboard instead: **Personnel** (admin) and **Pro
 - Phone numbers and Telegram IDs added on the dashboard stay inactive until confirmed with a
   code (Alfred calls with it, or the code is sent to the bot from that account); admins can mark
   one verified by hand. CLI-added connections count as verified.
-- A role's channels (`telegram` / `call` / `dashboard`) are set per role; its tools are set in
-  `orchestrator/tools/registry.yaml` (`roles: [admin, friend]`, or `"*"` for everyone).
+- Roles are editable sets of named permissions (channels, everyday abilities, team abilities,
+  automations, administration) on **Settings → Roles and groups**: create, copy, rename, archive;
+  each permission allowed, denied or not set; parent roles; groups of people that bring roles.
+  A person can hold several roles: permissions add up and any deny wins. The admin role is fixed
+  (everything); editing is capped to what the editor holds. Tools declare the permission they need
+  in `orchestrator/tools/registry.yaml` (`permission:`; none = everyone).
 - `.env` `ADMIN_*` only seeds the very first admin; after that the database is the source of truth.
 
 ## Adding a capability
 
 1. Build an n8n workflow with a **Webhook** trigger (path e.g. `alfred-weather`).
 2. Add an entry to `orchestrator/tools/registry.yaml` (`kind: n8n_webhook`, `webhook_path`,
-   `roles`, `input_schema`). For long jobs set `async: true`; n8n then POSTs its result to
+   `permission`, `input_schema`). For long jobs set `async: true`; n8n then POSTs its result to
    `{PUBLIC_BASE_URL}/n8n/callback` with header `X-Alfred-Secret` and a JSON body containing the
    `session_id`/`correlation_id` it received, and Alfred tells the person on Telegram.
 3. `docker compose restart alfred` (the registry file is bind-mounted, no rebuild needed).
@@ -167,14 +171,16 @@ NAS, company share:          company files (read-only for Alfred) · Notes/ · L
   `python -m orchestrator.identity.mfa reset <username>` on the server.
 - Server-side sessions: the cookie (`__Host-alfred`, HttpOnly, Secure, SameSite=Strict) holds a
   random token; only its HMAC is stored. Idle timeout 60 min, hard cap 12 h. Logout, password
-  change, role change, disabling a person, or `admin_cli logout-all` revoke sessions immediately.
+  change, a change of someone's roles or groups, disabling a person, or `admin_cli logout-all`
+  revoke sessions immediately.
 - CSRF: every POST/PUT/PATCH/DELETE under `/api` needs `X-Requested-With: alfred`, and a
   foreign `Origin` is rejected.
 - Strict CSP (`script-src 'self'`, no inline code, `frame-ancestors 'none'`), nosniff,
   no-referrer, HSTS over HTTPS, `no-store` on API responses and recordings.
 - Validated inputs (bounded query params, strict JSON bodies) and parameterised SQL.
   Recordings are served only by numeric ID after an ownership check, and paths are confined to `STORAGE_ROOT`.
-- Admins see everything; other dashboard roles see only their own sessions and recordings.
+- Every route checks a named permission server-side; without "see everyone's records" people see only
+  their own sessions and recordings.
 - The client IP (used for throttling) is taken from `CF-Connecting-IP` only when the request
   comes from `TRUSTED_PROXY_IPS` (your reverse proxy); uvicorn runs without proxy-header trust.
 - Tip: set `ALFRED_BIND` to the server's tailnet IP so port 8000 isn't reachable from the LAN.

@@ -1,13 +1,9 @@
 # Tool registry — the only place you edit to give Alfred a new capability.
 #
-# Roles: admin (everything) > cofounder (everything except deleting n8n workflows)
-#        > friend (basic tools only).
-# `permission:` (optional) = a switch admins can turn off per role on the Settings tab
-#   (orchestrator/permissions.py); admins always pass.
-#
-# Each tool is exposed to Claude only for the roles listed under `roles`
-# ("*" = every role). Role checks happen twice: when the tool list is built
-# for a request, and again right before execution.
+# `permission:` = the named permission a person needs for the tool (orchestrator/permissions.py,
+# CATALOGUE); no permission = every registered person. Roles are editable sets of permissions on the
+# dashboard (Settings -> Roles); admins have everything. Checks happen twice: when the tool list is
+# built for a request, and again right before execution.
 #
 # kinds:
 #   builtin      -> python handler in orchestrator/tools/builtin.py (`handler:` name)
@@ -23,7 +19,6 @@ tools:
   - name: current_time
     kind: builtin
     handler: current_time
-    roles: ["*"]
     description: Get the current date and time in Alfred's configured timezone.
     input_schema:
       type: object
@@ -32,7 +27,6 @@ tools:
   - name: resolve_date
     kind: builtin
     handler: resolve_date
-    roles: ["*"]
     description: >-
       Turn what the person said into exact dates: "next Friday", "Friday next week", "the 15th",
       "in three weeks", "end of the month", "the weekend", "15.10", "Friday 9 October" (checks the
@@ -48,7 +42,7 @@ tools:
   - name: list_tasks
     kind: builtin
     handler: list_tasks
-    roles: ["*"]
+    permission: tasks.use
     description: >-
       List open tasks (with ids, owner, due time, follow-up state) the person owns or asked for, the
       shared list, and (for admins, and cofounders allowed to see n8n) active n8n workflows.
@@ -60,7 +54,7 @@ tools:
   - name: add_task
     kind: builtin
     handler: add_task
-    roles: ["*"]
+    permission: tasks.use
     description: >-
       Add a task, optionally for someone else (admins/cofounders), with a due time and a follow-up:
       at the due time Alfred asks the owner whether it's done (telegram = message with Done / Not yet
@@ -79,7 +73,7 @@ tools:
   - name: complete_task
     kind: builtin
     handler: complete_task
-    roles: ["*"]
+    permission: tasks.use
     description: Mark a task done (by id), with an optional result; the requester is told.
     input_schema:
       type: object
@@ -91,7 +85,7 @@ tools:
   - name: update_task
     kind: builtin
     handler: update_task
-    roles: ["*"]
+    permission: tasks.use
     description: >-
       Change a task (new due time restarts the follow-ups; a new owner; follow-up kind; title), say
       it isn't done yet (action not_yet: asks again tomorrow and tells the requester), or cancel it.
@@ -109,7 +103,7 @@ tools:
   - name: list_active_sessions
     kind: builtin
     handler: list_active_sessions
-    roles: [admin, cofounder]
+    permission: people.view
     description: List calls and chats currently in progress, with who they are with.
     input_schema:
       type: object
@@ -118,7 +112,7 @@ tools:
   - name: recent_activity
     kind: builtin
     handler: recent_activity
-    roles: [admin, cofounder]
+    permission: people.view
     description: Recent activity across all users (messages, calls, tool calls, blocked access attempts).
     input_schema:
       type: object
@@ -128,7 +122,7 @@ tools:
   - name: list_people
     kind: builtin
     handler: list_people
-    roles: [admin, cofounder]
+    permission: people.view
     description: List registered people (id, name, role, which channels they are reachable on).
     input_schema:
       type: object
@@ -137,7 +131,7 @@ tools:
   - name: send_telegram_message
     kind: builtin
     handler: send_telegram_message
-    roles: [admin, cofounder]
+    permission: others.contact
     description: Send a Telegram message to a registered person (by user id from list_people).
     input_schema:
       type: object
@@ -149,7 +143,7 @@ tools:
   - name: place_call
     kind: builtin
     handler: place_call
-    roles: [admin, cofounder]
+    permission: others.contact
     description: >-
       Phone a registered person RIGHT NOW from Alfred's number. Use `purpose` to say what to ask
       or tell them; Alfred then runs that call on the requester's behalf, hangs up when done and
@@ -167,7 +161,7 @@ tools:
   - name: call_external
     kind: builtin
     handler: call_external
-    roles: [admin, cofounder]
+    permission: calls.outside
     description: >-
       Have Alfred phone a number OUTSIDE the registry (a business, an office, a supplier) to get one
       concrete task done, e.g. "call the restaurant at +41 31 000 01 00 and book a table for 4 on
@@ -190,7 +184,7 @@ tools:
   - name: confirm_external_call
     kind: builtin
     handler: confirm_external_call
-    roles: [admin, cofounder]
+    permission: calls.outside
     description: >-
       Dial the outside call prepared with call_external, after the person said yes to the read-back
       ("yes", "go ahead", "do it"). Takes no arguments: it uses exactly the prepared details.
@@ -199,7 +193,7 @@ tools:
   - name: list_external_calls
     kind: builtin
     handler: list_external_calls
-    roles: [admin, cofounder]
+    permission: calls.outside
     description: Outside calls this person asked for (admins see all), with status and outcome.
     input_schema:
       type: object
@@ -209,7 +203,7 @@ tools:
   - name: cancel_external_call
     kind: builtin
     handler: cancel_external_call
-    roles: [admin, cofounder]
+    permission: calls.outside
     description: Cancel a pending outside call (by id from list_external_calls).
     input_schema:
       type: object
@@ -220,7 +214,7 @@ tools:
   - name: schedule_call
     kind: builtin
     handler: schedule_call
-    roles: [admin, cofounder]
+    permission: others.contact
     description: >-
       Schedule a phone call to a registered person at a future time (up to 60 days ahead), e.g.
       "call Max tomorrow at 9 and ask about the meeting" or "call me at 18:00 to remind me to
@@ -239,7 +233,7 @@ tools:
   - name: list_scheduled_calls
     kind: builtin
     handler: list_scheduled_calls
-    roles: [admin, cofounder]
+    permission: others.contact
     description: List upcoming (and optionally finished) call requests, with their outcomes.
     input_schema:
       type: object
@@ -249,7 +243,7 @@ tools:
   - name: cancel_scheduled_call
     kind: builtin
     handler: cancel_scheduled_call
-    roles: [admin, cofounder]
+    permission: others.contact
     description: Cancel a pending scheduled call by its request id (from list_scheduled_calls).
     input_schema:
       type: object
@@ -260,7 +254,7 @@ tools:
   - name: set_reminder
     kind: builtin
     handler: set_reminder
-    roles: ["*"]
+    permission: reminders.use
     description: >-
       Set a reminder: "remind me at 17:00 to call the bank", "every weekday at 8:30 remind me to
       take my pills". Delivered on Telegram with Done/Snooze buttons (or by phone with
@@ -287,7 +281,7 @@ tools:
   - name: agenda
     kind: builtin
     handler: agenda
-    roles: ["*"]
+    permission: reminders.use
     description: >-
       Everything the person has scheduled in a period, exactly as on the dashboard calendar: Google
       Calendar events (if linked), reminders including repeating ones (every occurrence listed with
@@ -303,7 +297,7 @@ tools:
   - name: list_reminders
     kind: builtin
     handler: list_reminders
-    roles: ["*"]
+    permission: reminders.use
     description: >-
       List open reminders (the person's own and those they set for others), with ids. Repeating
       reminders show only their next time; to see what falls on a particular day or period, use agenda.
@@ -315,7 +309,7 @@ tools:
   - name: update_reminder
     kind: builtin
     handler: update_reminder
-    roles: ["*"]
+    permission: reminders.use
     description: >-
       Mark a reminder done, snooze it (snooze_minutes), or cancel it (and so end its series), by
       id from list_reminders.
@@ -330,7 +324,6 @@ tools:
   - name: get_briefing
     kind: builtin
     handler: get_briefing
-    roles: ["*"]
     description: >-
       Today's facts for the person: weather (if a town is set), today's calendar, reminders, planned
       calls, recent call outcomes, open tasks (and failed n8n runs for people allowed to see n8n). Use it for "what's my
@@ -342,7 +335,6 @@ tools:
   - name: configure_briefing
     kind: builtin
     handler: configure_briefing
-    roles: ["*"]
     description: >-
       Turn the person's automatic daily briefing on or off, or change its time (HH:MM local),
       days (daily or weekdays), delivery (telegram or call) or weather town. Only pass what changes.
@@ -358,7 +350,7 @@ tools:
   - name: search_conversations
     kind: builtin
     handler: search_conversations
-    roles: ["*"]
+    permission: conversations.search
     description: >-
       Search earlier conversations on every channel (phone calls, Telegram, web chat), beyond the
       recent history you can see: "what did Max say about the invoice?", "when did we talk about
@@ -377,7 +369,7 @@ tools:
   - name: homelab_status
     kind: builtin
     handler: homelab_status
-    roles: [admin]
+    permission: homelab.manage
     description: >-
       Status of the homelab machines (Pis, Jetson): load, memory, disk, temperature, power, and
       their containers. Omit host for all of them. Use for "is everything OK", "how's the server".
@@ -389,7 +381,7 @@ tools:
   - name: homelab_updates
     kind: builtin
     handler: homelab_updates
-    roles: [admin]
+    permission: homelab.manage
     description: >-
       The monthly update report for the homelab machines: pending OS packages (and how many are
       security fixes), containers with a newer image upstream, reboots needed. Report only; Alfred
@@ -402,7 +394,7 @@ tools:
   - name: homelab_logs
     kind: builtin
     handler: homelab_logs
-    roles: [admin]
+    permission: homelab.manage
     description: Last log lines of an allowlisted container on a homelab host (to diagnose a problem).
     input_schema:
       type: object
@@ -415,7 +407,7 @@ tools:
   - name: homelab_restart
     kind: builtin
     handler: homelab_restart
-    roles: [admin]
+    permission: homelab.manage
     description: >-
       Restart an allowlisted container on a homelab host. Two steps: call without confirmed to get
       the question, ask the person, and only after they say yes in their reply call again with
@@ -431,7 +423,6 @@ tools:
   - name: minecraft_status
     kind: builtin
     handler: minecraft_status
-    roles: ["*"]
     description: Is the Minecraft server up, and who is online right now.
     input_schema:
       type: object
@@ -441,7 +432,7 @@ tools:
   - name: find_meeting_slots
     kind: builtin
     handler: find_meeting_slots
-    roles: [admin, cofounder]
+    permission: meetings.organize
     description: >-
       Find times when the requester and other registered people are all free, from the
       requester's calendar and the calendars of those who share their free/busy (others are just
@@ -462,7 +453,7 @@ tools:
   - name: propose_meeting
     kind: builtin
     handler: propose_meeting
-    roles: [admin, cofounder]
+    permission: meetings.organize
     description: >-
       Ask each participant which of the given times work (Telegram buttons, or a call). When all
       have answered, the earliest time that works for everyone is booked in the requester's
@@ -490,7 +481,7 @@ tools:
   - name: answer_meeting
     kind: builtin
     handler: answer_meeting
-    roles: ["*"]
+    permission: meetings.answer
     description: >-
       Record the current person's answer to a meeting invitation: the option numbers that work for
       them, or none_work=true. Use when they reply in words or on a call instead of the buttons.
@@ -505,7 +496,7 @@ tools:
   - name: list_meetings
     kind: builtin
     handler: list_meetings
-    roles: ["*"]
+    permission: meetings.answer
     description: Meeting proposals the person organised or was invited to, with who has answered.
     input_schema:
       type: object
@@ -515,7 +506,7 @@ tools:
   - name: cancel_meeting
     kind: builtin
     handler: cancel_meeting
-    roles: [admin, cofounder]
+    permission: meetings.organize
     description: Withdraw a meeting proposal that hasn't been booked yet (invitees are told).
     input_schema:
       type: object
@@ -526,7 +517,6 @@ tools:
   - name: remember
     kind: builtin
     handler: remember
-    roles: ["*"]
     description: >-
       Save a short long-term note for the current person (a preference, routine, key person or
       date). It will be in your context in all their future conversations. Not for secrets.
@@ -539,7 +529,6 @@ tools:
   - name: update_memory
     kind: builtin
     handler: update_memory
-    roles: ["*"]
     description: Replace the text of one of the current person's notes (id shown in your notes).
     input_schema:
       type: object
@@ -551,7 +540,6 @@ tools:
   - name: forget_memory
     kind: builtin
     handler: forget_memory
-    roles: ["*"]
     description: Delete one of the current person's notes (id shown in your notes).
     input_schema:
       type: object
@@ -562,7 +550,6 @@ tools:
   - name: configure_quiet_hours
     kind: builtin
     handler: configure_quiet_hours
-    roles: ["*"]
     description: >-
       Show or change the current person's quiet hours (when calls others ask for wait and messages
       arrive silently). mode: default (the household default), custom (with start/end HH:MM), off.
@@ -578,7 +565,7 @@ tools:
   - name: notes_overview
     kind: builtin
     handler: notes_overview
-    roles: ["*"]
+    permission: files.own
     requires: nas
     description: >-
       The person's whole personal NAS folder at a glance: folders (with note counts), every .md/.txt note
@@ -590,7 +577,7 @@ tools:
   - name: notes_reorganize
     kind: builtin
     handler: notes_reorganize
-    roles: ["*"]
+    permission: files.own
     requires: nas
     description: >-
       Propose a FOLDER STRUCTURE tidy-up of the person's own notes (personal folder, .md/.txt only).
@@ -606,7 +593,7 @@ tools:
   - name: notes_rewrite
     kind: builtin
     handler: notes_rewrite
-    roles: ["*"]
+    permission: files.own
     requires: nas
     description: >-
       Propose CONTENT changes to the person's own notes (personal folder, .md/.txt only): reformat,
@@ -624,7 +611,7 @@ tools:
   - name: notes_tidy_confirm
     kind: builtin
     handler: notes_tidy_confirm
-    roles: ["*"]
+    permission: files.own
     requires: nas
     description: >-
       Carry out the tidy-up plan prepared with notes_reorganize (kind=structure) or notes_rewrite
@@ -638,7 +625,7 @@ tools:
   - name: nas_notes
     kind: builtin
     handler: nas_notes
-    roles: ["*"]
+    permission: files.own
     requires: nas
     description: >-
       Markdown notes on the NAS. scope: personal (the current person's own notes) or company (shared
@@ -660,7 +647,7 @@ tools:
   - name: nas_list
     kind: builtin
     handler: nas_list
-    roles: ["*"]
+    permission: files.own
     requires: nas
     description: >-
       Checklists on the NAS (Markdown files in Lists/): shopping, packing, ideas, team lists.
@@ -679,7 +666,7 @@ tools:
   - name: nas_files
     kind: builtin
     handler: nas_files
-    roles: ["*"]
+    permission: files.own
     requires: nas
     description: >-
       Browse, search and read files on the NAS (read-only: text, Markdown, Word, Excel, PDF).
@@ -700,7 +687,7 @@ tools:
   - name: nas_save_upload
     kind: builtin
     handler: nas_save_upload
-    roles: ["*"]
+    permission: files.own
     requires: nas
     description: >-
       Save a file the person sent on Telegram ("upload #N") to the NAS. scope personal (their own
@@ -718,7 +705,7 @@ tools:
   - name: log_receipt
     kind: builtin
     handler: log_receipt
-    roles: ["*"]
+    permission: files.own
     requires: nas
     description: >-
       Log a receipt: appends date, shop, amount, currency, category and note to
@@ -742,7 +729,7 @@ tools:
   - name: send_email
     kind: builtin
     handler: send_email
-    roles: ["*"]
+    permission: email.use
     requires: mail
     description: >-
       Send an email from Alfred's own address. To the person themselves ("email me the summary", to: ["me"])
@@ -779,7 +766,7 @@ tools:
   - name: list_email_templates
     kind: builtin
     handler: list_email_templates
-    roles: ["*"]
+    permission: email.use
     requires: mail
     description: >-
       The active email layouts and reusable text templates (with the fields each text needs), as managed on the
@@ -792,7 +779,7 @@ tools:
   - name: confirm_send_email
     kind: builtin
     handler: confirm_send_email
-    roles: ["*"]
+    permission: email.use
     requires: mail
     description: Send the email prepared by send_email, only after the person said yes to the read-back.
     input_schema:
@@ -802,7 +789,7 @@ tools:
   - name: list_emails
     kind: builtin
     handler: list_emails
-    roles: ["*"]
+    permission: email.use
     requires: mail
     description: >-
       List Alfred's email: box inbox (mail the person sent, or that was filed for them, e.g. replies to mail
@@ -821,7 +808,7 @@ tools:
   - name: organize_email
     kind: builtin
     handler: organize_email
-    roles: ["*"]
+    permission: email.use
     requires: mail
     description: >-
       Organise stored emails by id: move into a group (like a folder; "" takes them out), add or remove tags,
@@ -843,7 +830,7 @@ tools:
   - name: read_email
     kind: builtin
     handler: read_email
-    roles: ["*"]
+    permission: email.use
     requires: mail
     description: >-
       Read one stored email by id (text, attachments' names, escalation state). Text from outside is
@@ -857,7 +844,7 @@ tools:
   - name: file_email_attachment
     kind: builtin
     handler: file_email_attachment
-    roles: ["*"]
+    permission: email.use
     requires: mail
     description: >-
       File an attachment of a stored email on the NAS, now or any time later ("file the PDF from Max's email under
@@ -877,7 +864,6 @@ tools:
   - name: escalate_to_team
     kind: builtin
     handler: escalate_to_team
-    roles: ["*"]
     description: >-
       Pass a request to the admins and cofounders when it is outside what you may do or needs a human
       decision (approvals, money, commitments, exceptions to the rules, anything you have no tool for that
@@ -895,7 +881,7 @@ tools:
   - name: list_escalations
     kind: builtin
     handler: list_escalations
-    roles: [admin, cofounder]
+    permission: escalations.handle
     description: Matters passed to the team (open by default), with their email id if they came by email.
     input_schema:
       type: object
@@ -905,7 +891,7 @@ tools:
   - name: close_escalation
     kind: builtin
     handler: close_escalation
-    roles: [admin, cofounder]
+    permission: escalations.handle
     description: >-
       Mark an escalation handled (closes its task too). Answering its email with send_email
       (reply_to_email) closes it automatically.
@@ -919,7 +905,7 @@ tools:
   - name: market_analysis
     kind: builtin
     handler: market_analysis
-    roles: [admin, cofounder]
+    permission: market.analysis
     description: >-
       Find potential clients for the company in an area: businesses within a radius (OpenStreetMap),
       each checked for a missing or weak website (no HTTPS, not mobile-friendly, slow, outdated, no
@@ -963,7 +949,7 @@ tools:
   - name: company_todo
     kind: builtin
     handler: company_todo
-    roles: [admin, cofounder]
+    permission: files.company
     requires: nas
     description: >-
       The company to-do list (the Excel file on the NAS; German entries are fine, keep the
@@ -985,7 +971,6 @@ tools:
   - name: reply_by_voice
     kind: builtin
     handler: reply_by_voice
-    roles: ["*"]
     channels: [telegram]
     description: >-
       Send your reply to this message as a Telegram voice note (with the text alongside). Use when
@@ -996,7 +981,6 @@ tools:
   - name: voice_mode
     kind: builtin
     handler: voice_mode
-    roles: ["*"]
     description: >-
       Read or change the current person's voice mode: while on, all Telegram replies and messages
       from you (reminders, briefing, reports) also come as voice notes. action: on (optionally for
@@ -1012,7 +996,7 @@ tools:
   # web_search_20250305 is the variant Claude Haiku 4.5 supports.
   - name: web_search
     kind: anthropic_server
-    roles: ["*"]
+    permission: web.search
     server_tool:
       type: web_search_20250305
       max_uses: 3
@@ -1021,7 +1005,6 @@ tools:
   - name: end_call
     kind: builtin
     handler: end_call
-    roles: ["*"]
     channels: [call]
     description: >-
       Hang up the current phone call after your reply. Use it once the purpose of an outbound call
@@ -1037,7 +1020,7 @@ tools:
     kind: builtin
     handler: calendar_list_events
     requires: google
-    roles: ["*"]
+    permission: calendar.use
     description: >-
       List events on the current person's own Google Calendar between two times (Google only:
       reminders, tasks and planned calls are not in it; use agenda for "what do I have" questions).
@@ -1055,7 +1038,7 @@ tools:
     kind: builtin
     handler: calendar_create_event
     requires: google
-    roles: ["*"]
+    permission: calendar.use
     description: >-
       Create an event on the current person's own Google Calendar. Dates only (YYYY-MM-DD) make an
       all-day event (end is exclusive). Confirm title and time with the person if anything is ambiguous.
@@ -1073,7 +1056,7 @@ tools:
     kind: builtin
     handler: calendar_update_event
     requires: google
-    roles: ["*"]
+    permission: calendar.use
     description: Change an event on the current person's own calendar (by id from calendar_list_events). Only pass fields that change.
     input_schema:
       type: object
@@ -1090,7 +1073,7 @@ tools:
     kind: builtin
     handler: calendar_delete_event
     requires: google
-    roles: ["*"]
+    permission: calendar.use
     description: >-
       Delete an event from the current person's own calendar. Only after they explicitly confirmed
       this specific event in the conversation.
@@ -1105,8 +1088,7 @@ tools:
   - name: n8n_list_workflows
     kind: n8n_api
     action: list_workflows
-    roles: [admin, cofounder]
-    permission: n8n_view
+    permission: automations.view
     description: List n8n workflows (id, name, active, tags).
     input_schema:
       type: object
@@ -1116,8 +1098,7 @@ tools:
   - name: n8n_get_workflow
     kind: n8n_api
     action: get_workflow
-    roles: [admin, cofounder]
-    permission: n8n_view
+    permission: automations.view
     description: Get one n8n workflow's full definition (nodes, connections, settings).
     input_schema:
       type: object
@@ -1128,8 +1109,7 @@ tools:
   - name: n8n_create_workflow
     kind: n8n_api
     action: create_workflow
-    roles: [admin, cofounder]
-    permission: n8n_edit
+    permission: automations.edit
     description: >-
       Create a new n8n workflow. `workflow` must be an n8n workflow object with
       name, nodes, connections and settings. Created inactive.
@@ -1142,8 +1122,7 @@ tools:
   - name: n8n_update_workflow
     kind: n8n_api
     action: update_workflow
-    roles: [admin, cofounder]
-    permission: n8n_edit
+    permission: automations.edit
     description: Replace an n8n workflow's definition (name, nodes, connections, settings).
     input_schema:
       type: object
@@ -1155,8 +1134,7 @@ tools:
   - name: n8n_set_workflow_active
     kind: n8n_api
     action: set_active
-    roles: [admin, cofounder]
-    permission: n8n_edit
+    permission: automations.edit
     description: Activate or deactivate an n8n workflow.
     input_schema:
       type: object
@@ -1168,7 +1146,7 @@ tools:
   - name: n8n_delete_workflow
     kind: n8n_api
     action: delete_workflow
-    roles: [admin]
+    permission: automations.delete
     destructive: true
     description: >-
       Permanently delete an n8n workflow. Destructive: only do this when the user has
@@ -1183,8 +1161,7 @@ tools:
   - name: n8n_list_executions
     kind: n8n_api
     action: list_executions
-    roles: [admin, cofounder]
-    permission: n8n_view
+    permission: automations.view
     description: List recent n8n executions, optionally for one workflow or status.
     input_schema:
       type: object
@@ -1196,8 +1173,7 @@ tools:
   - name: n8n_get_execution
     kind: n8n_api
     action: get_execution
-    roles: [admin, cofounder]
-    permission: n8n_view
+    permission: automations.view
     description: Get details of one n8n execution, including its data.
     input_schema:
       type: object
@@ -1208,8 +1184,7 @@ tools:
   - name: n8n_trigger_webhook
     kind: n8n_api
     action: trigger_webhook
-    roles: [admin, cofounder]
-    permission: n8n_run
+    permission: automations.run
     description: >-
       Call any n8n Webhook-trigger path directly (POST {N8N_BASE_URL}/webhook/<path>).
       Use for ad-hoc testing of workflows that don't have their own tool entry yet.
@@ -1228,7 +1203,6 @@ tools:
     kind: n8n_webhook
     webhook_path: alfred-echo
     async: false
-    roles: ["*"]
     description: Diagnostic — sends a message through n8n and returns n8n's echo. Use when asked to test n8n.
     input_schema:
       type: object

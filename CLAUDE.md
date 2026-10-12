@@ -29,7 +29,8 @@ docs and the real homelab map are git-ignored (`docs/PROJECT_PLAN.md`, `CLAUDE.l
   `orchestrator/external_calls.py` (task-driven, confirmed, no tools on the call). Both relay
   untrusted caller words: keep them inert (`screening._escape`) and never feed them to Agent Core.
 - Conversation memory is per (channel, user), rebuilt from `transcripts` (`sessions.history`).
-- Tools are declared in `orchestrator/tools/registry.yaml` and role-gated twice (list + execute).
+- Tools are declared in `orchestrator/tools/registry.yaml` with the `permission:` they need and are
+  checked twice (list + execute).
   New n8n-backed features = n8n workflow + one yaml entry, no Python changes.
 - `orchestrator/stt_tts/base.py` is the STT/TTS swap point; audio is 8 kHz mu-law end to end.
   Production uses a Jetson (`speech_server/`, deployed to `~/alfred-speech` there, `SPEECH_BIND` in its
@@ -58,20 +59,22 @@ docs and the real homelab map are git-ignored (`docs/PROJECT_PLAN.md`, `CLAUDE.l
 ## Dashboard
 - React 19 + Vite in `dashboard/web` (no router; tabs in `App.jsx`), built to `dashboard/web/dist`,
   which FastAPI serves. Keep it CSP-clean: no inline scripts, no `dangerouslySetInnerHTML`.
-- Admin Settings tab (`pages/Settings.jsx`) holds household-wide settings; Profile only personal ones.
+- Settings tab (`pages/Settings.jsx`) holds household-wide settings (settings.manage) and the role editor
+  (`components/RolesManager.jsx`, roles.manage); Profile only personal ones.
 - Avatar helper: `components/AlfredAvatar.jsx` (states = portrait file names in `src/assets/avatar/`, from
   `scripts/crop_avatar.py`); page help text in `dashboard/api/dashboard_guide.py` (keep in sync with App.jsx TABS).
-- Per-role switches: `orchestrator/permissions.py` (+ `permission:` on tools in registry.yaml). Check
-  `permissions.allowed(role, ...)` server-side for anything a switch covers; admins always pass.
+- Tabs and UI parts follow `me.permissions` via `can(me, "…")` (`components/common.jsx`); TABS `perms` and
+  `dashboard_guide.TAB_PERMISSIONS` must match. Hiding UI is cosmetic: the server checks every permission.
 - Unknown non-API pages get `public/not-found.html` (`main._http_errors`); API paths keep JSON 404.
 - Files in `public/` have fixed names and Cloudflare caches .css/.js/.svg: link shared ones through
   `main._FIXED_NAME_ASSETS` (served pages get `?v=<content hash>`), and check theme work on the live site.
-- Permissions: always use `routes.current_person` (respects an admin's "view as" role preview);
+- Permissions: always use `routes.current_person` (applies a "view as" preview of a role or a person,
+  capped to the previewer's own permissions) and `routes.requires("perm")` for routes that need one;
   `routes.real_person` only for the preview switch itself (`dashboard/api/viewas.py`).
 - Tasks and Files stay mounted in the background (`App.jsx` KEEP_ALIVE) so state survives tab switches;
   polling there must use `usePoll` (pauses via `PageActive`) or check `usePageActive()`.
 - All API calls go through `src/api.js` (it adds the CSRF header). Security primitives live in
-  `dashboard/api/security.py`; anything that changes a person's credentials, role or status must
+  `dashboard/api/security.py`; anything that changes a person's credentials, roles, groups or status must
   revoke their `dashboard_sessions`.
 
 ## Two-factor sign-in
@@ -82,7 +85,17 @@ docs and the real homelab map are git-ignored (`docs/PROJECT_PLAN.md`, `CLAUDE.l
   orchestrator.identity.mfa reset admin`).
 
 ## People & permissions
-- Admin-only user management + everyone's self-service profile: `dashboard/api/people.py`
+- Roles and permissions (roadmap #57): `orchestrator/permissions.py` is the one place that decides.
+  Every ability is a named permission in `CATALOGUE`; roles (`role_permissions`: allow/deny per
+  permission, `roles.parent` inheritance, `roles.archived`, `roles.label` as display name) are editable
+  sets of them; people hold several roles (`user_roles`, first = `users.role`, the primary) and get
+  group roles (`people_groups`, `group_members`, `group_roles`). Allows add up, any deny wins; admin is
+  fixed (everything, never inherited or given to a group). Editing is capped (`Actor`, `_check_role_cap`).
+  In code: `person.can("files.company")`, `permissions.people_with(...)` for "who gets this",
+  `registry.allows_channel(person, channel)`. Never compare role names for access (the "sir" greeting
+  via `is_admin` is the exception). A new permission: add it to `_CATALOGUE` with its defaults; `migrate`
+  grants it to the built-in roles that hold it by default. API: `dashboard/api/access.py`.
+- User management (people.manage) + everyone's self-service profile: `dashboard/api/people.py`
   (UI: `pages/People.jsx`, `pages/Profile.jsx`, `components/Connections.jsx`). All validation and
   guard rails (last admin, no self-delete, conflict checks, session revocation) live server-side in
   `orchestrator/identity/registry.py`; the CLI uses the same functions.
@@ -98,7 +111,7 @@ docs and the real homelab map are git-ignored (`docs/PROJECT_PLAN.md`, `CLAUDE.l
 - Files tab previews: office files -> PDF via LibreOffice (`orchestrator/office_pdf.py`, in the image);
   `orchestrator/file_preview.py` returns plain data (Quick view); never render HTML from a file and only
   serve inline types from `INLINE` (no SVG/HTML). `/api/nas/view` honours byte ranges (video).
-- Market analysis (`orchestrator/market_analysis.py`, tool market_analysis, admins/cofounders): OpenStreetMap
+- Market analysis (`orchestrator/market_analysis.py`, tool market_analysis, market.analysis): OpenStreetMap
   (Overpass) + website checks + web-search lookups (self-hosted SearXNG first if SEARXNG_URL is set, its misses
   unconfirmed; Claude web search for the rest) -> report in the company files; background task, reports on
   Telegram. Website checks must stay behind `_public_host` (no private/tailnet addresses); keep `pick_website`

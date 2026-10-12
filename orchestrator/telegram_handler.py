@@ -295,7 +295,7 @@ async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         from . import screening
         note = screening.block_from_button(int(rid), person)
         await q.answer(note)
-        if person.role in screening.RELAY_ROLES:
+        if person.can("screening.relay"):
             await _append_note(q, note)
         return
     if kind == "task" and rid.isdigit() and action in ("done", "notyet"):

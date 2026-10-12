@@ -269,10 +269,9 @@ def local_time(iso: str) -> str:
 
 
 def may_read(row: dict, person) -> bool:
-    """Own mail (personal scope) for everyone; company mail for admins and cofounders."""
-    from .nas import COMPANY_ROLES
+    """Own mail (personal scope) for everyone; company mail with the mail.tab permission."""
     if row["scope"] == "company":
-        return person.role in COMPANY_ROLES
+        return person.can("mail.tab")
     return row["user_id"] == person.id
 
 

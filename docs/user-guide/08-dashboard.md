@@ -6,8 +6,8 @@ sidebar_position: 8
 
 # The dashboard, tab by tab
 
-**Who:** everyone with a dashboard login (admins and cofounders by default). Tabs marked *admins* are only shown to
-admins; *team* means admins and cofounders.
+**Who:** everyone with a dashboard login (admins and cofounders by default). Some tabs only show up if your roles
+allow them; the defaults are given in brackets (*admins*, or *team* = admins and cofounders).
 
 Open the dashboard at your Alfred address under `/app`. The side menu (a row at the top on phones) lists the tabs.
 The top of every page shows the time and the system status ("All systems nominal" or how many need attention).
@@ -75,11 +75,14 @@ What Alfred costs: tokens, minutes and characters per service, cost per day, per
 key, the phone bill so far this month, what Anthropic actually billed (if set up), and **Monthly budgets** with
 warnings. See [Usage and budgets](09-administration.md#usage-and-budgets).
 
-## Settings (*admins*)
+## Settings (*team*)
 
-Household-wide settings: the AI model and which key pays, role permissions, view as role, household quiet hours,
-email (answers to outside mail, automatic filing of inquiry attachments) and call screening with blocked numbers.
-See [Settings](09-administration.md#settings).
+Household-wide settings (admins by default): the AI model and which key pays, household quiet hours, email (answers
+to outside mail, automatic filing of inquiry attachments) and call screening with blocked numbers. See
+[Settings](09-administration.md#settings).
+
+**Roles and groups** (admins and cofounders by default): create and edit roles, groups, "who can do what", and
+**View as** a role or a person. See [Roles and permissions](09-administration.md#roles-and-permissions).
 
 ## Profile
 

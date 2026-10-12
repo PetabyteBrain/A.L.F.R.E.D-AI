@@ -20,14 +20,12 @@ from orchestrator import db, escalation, mail, mail_attachments, mail_inbound, m
 from orchestrator.config import settings
 from orchestrator.identity.registry import Person
 
-from .routes import admin_only, current_person
-
-TEAM = ("admin", "cofounder")
+from .routes import current_person, requires
 
 
 def team_only(person: Person = Depends(current_person)) -> Person:
-    if person.role not in TEAM:
-        raise HTTPException(status_code=403, detail="The mailbox is for admins and cofounders.")
+    if not person.can("mail.tab"):
+        raise HTTPException(status_code=403, detail="You don't have access to the mailbox.")
     return person
 
 
@@ -100,14 +98,14 @@ def _row_view(r: dict, labels: list | None = None, state: dict | None = None, fi
 @router.get("/status")
 async def status(person: Person = Depends(current_person)) -> dict:
     out = {"enabled": settings.mail_enabled, "address": settings.mail_address or None,
-           "receiving": settings.mail_inbound_enabled, "team": person.role in TEAM,
+           "receiving": settings.mail_inbound_enabled, "team": person.can("mail.tab"),
            "counts": mail_labels.counts(person), "colors": list(mail_labels.COLORS)}
-    if person.is_admin:
+    if person.can("settings.manage"):
         out["stranger_mode"] = mail_inbound.mode()
         out["inquiry_autofile"] = mail_attachments.autofile_on()
         out["retention_days"] = {"personal": settings.mail_retention_days,
                                  "company": settings.mail_company_retention_days}
-    if person.role in TEAM:
+    if person.can("escalations.handle"):
         out["open_escalations"] = db.query_one("SELECT COUNT(*) n FROM escalations WHERE status = 'open'")["n"]
     return out
 
@@ -194,12 +192,12 @@ async def close_escalation(body: CloseBody, esc_id: int = Path(ge=1), person: Pe
 
 
 @router.put("/inquiry-autofile")
-async def set_inquiry_autofile(body: AutofileBody, person: Person = Depends(admin_only)) -> dict:
+async def set_inquiry_autofile(body: AutofileBody, person: Person = Depends(requires("settings.manage"))) -> dict:
     return {"inquiry_autofile": mail_attachments.set_autofile(body.on, person)}
 
 
 @router.put("/stranger-mode")
-async def set_stranger_mode(body: ModeBody, person: Person = Depends(admin_only)) -> dict:
+async def set_stranger_mode(body: ModeBody, person: Person = Depends(requires("settings.manage"))) -> dict:
     mail_inbound.set_mode(body.mode, person)
     return {"stranger_mode": mail_inbound.mode()}
 

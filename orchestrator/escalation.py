@@ -27,7 +27,6 @@ from .identity.registry import Person
 log = logging.getLogger(__name__)
 
 URGENCIES = ("low", "normal", "high", "critical")
-TEAM_ROLES = ("admin", "cofounder")
 
 
 class EscalationError(ValueError):
@@ -35,8 +34,9 @@ class EscalationError(ValueError):
 
 
 def team(exclude: int | None = None) -> list[dict]:
-    rows = db.query("SELECT id, display_name, role FROM users WHERE active = 1 AND role IN ('admin','cofounder') "
-                    "ORDER BY CASE role WHEN 'admin' THEN 0 ELSE 1 END, id")
+    """Who handles escalations (escalations.handle), admins first."""
+    from . import permissions
+    rows = sorted(permissions.people_with("escalations.handle"), key=lambda r: (r["role"] != "admin", r["id"]))
     return [r for r in rows if r["id"] != exclude]
 
 
@@ -152,8 +152,8 @@ def get(esc_id: int) -> dict | None:
 
 
 def list_for(person: Person, *, status: str = "open", limit: int = 50) -> list[dict]:
-    if person.role not in TEAM_ROLES:
-        raise EscalationError("Only admins and cofounders see escalations.")
+    if not person.can("escalations.handle"):
+        raise EscalationError("You don't have permission to see escalations.")
     where = "" if status == "all" else "WHERE status = ?"
     rows = db.query(f"SELECT id FROM escalations {where} ORDER BY id DESC LIMIT ?",
                     ((status, limit) if where else (limit,)))
@@ -161,8 +161,8 @@ def list_for(person: Person, *, status: str = "open", limit: int = 50) -> list[d
 
 
 def close(esc_id: int, person: Person, note: str = "") -> dict:
-    if person.role not in TEAM_ROLES:
-        raise EscalationError("Only admins and cofounders can close escalations.")
+    if not person.can("escalations.handle"):
+        raise EscalationError("You don't have permission to close escalations.")
     row = get(esc_id)
     if not row:
         raise EscalationError("Unknown escalation.")

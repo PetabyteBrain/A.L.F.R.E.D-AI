@@ -54,7 +54,7 @@ def test_resolution_and_normalisation():
 
 def test_friend_has_no_dashboard():
     friend = registry.lookup("telegram", "22222222")
-    assert friend and not registry.role_allows_channel(friend.role, "dashboard")
+    assert friend and not registry.allows_channel(friend, "dashboard")
 
 
 def test_tool_role_gating():
@@ -906,8 +906,9 @@ def test_web_chat_stream(monkeypatch):
 
 def test_web_chat_requires_dashboard_role():
     from orchestrator.identity import registry as reg
-    assert reg.role_allows_channel("admin", "web")
-    assert not reg.role_allows_channel("friend", "web")
+    from orchestrator import permissions
+    assert "channel.dashboard" in permissions.resolve(["admin"]) and permissions.CHANNELS["web"] == "channel.dashboard"
+    assert "channel.dashboard" not in permissions.resolve(["friend"])
 
 
 def test_every_call_opens_with_recording_notice():
@@ -2686,7 +2687,7 @@ def test_unknown_caller_is_screened(monkeypatch):
 
     friend = registry.lookup("telegram", "22222222")
     cofounder = registry.get_person(jid)
-    assert "Only admins and cofounders" in screening.block_from_button(int(btn.split(":")[2]), friend)
+    assert "don't have permission" in screening.block_from_button(int(btn.split(":")[2]), friend)
     assert "blocked" in screening.block_from_button(int(btn.split(":")[2]), cofounder)
     assert screening.accept("+41780000101") is None
     screening.unblock("+41780000101", admin)
@@ -2915,7 +2916,7 @@ def test_nas_notes_lists_files_and_permissions(monkeypatch, tmp_path):
     assert run(admin, "nas_notes", {"action": "list", "scope": "personal"})["notes"] == ["Projects/Ideas.md"]
     assert nas.personal_folder(friend) != a_folder
     # Friends can't touch the company share; nobody can escape their scope.
-    assert "only for admins and cofounders" in run(friend, "nas_files", {"action": "list", "scope": "company"})["error"]
+    assert "access to the company files" in run(friend, "nas_files", {"action": "list", "scope": "company"})["error"]
     for bad in ("../" + nas.personal_folder(friend) + "/Notes/Secret.md", "..\\x", "C:/Windows", ".trash/x.md"):
         assert "error" in run(admin, "nas_files", {"action": "read", "scope": "personal", "path": bad}), bad
 
@@ -3115,7 +3116,7 @@ def test_telegram_files_to_nas_and_receipts(monkeypatch, tmp_path):
     up3 = uploads.add(friend, "y.pdf", b"%PDF")
     out, _ = asyncio.run(tools.execute("nas_save_upload", {"upload_id": up3.id, "scope": "company", "folder": "Docs"},
                                        tools.ToolContext(friend, None, "telegram")))
-    assert "not available" in out or "only for admins" in out
+    assert "not available" in out or "access to the company files" in out
     try:
         uploads.add(admin, "evil.exe", b"MZ")
         raise AssertionError("accepted an .exe")
@@ -3441,7 +3442,7 @@ def test_admin_can_view_dashboard_as_another_role():
         # as cofounder: admin-only pages are closed, the rest works with cofounder rules
         assert c.post("/api/view-as", json={"role": "cofounder"}, headers=CSRF).status_code == 200
         me = c.get("/api/me").json()
-        assert me["role"] == "cofounder" and me["viewing_as"] == "cofounder" and me["real_role"] == "admin"
+        assert me["role"] == "cofounder" and me["viewing_as"] == "Cofounder" and me["real_role"] == "admin"
         assert c.get("/api/people").status_code == 403 and c.get("/api/usage").status_code == 403
         assert c.get("/api/sessions").status_code == 200
         assert "people" not in c.get("/api/nas/status").json()["scopes"]
@@ -3467,46 +3468,139 @@ def test_admin_can_view_dashboard_as_another_role():
 
 
 @pytest.mark.asyncio
-async def test_role_permission_switches(monkeypatch):
+async def test_roles_permissions_and_groups(monkeypatch):
     from fastapi.testclient import TestClient
     from orchestrator import permissions
     from orchestrator.main import app
     from orchestrator.tools import registry as tools
     tools.load()
     monkeypatch.setattr(tools, "_available", lambda spec, person_id=None: True)
-    db.execute("DELETE FROM app_settings WHERE key = 'role_permissions'")
     names = lambda role: {t["name"] for t in tools.tools_for(role)}  # noqa: E731
-    # default: cofounders may view, run and edit n8n workflows; deleting stays admin-only
+    # Migrated defaults = the old fixed roles: cofounders view, run and edit n8n workflows; deleting is admin-only.
     co = names("cofounder")
-    assert {"n8n_list_workflows", "n8n_trigger_webhook", "n8n_update_workflow", "n8n_set_workflow_active"} <= co
-    assert "n8n_delete_workflow" not in co and "n8n_delete_workflow" in names("admin")
-    assert not any(n.startswith("n8n_") for n in names("friend"))
+    assert {"n8n_list_workflows", "n8n_trigger_webhook", "n8n_update_workflow", "place_call", "call_external"} <= co
+    assert "n8n_delete_workflow" not in co and "homelab_restart" not in co and "n8n_delete_workflow" in names("admin")
+    assert not any(n.startswith("n8n_") for n in names("friend")) and "send_email" in names("friend")
+    assert "roles.manage" in permissions.resolve(["cofounder"]) and "people.manage" not in permissions.resolve(["cofounder"])
+    admin_id = db.query_one("SELECT id FROM users WHERE role = 'admin'")["id"]
+    co_id = registry.add_user("Rhea Roles", "cofounder")
+    registry.set_dashboard_login(co_id, "rolescofounder", "cofounderpass2")
+    staff = registry.add_user("Ivo Intern", "friend")
+    staff_p = lambda: registry.get_person(staff)  # noqa: E731
 
     with TestClient(app, base_url="http://testserver") as c:
         c.post("/api/login", json={"username": "admin", "password": "correct horse battery"}, headers=CSRF)
-        got = c.get("/api/settings/role-permissions").json()
-        assert got["roles"]["cofounder"] == {"n8n_view": True, "n8n_run": True, "n8n_edit": True}
-        assert c.put("/api/settings/role-permissions", json={"role": "cofounder", "permission": "n8n_edit", "allowed": False},
-                     headers=CSRF).json()["roles"]["cofounder"]["n8n_edit"] is False
-        assert c.put("/api/settings/role-permissions", json={"role": "friend", "permission": "n8n_view", "allowed": True},
-                     headers=CSRF).status_code == 400                      # no switches for friends
-        assert c.put("/api/settings/role-permissions", json={"role": "cofounder", "permission": "nope", "allowed": True},
+        st = c.get("/api/access").json()
+        assert {r["name"] for r in st["roles"]} >= {"admin", "cofounder", "friend"} and st["admin"]
+        assert next(r for r in st["roles"] if r["name"] == "admin")["fixed"]
+        # Switching a permission off for a role applies right away, in chat and on the dashboard.
+        assert c.put("/api/access/roles/cofounder/rules", json={"permission": "automations.edit", "effect": None},
+                     headers=CSRF).status_code == 200
+        assert "n8n_update_workflow" not in names("cofounder") and "n8n_list_workflows" in names("cofounder")
+        out, err = await tools.execute("n8n_update_workflow", {"workflow_id": "1", "workflow": {}},
+                                       tools.ToolContext(registry.get_person(co_id), None, "telegram"))
+        assert err and "not available" in out
+        assert c.put("/api/access/roles/admin/rules", json={"permission": "homelab.manage", "effect": "deny"},
+                     headers=CSRF).status_code == 400                      # admin is fixed
+        assert c.put("/api/access/roles/friend/rules", json={"permission": "nope", "effect": "allow"},
                      headers=CSRF).status_code == 400
-        # previewing as cofounder: the Settings endpoints are closed
-        c.post("/api/view-as", json={"role": "cofounder"}, headers=CSRF)
-        assert c.get("/api/settings/role-permissions").status_code == 403
+        # A copy with a deny rule; several roles per person add up, and deny wins.
+        made = c.post("/api/access/roles", json={"label": "Intern", "copy_from": "cofounder"}, headers=CSRF).json()
+        assert made["created"] == "intern"
+        c.put("/api/access/roles/intern/rules", json={"permission": "calls.outside", "effect": "deny"}, headers=CSRF)
+        assert c.patch(f"/api/people/{staff}", json={"roles": ["friend", "intern"]}, headers=CSRF).json()["roles"] \
+            == ["friend", "intern"]
+        assert staff_p().can("others.contact") and not staff_p().can("calls.outside")
+        assert "call_external" not in {t["name"] for t in tools.tools_for(staff_p())}
+        assert staff_p().role == "friend" and staff_p().roles == ("friend", "intern")
+        # Hierarchy: a child inherits the parent's allows and denies; cycles are refused.
+        c.post("/api/access/roles", json={"label": "Senior intern", "parent": "intern"}, headers=CSRF)
+        assert permissions.resolve(["senior-intern"]) == permissions.resolve(["intern"])
+        assert c.patch("/api/access/roles/intern", json={"parent": "senior-intern"}, headers=CSRF).status_code == 400
+        assert c.patch("/api/access/roles/intern", json={"archived": True}, headers=CSRF).status_code == 400  # in use
+        # Groups give their roles to every member.
+        c.post("/api/access/groups", json={"name": "Sales"}, headers=CSRF)
+        gid = next(g["id"] for g in c.get("/api/access").json()["groups"] if g["name"] == "Sales")
+        tester = registry.add_user("Gina Group", "friend")
+        c.put(f"/api/access/groups/{gid}/roles", json={"roles": ["intern"]}, headers=CSRF)
+        assert c.put(f"/api/access/groups/{gid}/roles", json={"roles": ["admin"]}, headers=CSRF).status_code == 400
+        assert not registry.get_person(tester).can("market.analysis")
+        c.put(f"/api/access/groups/{gid}/members", json={"user_ids": [tester]}, headers=CSRF)
+        assert registry.get_person(tester).can("market.analysis") and not registry.get_person(tester).can("calls.outside")
+        who = c.get("/api/access/explain/person/" + str(tester)).json()
+        assert who["group_roles"] == ["intern"]
+        ma = next(p for p in who["permissions"] if p["key"] == "market.analysis")
+        assert ma["allowed"] and ma["because"] == ["intern"]
+        assert any(p["id"] == tester for p in c.get("/api/access/explain/permission/market.analysis").json())
+        # Last admin can't lose the role.
+        assert c.patch(f"/api/people/{admin_id}", json={"roles": ["friend"]}, headers=CSRF).status_code == 400
+        # View as a person: their combined permissions on the admin's own account.
+        assert c.post("/api/view-as", json={"user_id": staff}, headers=CSRF).status_code == 200
+        me = c.get("/api/me").json()
+        assert me["viewing_as"] == "Ivo Intern" and "calls.outside" not in me["permissions"]
+        assert "others.contact" in me["permissions"]
+        c.delete("/api/view-as", headers=CSRF)
+        assert c.get("/api/me").json()["viewing_as"] is None
+        c.post("/api/logout", headers=CSRF)
+
+        # A cofounder may edit roles, capped to what they hold themselves.
+        c.post("/api/login", json={"username": "rolescofounder", "password": "cofounderpass2"}, headers=CSRF)
+        assert c.get("/api/access").status_code == 200 and c.get("/api/people").status_code == 403
+        assert c.put("/api/access/roles/friend/rules", json={"permission": "homelab.manage", "effect": "allow"},
+                     headers=CSRF).status_code == 400
+        assert c.put("/api/access/roles/friend/rules", json={"permission": "market.analysis", "effect": "allow"},
+                     headers=CSRF).status_code == 200
+        assert c.put("/api/access/roles/friend/rules", json={"permission": "market.analysis", "effect": None},
+                     headers=CSRF).status_code == 200
+        assert c.patch("/api/access/roles/admin", json={"label": "Boss"}, headers=CSRF).status_code == 400
+        assert c.put("/api/access/roles/cofounder/rules", json={"permission": "roles.manage", "effect": None},
+                     headers=CSRF).status_code == 400                      # can't lock themselves out
+        assert c.post("/api/view-as", json={"role": "friend"}, headers=CSRF).status_code == 200
+        assert "channel.dashboard" not in c.get("/api/me").json()["permissions"]
         c.delete("/api/view-as", headers=CSRF)
 
-    co = names("cofounder")
-    assert "n8n_update_workflow" not in co and "n8n_list_workflows" in co
-    assert "n8n_update_workflow" in names("admin")                          # admins always pass
-    cof = registry.get_person(registry.add_user("Perm Tester", "cofounder"))
-    out, err = await tools.execute("n8n_update_workflow", {"workflow_id": "1", "workflow": {}},
-                                   tools.ToolContext(cof, None, "telegram"))
-    assert err and "not available" in out
-    assert permissions.allowed("cofounder", "n8n_view") and not permissions.allowed("cofounder", "n8n_edit")
-    assert db.query_one("SELECT 1 FROM activity WHERE summary LIKE '%turned off%n8n%'")
-    db.execute("DELETE FROM app_settings WHERE key = 'role_permissions'")
+    assert db.query_one("SELECT 1 FROM activity WHERE summary LIKE '%set ''Create, edit and switch n8n%not set%'")
+    assert db.query_one("SELECT 1 FROM activity WHERE summary LIKE '%changed the group ''Sales''%added Gina Group%'")
+    db.execute("INSERT OR REPLACE INTO role_permissions(role, permission, effect) VALUES ('cofounder', 'automations.edit', 'allow')")
+
+
+def test_permissions_migrate_from_fixed_roles(monkeypatch, tmp_path):
+    import dataclasses, json, sqlite3
+    from orchestrator import db as dbmod, permissions
+    old = tmp_path / "old.db"
+    c = sqlite3.connect(old)
+    c.executescript("""
+        CREATE TABLE roles (name TEXT PRIMARY KEY, description TEXT NOT NULL DEFAULT '',
+            can_telegram INTEGER NOT NULL DEFAULT 1, can_call INTEGER NOT NULL DEFAULT 1,
+            can_dashboard INTEGER NOT NULL DEFAULT 0, can_email INTEGER NOT NULL DEFAULT 1);
+        INSERT INTO roles(name, can_telegram, can_call, can_dashboard, can_email) VALUES
+            ('admin',1,1,1,1), ('cofounder',1,1,1,1), ('friend',1,0,0,1), ('family',1,1,0,0);
+        CREATE TABLE users (id INTEGER PRIMARY KEY AUTOINCREMENT, display_name TEXT NOT NULL,
+            role TEXT NOT NULL REFERENCES roles(name), active INTEGER NOT NULL DEFAULT 1,
+            notes TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL);
+        INSERT INTO users(display_name, role, created_at) VALUES ('A', 'admin', 'x'), ('C', 'cofounder', 'x'),
+            ('F', 'friend', 'x'), ('M', 'family', 'x');
+        CREATE TABLE app_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at TEXT NOT NULL);
+    """)
+    c.execute("INSERT INTO app_settings VALUES ('role_permissions', ?, 'x')",
+              (json.dumps({"cofounder": {"n8n_edit": False}}),))
+    c.commit(); c.close()
+    monkeypatch.setattr(dbmod, "settings", dataclasses.replace(dbmod.settings, db_path=old))
+    dbmod.init_db()
+    assert [r["role"] for r in dbmod.query("SELECT role FROM user_roles ORDER BY user_id")] == \
+        ["admin", "cofounder", "friend", "family"]
+    co = permissions.resolve(["cofounder"])
+    assert {"automations.view", "automations.run", "channel.dashboard", "calls.outside"} <= co
+    assert "automations.edit" not in co and "homelab.manage" not in co              # the old switch is kept
+    fr = permissions.resolve(["friend"])
+    assert "channel.call" not in fr and "channel.telegram" in fr and "send_email" not in fr and "email.use" in fr
+    assert "channel.email" not in permissions.resolve(["family"]) and "files.own" in permissions.resolve(["family"])
+    # A permission added to the catalogue later reaches the built-in roles that hold it by default.
+    dbmod.execute("DELETE FROM role_permissions WHERE permission = 'email.others'")
+    dbmod.set_setting("permissions_known", sorted(permissions.KEYS - {"email.others"}))
+    dbmod.init_db()
+    assert "email.others" in permissions.resolve(["cofounder"]) and "email.others" not in permissions.resolve(["friend"])
+    assert "automations.edit" not in permissions.resolve(["cofounder"])              # idempotent
 
 
 def test_not_found_page(tmp_path, monkeypatch):
@@ -4284,7 +4378,7 @@ async def test_market_analysis_tool_and_background_job(monkeypatch):
     admin = registry.lookup("telegram", "111")
     ctx = lambda p: type("C", (), {"person": p, "session_id": None, "channel": "telegram"})()  # noqa: E731
     out = await builtin.HANDLERS["market_analysis"](ctx(friend), area="Lucerne", industries=["restaurants"])
-    assert "only for admins and cofounders" in out["error"]
+    assert "access to the company files" in out["error"]
     monkeypatch.setattr(nas, "enabled", lambda: True)
     out = await builtin.HANDLERS["market_analysis"](ctx(admin), area="Lucerne", industries=["cafe"], osm_tags=["bad tag"])
     assert "isn't an OpenStreetMap tag" in out["error"]

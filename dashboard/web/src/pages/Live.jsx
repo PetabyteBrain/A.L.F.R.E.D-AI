@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { api } from "../api.js";
 import { firstName, fmtDur } from "../format.js";
 import { usePoll } from "../hooks.js";
-import { Empty, ErrorNote, Tag } from "../components/common.jsx";
+import { can, Empty, ErrorNote, Tag } from "../components/common.jsx";
 import { ConfirmDialog, Panel, Waveform } from "../components/hud.jsx";
 
 const CHANNEL_LABEL = { call: "voice", telegram: "Telegram", web: "web chat", email: "email" };
@@ -54,7 +54,8 @@ function SessionCard({ s, isAdmin, onEnd, assistant }) {
   );
 }
 
-export default function Live({ isAdmin, assistant }) {
+export default function Live({ me, assistant }) {
+  const isAdmin = can(me, "everyone.view");
   const { data, error, reload } = usePoll(() => api("/sessions/active"), 2000);
   const [target, setTarget] = useState(null);
   const [busy, setBusy] = useState(false);

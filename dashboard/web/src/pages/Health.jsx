@@ -2,7 +2,7 @@ import { useState } from "react";
 import { api } from "../api.js";
 import { fmtTime } from "../format.js";
 import { usePoll } from "../hooks.js";
-import { Empty, ErrorNote } from "../components/common.jsx";
+import { can, Empty, ErrorNote } from "../components/common.jsx";
 import { Panel } from "../components/hud.jsx";
 
 // Alfred's own components, in the order that matters most.
@@ -123,7 +123,8 @@ function Updates() {
   );
 }
 
-export default function Health({ isAdmin }) {
+export default function Health({ me }) {
+  const isAdmin = can(me, "homelab.manage");
   const { data, error, reload } = usePoll(() => api("/health"), 15000);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
