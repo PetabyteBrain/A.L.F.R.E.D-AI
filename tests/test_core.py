@@ -5454,7 +5454,7 @@ def test_crm_lead_suggestions_from_market_and_mail():
                 from_name="Hans Meier", to=["alfred@example.test"], subject="Logo", body_text="Hi")
     mail.record(direction="in", kind="inquiry", status="done", scope="company", from_addr="hans@meier-design.example",
                 from_name="Hans Meier", to=["alfred@example.test"], subject="Logo again", body_text="Hi")
-    mail.record(direction="in", kind="inquiry", status="done", scope="company", from_addr="pia@gmail.com",
+    mail.record(direction="in", kind="inquiry", status="done", scope="company", from_addr="erika.mustermann.placeholder@gmail.com",
                 from_name="Pia Test", to=["alfred@example.test"], subject="Question", body_text="Hi")
     rows = {r["title"]: r for r in crm_leads.list_for(co)}
     assert {"Velo Test Werkstatt", "Coiffeur Test", "Hans Meier", "Pia Test"} <= set(rows)
