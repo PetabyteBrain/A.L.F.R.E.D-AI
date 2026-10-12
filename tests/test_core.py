@@ -5547,3 +5547,48 @@ def test_crm_changes_migrates_to_allow_deals(monkeypatch, tmp_path):
     assert c.execute("SELECT name FROM crm_stages ORDER BY position").fetchone()[0] == "New"
     c.close()
     dbmod.init_db()  # idempotent
+
+
+@pytest.mark.asyncio
+async def test_tidy_look_gets_one_follow_through_nudge(monkeypatch):
+    """After notes_overview, answering without preparing a plan triggers one automatic reminder (no loop)."""
+    from types import SimpleNamespace as NS
+    from orchestrator import agent_core
+    from orchestrator.config import settings
+    from orchestrator.tools import registry as tools
+    ran = []
+
+    async def fake_execute(name, args, ctx):
+        ran.append(name)
+        return '{"ok": true}', False
+    monkeypatch.setattr(tools, "execute", fake_execute)
+    monkeypatch.setattr(type(settings), "anthropic_api_key", property(lambda self: "sk-test"), raising=False)
+    admin = registry.lookup("telegram", "111")
+    sid = sessions.telegram_session_for(admin.id, "111")
+
+    def scripted(steps):
+        calls = []
+
+        class FakeMessages:
+            async def create(self, **kw):
+                calls.append(kw)
+                return steps[min(len(calls), len(steps)) - 1]
+        return calls, FakeMessages()
+
+    look = NS(stop_reason="tool_use", content=[NS(type="tool_use", id="t1", name="notes_overview", input={})])
+    words = NS(stop_reason="end_turn", content=[NS(type="text", text="I'd move the recipes into a folder.")])
+    plan = NS(stop_reason="tool_use", content=[NS(type="tool_use", id="t2", name="notes_reorganize",
+                                                 input={"steps": [{"op": "folder", "path": "Notes/Recipes"}]})])
+    ask = NS(stop_reason="end_turn", content=[NS(type="text", text="Here's the plan: a Recipes folder. Shall I?")])
+    calls, fake = scripted([look, words, plan, ask])
+    monkeypatch.setattr(agent_core, "_client", NS(messages=fake))
+    reply = await agent_core.respond(admin, "telegram", sid, "Please tidy up my notes")
+    assert reply == "Here's the plan: a Recipes folder. Shall I?" and ran == ["notes_overview", "notes_reorganize"]
+    assert any(isinstance(m["content"], str) and "automatic check" in m["content"] for m in calls[2]["messages"])
+
+    # A plain question: the model answers again after the reminder, and that's the end (one reminder only).
+    ran.clear()
+    calls, fake = scripted([look, NS(stop_reason="end_turn", content=[NS(type="text", text="You have 4 notes.")])])
+    monkeypatch.setattr(agent_core, "_client", NS(messages=fake))
+    assert await agent_core.respond(admin, "telegram", sid, "What notes do I have?") == "You have 4 notes."
+    assert len(calls) == 3 and ran == ["notes_overview"]

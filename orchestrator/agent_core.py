@@ -24,6 +24,13 @@ from .tools.registry import ToolContext
 log = logging.getLogger(__name__)
 
 MAX_TOOL_ROUNDS = 8
+# A look that should be followed by preparing a plan: if the model answers after the look without the plan
+# (it tends to describe the plan in words instead), it gets one automatic reminder.
+FOLLOW_THROUGH = {"notes_overview": ({"notes_reorganize", "notes_rewrite", "notes_tidy_confirm"},
+                                     "You looked at the notes but didn't prepare a plan. If the person asked to tidy up "
+                                     "or reorganise their notes, call notes_reorganize (folders) or notes_rewrite "
+                                     "(contents) now with your steps instead of describing them; preparing changes "
+                                     "nothing. If they only asked what's there, just answer.")}
 
 _client: anthropic.AsyncAnthropic | None = None
 _locks: dict[tuple[int, str], asyncio.Lock] = defaultdict(asyncio.Lock)
@@ -315,6 +322,8 @@ async def _run(person: Person, channel: str, session_id: str, user_text: str, ex
     paused_text = ""   # text from a turn the API paused (pause_turn) before resuming it
     blocked: set[str] = set()   # tools stopped by the date check and not redone yet
     nudged = False
+    looked: set[str] = set()    # FOLLOW_THROUGH looks not yet followed by their plan
+    followed_up = False
     for _ in range(MAX_TOOL_ROUNDS):
         try:
             kwargs = dict(model=model, system=system, messages=messages, **ai_config.request_params(model, channel))
@@ -375,6 +384,9 @@ async def _run(person: Person, channel: str, session_id: str, user_text: str, ex
                 else:
                     blocked.discard(block.name)
                     out, is_error = await tool_registry.execute(block.name, args, ctx)
+                    if block.name in FOLLOW_THROUGH and not is_error:
+                        looked.add(block.name)
+                    looked -= {k for k, (then, _) in FOLLOW_THROUGH.items() if block.name in then}
                 results.append({"type": "tool_result", "tool_use_id": block.id, "content": out, "is_error": is_error})
             messages.append({"role": "user", "content": results})
             continue
@@ -386,6 +398,13 @@ async def _run(person: Person, channel: str, session_id: str, user_text: str, ex
             messages.append({"role": "user", "content": "[automatic check, not from the person] "
                              f"{', '.join(sorted(blocked))} was stopped by the date check and hasn't been redone. "
                              "Call it again now with the corrected date, then answer the person."})
+            continue
+
+        if looked and not followed_up and response.stop_reason == "end_turn":
+            followed_up = True
+            messages.append({"role": "assistant", "content": response.content})
+            messages.append({"role": "user", "content": "[automatic check, not from the person] "
+                             + " ".join(FOLLOW_THROUGH[k][1] for k in sorted(looked))})
             continue
 
         text = (paused_text + " " + _text_of(response.content)).strip() if paused_text else _text_of(response.content)
