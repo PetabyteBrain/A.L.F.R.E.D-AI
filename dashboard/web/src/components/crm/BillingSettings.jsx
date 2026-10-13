@@ -78,7 +78,7 @@ export default function BillingSettings({ onClose, onChanged }) {
   );
   return (
     <div className="modal-backdrop" role="presentation" onClick={() => !busy && onClose()}>
-      <div className="hud modal editor crm-editor" role="dialog" aria-modal="true" aria-label="Billing settings" onClick={(e) => e.stopPropagation()}>
+      <div className="hud modal editor crm-editor tabbed" role="dialog" aria-modal="true" aria-label="Billing settings" onClick={(e) => e.stopPropagation()}>
         <header className="hud-head"><h2>Billing settings</h2><button className="btn ghost small" onClick={onClose} disabled={busy}>Close</button></header>
         <div className="seg roles-tabs" role="tablist">
           {TABS.map(([k, l]) => <button key={k} role="tab" aria-selected={tab === k} className={tab === k ? "active" : ""} onClick={() => setTab(k)}>{l}</button>)}

@@ -443,6 +443,9 @@ button.row { width: 100%; text-align: left; font: inherit; color: var(--text-str
 .modal.alert::before { --c: var(--bad); }
 .modal .hud-code { background: var(--bad); }
 .modal-body { color: var(--text-strong); }
+.modal > p { margin: 0; }
+.modal > * { min-width: 0; }               /* a wide child (a tab bar) must not widen the whole dialog on phones */
+.modal .seg { flex-wrap: wrap; max-width: 100%; }                 /* the dialog's grid gap spaces them */
 .modal-actions { display: flex; justify-content: flex-end; gap: 10px; }
 
 /* ---------- responsive ---------- */
@@ -584,7 +587,17 @@ select option { background: var(--bg); color: var(--text-strong); }
   border: 1px solid var(--line-strong); background: rgb(var(--accent-rgb) / .06); user-select: all; }
 .hint { margin-top: -2px; }
 .profile-grid { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 28px; }
-.modal.editor { width: min(760px, 100%); max-height: calc(100vh - 32px); overflow-y: auto; gap: 10px; }
+.modal.editor { width: min(760px, 100%); max-height: calc(100dvh - 32px); overflow-y: auto; overflow-x: hidden; gap: 10px;
+  overscroll-behavior: contain; scrollbar-gutter: stable; }
+/* Dialogs with tabs keep one height, so switching tabs doesn't make them jump around the screen. */
+.modal.editor.tabbed { height: min(820px, calc(100dvh - 32px)); align-content: start; }
+.modal.editor.tabbed .roles-tabs { position: sticky; top: -18px; z-index: 2; background: var(--bg); }
+/* A panel's transform, filter and backdrop-filter (its entrance animation, the glass blur) make it the containing
+   block of position: fixed children, so a dialog inside it would be sized to the panel instead of the window
+   (off-screen when tall, moving with the page). While a dialog is open the panels around it drop those effects. */
+.hud:has(.modal-backdrop), .panel:has(.modal-backdrop), main:has(.modal-backdrop) {
+  transform: none !important; filter: none !important; backdrop-filter: none !important; animation: none !important;
+  contain: none !important; will-change: auto !important; }
 .modal.editor .hud-head { margin-bottom: 6px; }
 :root[data-theme="batcave"] :is(.field > span, .kv > span, .conn-type) { font-weight: 400; letter-spacing: .1em; font-size: 13px; }
 :root[data-theme="batcave"] select { background: rgb(0 0 0 / .45); border-bottom-color: rgb(255 204 0 / .35); }
