@@ -313,6 +313,46 @@ def fake_mail() -> None:
                                 "intro": "Thank you for your inquiry. We're glad to offer:",
                                 "lines": [{"product_id": web["id"], "quantity": 80}, {"description": "Shop setup", "unit_price": 1800}]})
         billing.issue(boss, q["id"])
+    if not db.query_one("SELECT 1 FROM employees LIMIT 1"):              # team demo (#58 stage 4)
+        from datetime import date, timedelta
+        from orchestrator import employees
+        boss = reg.get_person(db.query_one("SELECT user_id FROM user_identifiers WHERE type = 'dashboard' "
+                                           "AND value = 'cofounder'")["user_id"])
+        admin_id = db.query_one("SELECT id FROM users WHERE role='admin'")["id"]
+        today = date.today()
+        mon = today + timedelta(days=7 - today.weekday())
+
+        def add(fields, **flags):
+            return employees._approved_save({"employee_id": None, "changes": fields, "starter": boss.id, **flags}, boss)
+        employees.save_settings(boss, {"public_holidays": [f"{today.year}-12-25", f"{today.year}-12-26",
+                                                           f"{today.year + 1}-01-01", f"{today.year + 1}-01-02"]})
+        add({"name": reg.get_person(admin_id).display_name, "user_id": admin_id, "job_title": "Managing director",
+             "department": "Management", "start_date": f"{today.year - 3}-01-01", "email": "erika@studio.example"})
+        ids = {e["name"]: e["id"] for e in db.query("SELECT id, name FROM employees")}
+        lead_id = next(iter(ids.values()))
+        add({"name": boss.display_name, "user_id": boss.id, "job_title": "Creative lead", "department": "Studio",
+             "manager_id": lead_id, "start_date": f"{today.year - 2}-03-01", "timetrack_user": "max"})
+        add({"name": "Lena Beispiel", "job_title": "Design intern", "department": "Studio", "employment": "intern",
+             "workload": 80, "manager_id": lead_id, "start_date": (today + timedelta(days=12)).isoformat(),
+             "holiday_days": 20}, onboarding=True)
+        add({"name": "Tom Muster", "job_title": "Developer", "department": "Studio", "employment": "part_time",
+             "workload": 60, "manager_id": lead_id, "start_date": f"{today.year - 1}-06-01",
+             "end_date": (today + timedelta(days=40)).isoformat()}, offboarding=True)
+        ids = {e["name"]: e["id"] for e in db.query("SELECT id, name FROM employees")}
+        out = employees.request_absence(boss, kind="holiday", start=mon.isoformat(), end=(mon + timedelta(days=4)).isoformat(),
+                                        note="Autumn break")
+        employees._approved_absence({"absence_id": out["absence"]["id"]}, boss)
+        db.execute("UPDATE approvals SET status = 'approved', decided_by = ?, decided_at = ? WHERE id = ?",
+                   (boss.id, db.now_iso(), out["approval"]["id"]))
+        sick = employees.request_absence(boss, kind="sick", start=today.isoformat(), employee_id=ids["Tom Muster"])
+        employees._approved_absence({"absence_id": sick["absence"]["id"]}, boss)
+        db.execute("UPDATE approvals SET status = 'approved', decided_by = ?, decided_at = ? WHERE id = ?",
+                   (boss.id, db.now_iso(), sick["approval"]["id"]))
+        employees.request_absence(boss, kind="training", start=(mon + timedelta(days=16)).isoformat(),
+                                  employee_id=ids["Lena Beispiel"], note="Figma course")
+        # A lead nobody has been in touch with, so the follow-ups have something to show (#58 stage 5).
+        db.execute("UPDATE crm_companies SET created_at = ? WHERE status = 'lead' AND id = (SELECT MIN(id) FROM "
+                   "crm_companies WHERE status = 'lead')", ((today - timedelta(days=24)).isoformat() + "T09:00:00+00:00",))
     if db.query_one("SELECT 1 FROM emails LIMIT 1"):
         return
     admin = db.query_one("SELECT id FROM users WHERE role='admin'")["id"]

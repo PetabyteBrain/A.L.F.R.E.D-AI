@@ -11,15 +11,19 @@ import BillingDoc from "../components/crm/BillingDoc.jsx";
 import BillingSettings from "../components/crm/BillingSettings.jsx";
 import DealEditor from "../components/crm/DealEditor.jsx";
 import DealView from "../components/crm/DealView.jsx";
+import EmailDialog from "../components/crm/EmailDialog.jsx";
+import FollowUps from "../components/crm/FollowUps.jsx";
+import ProactiveSettings from "../components/crm/ProactiveSettings.jsx";
+import Reports from "../components/crm/Reports.jsx";
 import Leads from "../components/crm/Leads.jsx";
 import Pipeline from "../components/crm/Pipeline.jsx";
 import StagesDialog from "../components/crm/StagesDialog.jsx";
 import RecordEditor, { STATUS_LABEL } from "../components/crm/RecordEditor.jsx";
 import RecordView, { Avatar, STATUS_TONE } from "../components/crm/RecordView.jsx";
 
-/* CRM (roadmap #58): the sales pipeline, companies and the people at them (each with a timeline), suggested
-   leads, and Approvals for deleting and merging. Same layout as Mail: views on the left, a list or the board,
-   and a record opened in place. */
+/* CRM (roadmap #58): the sales pipeline, follow-ups, companies and the people at them (each with a timeline),
+   quotes and invoices, suggested leads, reports, and Approvals for anything that needs a second look. Same layout
+   as Mail: views on the left, a list or the board, and a record opened in place. */
 
 const PAGE = 50;
 const VIEWS = [
@@ -60,6 +64,8 @@ export default function CRM({ assistant }) {
   const [editor, setEditor] = useState(null);                            // {entity, record?, presetCompany?}
   const [stagesOpen, setStagesOpen] = useState(false);
   const [billingSettings, setBillingSettings] = useState(false);
+  const [proactiveSettings, setProactiveSettings] = useState(false);
+  const [emailFor, setEmailFor] = useState(null);                        // {entity, record, after}
   const [toast, setToast] = useState(null);
   const [viewRev, setViewRev] = useState(0);                             // reloads the open record after edits/undo
   const [showFilters, setShowFilters] = useState(false);                 // phones: filters folded away
@@ -77,7 +83,8 @@ export default function CRM({ assistant }) {
     } catch (e) { setErr(e.message); }
   }
 
-  const setView = (v) => { setViewState(v); if (v !== "approvals" && v !== "leads") setSavedView(v); setOpen(null); setOffset(0); };
+  const setView = (v) => { setViewState(v); if (!["approvals", "leads", "followups"].includes(v)) setSavedView(v); setOpen(null); setOffset(0); };
+  const openEmail = (entity, record, after) => setEmailFor({ entity, record, after });
   const url = useMemo(() => {
     if (!listing) return null;
     const p = new URLSearchParams({ offset: String(offset), limit: String(PAGE), sort });
@@ -138,6 +145,10 @@ export default function CRM({ assistant }) {
             <Icon name="crm" className="lab-ico" />Pipeline
             <span className="mail-count plain">{st?.deals_open ?? ""}</span>
           </button>
+          <button type="button" className={`mail-side-box${view === "followups" ? " active" : ""}`} onClick={() => setView("followups")}>
+            <Icon name="check" className="lab-ico" />Follow-ups
+            {st?.follow_ups > 0 && <b className="mail-count">{st.follow_ups}</b>}
+          </button>
           {VIEWS.map((v) => (
             <button key={v.id} type="button" className={`mail-side-box${view === v.id ? " active" : ""}`} onClick={() => setView(v.id)}>
               <Icon name={v.icon} className="lab-ico" />{v.label}
@@ -155,6 +166,11 @@ export default function CRM({ assistant }) {
             <button type="button" className={`mail-side-box${view === "leads" ? " active" : ""}`} onClick={() => setView("leads")}>
               <Icon name="inbox" className="lab-ico" />Leads
               {Object.values(st.leads).reduce((a, b) => a + b, 0) > 0 && <b className="mail-count">{Object.values(st.leads).reduce((a, b) => a + b, 0)}</b>}
+            </button>
+          )}
+          {st?.can?.reports && (
+            <button type="button" className={`mail-side-box${view === "reports" ? " active" : ""}`} onClick={() => setView("reports")}>
+              <Icon name="usage" className="lab-ico" />Reports
             </button>
           )}
           <button type="button" className={`mail-side-box${view === "approvals" ? " active" : ""}`} onClick={() => setView("approvals")}>
@@ -217,8 +233,15 @@ export default function CRM({ assistant }) {
                       canBilling={canBilling} onNewDoc={(kind, preset) => newDoc(kind, preset)}
                       onOpenDoc={(id) => setOpen({ entity: "billing", id })}
                       onOpen={(entity, id) => setOpen({ entity, id })} onEdit={(deal) => setEditor({ entity: "deal", record: deal })}
-                      onToast={showToast} onChanged={changed} />
+                      onEmail={canEdit ? openEmail : null} onToast={showToast} onChanged={changed} />
           ) : view === "approvals" && !open ? <Approvals onChanged={changed} />
+            : view === "followups" && !open ? (
+              <FollowUps status={st} onOpen={(entity, id) => setOpen({ entity, id })} onOpenDoc={(id) => setOpen({ entity: "billing", id })}
+                         onEmail={openEmail} onToast={showToast} onChanged={reloadStatus} onSettings={() => setProactiveSettings(true)} />
+            ) : view === "reports" && !open ? (
+              <Reports onOpen={(entity, id) => setOpen({ entity, id })} canSettings={!!st?.can?.settings}
+                       onSettings={() => setProactiveSettings(true)} />
+            )
             : view === "leads" && !open ? <Leads status={st} onOpen={(entity, id) => setOpen({ entity, id })} onToast={showToast} onChanged={changed} />
             : view === "pipeline" && !open ? (
               <>
@@ -243,7 +266,7 @@ export default function CRM({ assistant }) {
                         onAddContact={(company) => setEditor({ entity: "contact", presetCompany: { id: company.id, name: company.name } })}
                         onAddDeal={(company) => setEditor({ entity: "deal", presetCompany: { id: company.id, name: company.name } })}
                         canBilling={canBilling} onNewDoc={(kind, preset) => newDoc(kind, preset)}
-                        onOpenDoc={(id) => setOpen({ entity: "billing", id })}
+                        onOpenDoc={(id) => setOpen({ entity: "billing", id })} onEmail={canEdit ? openEmail : null}
                         onToast={showToast} onChanged={changed} />
           ) : (
             <>
@@ -317,6 +340,17 @@ export default function CRM({ assistant }) {
                     }} />
       )}
       {billingSettings && <BillingSettings onClose={() => setBillingSettings(false)} onChanged={billChanged} />}
+      {proactiveSettings && <ProactiveSettings onClose={() => setProactiveSettings(false)} onChanged={reloadStatus} />}
+      {emailFor && (
+        <EmailDialog entity={emailFor.entity} record={emailFor.record} assistant={assistant} onClose={() => setEmailFor(null)}
+                     onSent={(a) => { setEmailFor(null); reloadStatus(); showToast(a.already_pending ? "That email is already waiting for approval" : `Email to ${a.payload?.to || "the client"} sent for approval`); }}
+                     onNextStep={async (step) => {
+                       try {
+                         await api(`/crm/deals/${emailFor.record.id}`, { method: "PATCH", body: { fields: { next_step: step } } });
+                         showToast(`Next step saved: ${step}`); emailFor.after?.(); changed();
+                       } catch (e) { setErr(e.message); }
+                     }} />
+      )}
       {stagesOpen && <StagesDialog onClose={() => setStagesOpen(false)} onChanged={() => { reloadStatus(); setViewRev((n) => n + 1); }} />}
       {editor && editor.entity !== "deal" && (
         <RecordEditor entity={editor.entity} record={editor.record} presetCompany={editor.presetCompany} status={st}

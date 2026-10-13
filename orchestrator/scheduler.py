@@ -130,6 +130,20 @@ def _held_by_quiet_hours(target_id: int, requested_by: int | None, urgent: bool,
     return quiet.quiet_until(target_id, at)
 
 
+def _away(target_id: int, requested_by: int | None, urgent: bool, at: datetime | None = None) -> dict | None:
+    """An approved full-day absence (orchestrator/employees.py) on the day of a call someone else asked for."""
+    if urgent or requested_by == target_id:
+        return None
+    from . import employees
+    return employees.away(target_id, (at or _now()).astimezone(ZoneInfo(settings.timezone)).date())
+
+
+def _back_at(away: dict) -> datetime:
+    """09:00 on the day they're back."""
+    from datetime import date as _date, time as _time
+    return datetime.combine(_date.fromisoformat(away["back"]), _time(9, 0), ZoneInfo(settings.timezone))
+
+
 async def request_call(target_ref, *, requested_by: Person | None, purpose: str = "", when: str | None = None,
                        opening_line: str = "", urgent: bool = False) -> dict:
     """Create a call request; dials right away if it's due now. Returns the row.
@@ -141,6 +155,11 @@ async def request_call(target_ref, *, requested_by: Person | None, purpose: str 
     target = resolve_person(target_ref)
     _check_callable(target)
     run_at = parse_when(when)
+    gone = _away(target.id, requested_by.id if requested_by else None, urgent, run_at)
+    if gone:
+        # Only that they're away, never why (it may be sick leave).
+        raise ScheduleError(f"{target.display_name} is away then and back on {gone['back_human']}. "
+                            f"Offer to schedule the call for when they're back, or place it anyway if it's urgent.")
     held = _held_by_quiet_hours(target.id, requested_by.id if requested_by else None, urgent, run_at)
     if held:
         run_at = held
@@ -229,6 +248,14 @@ async def dispatch(request_id: int) -> None:
     requester = registry.get_person(row["requested_by"]) if row["requested_by"] else None
     if target is None:
         _set(request_id, status="failed", result="The person is no longer active.")
+        return
+    gone = _away(target.id, row["requested_by"], bool(row["urgent"]))
+    if gone:  # the absence was approved after the call was scheduled: wait until they're back
+        later = _back_at(gone)
+        _set(request_id, run_at=later.astimezone(timezone.utc).isoformat(timespec="seconds"))
+        db.log_activity("call", f"Call to {target.display_name} moved to {_local(later)}: away", user_id=target.id)
+        await _notify(requester, target, f"{target.display_name} is away, so I'll call them when they're back: "
+                                         f"{_local(later)}. Cancel it on the dashboard if it can't wait.")
         return
     held = _held_by_quiet_hours(target.id, row["requested_by"], bool(row["urgent"]))
     if held:  # e.g. a retry or a change of quiet hours since it was scheduled

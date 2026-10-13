@@ -6,6 +6,7 @@ import { ErrorNote, Tag } from "../common.jsx";
 import { Icon } from "../icons.jsx";
 import { STATUS_LABEL } from "./RecordEditor.jsx";
 import DocList from "./DocList.jsx";
+import TimeLogged from "./TimeLogged.jsx";
 import Timeline from "./Timeline.jsx";
 
 /* One company or contact: facts, people, tags, the timeline, change history, and the actions
@@ -133,7 +134,7 @@ function History({ entity, id, onUndo }) {
 }
 
 export default function RecordView({ entity, id, status, onBack, onOpen, onEdit, onAddContact, onAddDeal, onToast, onChanged,
-                                    canBilling, onNewDoc, onOpenDoc }) {
+                                    canBilling, onNewDoc, onOpenDoc, onEmail }) {
   const path = `/crm/${entity === "company" ? "companies" : "contacts"}/${id}`;
   const { data: r, error, reload } = usePoll(() => api(path), 0, [path]);
   const [dialog, setDialog] = useState(null);
@@ -165,6 +166,8 @@ export default function RecordView({ entity, id, status, onBack, onOpen, onEdit,
             <button className="btn small" onClick={() => onEdit(r)} disabled={r.archived}>Edit</button>
             <button className="btn small" onClick={() => document.getElementById("crm-composer-input")?.focus()} disabled={r.archived}>
               <Icon name="note" className="btn-ico" />Log</button>
+            {onEmail && <button className="btn small" onClick={() => onEmail(entity, r)} disabled={r.archived}>
+              <Icon name="mail" className="btn-ico" />Email</button>}
             <div className="crm-menu">
               <button className="btn ghost small" aria-haspopup="menu" aria-expanded={menu} onClick={() => setMenu(!menu)}>More ▾</button>
               {menu && (
@@ -215,6 +218,7 @@ export default function RecordView({ entity, id, status, onBack, onOpen, onEdit,
             {entity === "company" && r.address && <div className="kv crm-fact"><span>Address</span><b className="pre">{r.address}</b></div>}
             <Fact label="Owner">{r.owner_name || "—"}</Fact>
             <Fact label="Source">{r.source}</Fact>
+            {entity === "company" && status?.timetrack && <Fact label="Time tag">{r.timetrack_tag}</Fact>}
             {Object.entries(r.custom).map(([k, v]) => <Fact key={k} label={k}>{v}</Fact>)}
             <Fact label="Added">{`${fmtAgo(r.created_at)}${r.created_by_name ? ` by ${r.created_by_name}` : ""}`}</Fact>
           </div>
@@ -250,6 +254,7 @@ export default function RecordView({ entity, id, status, onBack, onOpen, onEdit,
               )}
             </div>
           )}
+          {entity === "company" && status?.timetrack && <TimeLogged companyId={id} />}
           {entity === "company" && canBilling && (
             <DocList filter={`company_id=${id}`} preset={{ company_id: id }} onOpenDoc={onOpenDoc} onNewDoc={onNewDoc} />
           )}

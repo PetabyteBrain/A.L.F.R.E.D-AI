@@ -56,7 +56,14 @@ team, and the **Template manager**. See [Email](06-email.md#the-mail-tab).
 The sales pipeline (forecast, board with drag and drop, list), companies and the people at them, each with a
 timeline of notes, calls, meetings, emails and deal moves; suggested leads from market analyses and inquiries;
 quotes and invoices with the Swiss QR-bill (drafts, sending with approval, payments, reminders, CSV export);
-duplicate warnings, undo, and **Approvals** for deleting, merging and anything sent to clients. See [CRM](12-crm.md).
+duplicate warnings, undo, and **Approvals** for deleting, merging and anything sent to clients; **Follow-ups** (what
+needs a nudge, with follow-up emails that wait for approval) and **Reports**. See [CRM](12-crm.md).
+
+## Team (*team*)
+
+The employee directory, everyone's holiday balance and time off on a team calendar, onboarding and offboarding
+checklists, hours from time tracking, and **Approvals** for every change to employee data. With only your own
+record you see **Me**: your holidays and time off, and **Request time off**. See [Team](13-team.md).
 
 ## Log
 

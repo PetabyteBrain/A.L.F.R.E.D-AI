@@ -43,6 +43,7 @@ from dashboard.api.settings_admin import router as settings_router
 from dashboard.api.access import router as access_router
 from dashboard.api.crm import actions as crm_actions_router, router as crm_router
 from dashboard.api.billing import router as billing_router
+from dashboard.api.team import approvals_router, router as team_router
 from dashboard.api.continuity import router as continuity_router
 from dashboard.api.routes import router as dashboard_router
 from dashboard.api.security import SecurityMiddleware
@@ -85,13 +86,15 @@ async def lifespan(app: FastAPI):
     follow = asyncio.create_task(tasks.background_loop())
     lab = asyncio.create_task(homelab.background_loop())
     inbox = asyncio.create_task(mail_inbound.background_loop())
+    from . import crm_proactive
+    crm_jobs = asyncio.create_task(crm_proactive.background_loop())
     log.info("%s up — telegram=%s phone=%s email=%s n8n=%s model=%s",
              settings.assistant_name, settings.telegram_enabled, settings.twilio_enabled and settings.speech_enabled,
              settings.mail_enabled, settings.n8n_enabled, settings.claude_model)
     try:
         yield
     finally:
-        for task in (bg, sched, remind, brief, follow, lab, inbox):
+        for task in (bg, sched, remind, brief, follow, lab, inbox, crm_jobs):
             task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await task
@@ -225,6 +228,8 @@ app.include_router(access_router)
 app.include_router(crm_router)
 app.include_router(crm_actions_router)
 app.include_router(billing_router)
+app.include_router(team_router)
+app.include_router(approvals_router)
 app.include_router(continuity_router)
 app.include_router(google_router)
 app.include_router(chat_router)

@@ -638,6 +638,86 @@ CREATE TABLE IF NOT EXISTS approvals (
 );
 CREATE INDEX IF NOT EXISTS idx_approvals_status ON approvals(status, area);
 
+-- Employees (orchestrator/employees.py, #58 stage 4). Every change to these rows goes through an approval.
+CREATE TABLE IF NOT EXISTS employees (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id        INTEGER UNIQUE REFERENCES users(id) ON DELETE SET NULL,   -- their Alfred account, if any
+    name           TEXT NOT NULL,
+    job_title      TEXT NOT NULL DEFAULT '',
+    department     TEXT NOT NULL DEFAULT '',
+    manager_id     INTEGER REFERENCES employees(id) ON DELETE SET NULL,
+    email          TEXT NOT NULL DEFAULT '',
+    phone          TEXT NOT NULL DEFAULT '',
+    employment     TEXT NOT NULL DEFAULT 'full_time',   -- full_time | part_time | contractor | intern | apprentice
+    workload       INTEGER NOT NULL DEFAULT 100,        -- percent
+    start_date     TEXT,
+    end_date       TEXT,
+    holiday_days   REAL NOT NULL DEFAULT 25,            -- per full year
+    holiday_adjust TEXT NOT NULL DEFAULT '{}',          -- {"2026": 3.5}: carry-over and corrections per year
+    timetrack_user TEXT NOT NULL DEFAULT '',            -- their name in the time-tracking app
+    notes          TEXT NOT NULL DEFAULT '',
+    created_by     INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    created_at     TEXT NOT NULL,
+    updated_at     TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS employee_history (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    employee_id INTEGER NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+    action      TEXT NOT NULL,                          -- create | update
+    before      TEXT,
+    after       TEXT,
+    approval_id INTEGER REFERENCES approvals(id) ON DELETE SET NULL,
+    user_id     INTEGER REFERENCES users(id) ON DELETE SET NULL,   -- who approved it
+    ts          TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS employee_absences (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    employee_id INTEGER NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+    kind        TEXT NOT NULL,                          -- holiday | sick | unpaid | training | parental | other
+    start_date  TEXT NOT NULL,
+    end_date    TEXT NOT NULL,
+    half_day    INTEGER NOT NULL DEFAULT 0,             -- a single half day
+    days        REAL NOT NULL DEFAULT 0,                -- working days it takes
+    note        TEXT NOT NULL DEFAULT '',
+    status      TEXT NOT NULL DEFAULT 'pending'
+                CHECK (status IN ('pending','approved','rejected','cancelled')),
+    approval_id INTEGER REFERENCES approvals(id) ON DELETE SET NULL,
+    requested_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    created_at  TEXT NOT NULL,
+    decided_at  TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_absences_dates ON employee_absences(status, start_date, end_date);
+-- Onboarding / offboarding checklists with due dates and a person responsible for each step.
+CREATE TABLE IF NOT EXISTS employee_checklists (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    employee_id INTEGER NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+    kind        TEXT NOT NULL CHECK (kind IN ('onboarding','offboarding')),
+    anchor_date TEXT,                                   -- first / last working day the due dates count from
+    created_by  INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    created_at  TEXT NOT NULL,
+    closed_at   TEXT
+);
+CREATE TABLE IF NOT EXISTS employee_tasks (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    checklist_id INTEGER NOT NULL REFERENCES employee_checklists(id) ON DELETE CASCADE,
+    position     INTEGER NOT NULL DEFAULT 0,
+    title        TEXT NOT NULL,
+    due_date     TEXT,
+    assignee_id  INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    done_at      TEXT,
+    done_by      INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    reminded_on  TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_employee_tasks ON employee_tasks(checklist_id, position);
+
+-- Follow-up nudges someone put off (orchestrator/crm_proactive.py, #58 stage 5): key = "<type>:<entity>:<id>".
+CREATE TABLE IF NOT EXISTS crm_snoozes (
+    user_id  INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    item_key TEXT NOT NULL,
+    until    TEXT NOT NULL,
+    PRIMARY KEY (user_id, item_key)
+);
+
 CREATE TABLE IF NOT EXISTS emails (
     id           INTEGER PRIMARY KEY AUTOINCREMENT,
     direction    TEXT NOT NULL CHECK (direction IN ('in','out')),
@@ -902,6 +982,8 @@ ADDED_COLUMNS = [
     ("roles", "parent", "TEXT"),                                  # inherits that role's permissions
     ("roles", "archived", "INTEGER NOT NULL DEFAULT 0"),
     ("crm_activities", "deal_id", "INTEGER REFERENCES crm_deals(id) ON DELETE CASCADE"),   # timeline of a deal
+    ("crm_activities", "source_ref", "TEXT"),       # logged automatically, e.g. "gcal:<event id>" (no duplicates)
+    ("crm_companies", "timetrack_tag", "TEXT NOT NULL DEFAULT ''"),   # its tag in the time-tracking app
 ]
 
 

@@ -5,16 +5,19 @@ import { usePoll } from "../../hooks.js";
 import { Empty, ErrorNote, Tag } from "../common.jsx";
 import { Icon } from "../icons.jsx";
 
-/* Requests waiting for approval (deleting, merging; later quotes, invoices, employee changes). Approvers
-   also get them on Telegram with buttons. The requester may approve their own (decided 2026-10-12). */
+/* Requests waiting for approval: deleting and merging records, emails, quotes, invoices and reminders to clients,
+   employee changes and absences. Approvers also get them on Telegram with buttons. The requester may approve their
+   own (decided 2026-10-12). `area` limits the list (the Team tab shows only employee requests). */
 
-const KIND_LABEL = { "crm:merge": "Merge", "crm:delete": "Delete", "billing:send": "Send to client",
-                     "billing:remind": "Payment reminder", "billing:cancel": "Cancel document" };
+export const KIND_LABEL = { "crm:merge": "Merge", "crm:delete": "Delete", "crm:email": "Email to client",
+                            "billing:send": "Send to client", "billing:remind": "Payment reminder",
+                            "billing:cancel": "Cancel document", "employees:save": "Employee details",
+                            "employees:absence": "Absence", "employees:absence_cancel": "Cancel absence" };
 const TONE = { pending: "busy", approved: "ok", rejected: "bad", failed: "bad", cancelled: "" };
 
-export default function Approvals({ onChanged }) {
+export default function Approvals({ onChanged, area = "", intro }) {
   const [tab, setTab] = useState("pending");
-  const { data, error, reload } = usePoll(() => api(`/crm-actions/approvals?status=${tab}`), 30000, [tab]);
+  const { data, error, reload } = usePoll(() => api(`/approvals?status=${tab}${area ? `&area=${area}` : ""}`), 30000, [tab, area]);
   const [notes, setNotes] = useState({});
   const [busy, setBusy] = useState(0);
   const [err, setErr] = useState("");
@@ -23,14 +26,14 @@ export default function Approvals({ onChanged }) {
   async function decide(a, approve) {
     setBusy(a.id); setErr(""); setDone("");
     try {
-      const out = await api(`/crm-actions/approvals/${a.id}`, { method: "POST", body: { approve, note: notes[a.id] || "" } });
+      const out = await api(`/approvals/${a.id}`, { method: "POST", body: { approve, note: notes[a.id] || "" } });
       setDone(out.status === "failed" ? `#${a.id} was approved but failed: ${out.result}` : `#${a.id} ${out.status}. ${out.result || ""}`);
       reload(); onChanged?.();
     } catch (e) { setErr(e.message); } finally { setBusy(0); }
   }
   async function withdraw(a) {
     setBusy(a.id); setErr("");
-    try { await api(`/crm-actions/approvals/${a.id}`, { method: "DELETE" }); reload(); onChanged?.(); }
+    try { await api(`/approvals/${a.id}`, { method: "DELETE" }); reload(); onChanged?.(); }
     catch (e) { setErr(e.message); } finally { setBusy(0); }
   }
   const items = data || [];
@@ -44,8 +47,9 @@ export default function Approvals({ onChanged }) {
           ))}
         </div>
       </div>
-      <p className="muted small">Deleting and merging records, and quotes, invoices and reminders going to clients wait here until
-        someone with approval rights decides. You can also decide with the buttons on Telegram, or ask Alfred.</p>
+      <p className="muted small">{intro || "Deleting and merging records, emails, quotes, invoices and reminders going to clients, and "
+        + "changes to employee data and absences wait here until someone with approval rights decides."} You can also decide with
+        the buttons on Telegram, or ask Alfred.</p>
       {done && <div className="notice" role="status" onClick={() => setDone("")}>{done}</div>}
       <ErrorNote error={error || err} />
       {data && items.length === 0 && <Empty>{tab === "pending" ? "Nothing waiting for approval." : "No decided requests yet."}</Empty>}

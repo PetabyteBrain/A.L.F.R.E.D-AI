@@ -1,5 +1,5 @@
-"""Drafts that need a second look before they happen (roadmap #58): deleting or merging CRM records and,
-later, anything sent to clients and every change to employee data.
+"""Drafts that need a second look before they happen (roadmap #58): deleting or merging CRM records, anything
+sent to clients (quotes, invoices, reminders, emails), and every change to employee data (absences included).
 
 A draft belongs to an area ("crm", ...); anyone holding "<area>.approve" can approve or reject it, the
 requester included (self-approval is allowed, decided 2026-10-12). Approvers hear about new drafts on
@@ -22,7 +22,9 @@ log = logging.getLogger(__name__)
 # (area, kind) -> handler(payload, actor: Person) -> short result text (or a coroutine giving it, e.g. sending
 # an email); raises ValueError with a safe message
 HANDLERS: dict[tuple[str, str], Callable] = {}
-AREA_LABELS = {"crm": "CRM", "billing": "Billing"}
+# (area, kind) -> called with (payload, actor) when a request is rejected or withdrawn (e.g. an absence request)
+CLOSE_HANDLERS: dict[tuple[str, str], Callable] = {}
+AREA_LABELS = {"crm": "CRM", "billing": "Billing", "employees": "Employees"}
 
 
 class ApprovalError(ValueError):
@@ -34,6 +36,23 @@ def handler(area: str, kind: str):
         HANDLERS[(area, kind)] = fn
         return fn
     return wrap
+
+
+def on_close(area: str, kind: str):
+    """Runs when a request of this kind is rejected or withdrawn, so the area can tidy up its own state."""
+    def wrap(fn):
+        CLOSE_HANDLERS[(area, kind)] = fn
+        return fn
+    return wrap
+
+
+def _closed(a: dict, actor: Person) -> None:
+    fn = CLOSE_HANDLERS.get((a["area"], a["kind"]))
+    if fn:
+        try:
+            fn(a["payload"], actor)
+        except Exception:  # noqa: BLE001
+            log.exception("Close handler for approval #%s failed", a["id"])
 
 
 def _view(row: dict | None) -> dict | None:
@@ -168,6 +187,8 @@ async def decide(approval_id: int, person: Person, approve: bool, note: str = ""
                        (f"{type(e).__name__}"[:500], approval_id))
         else:
             db.execute("UPDATE approvals SET result = ? WHERE id = ?", (result[:500], approval_id))
+    else:
+        _closed(a, person)
     done = get(approval_id)
     db.log_activity("approval", f"{person.display_name} {done['status']} #{approval_id}: {a['summary'][:200]}",
                     user_id=person.id)
@@ -183,4 +204,5 @@ def cancel(approval_id: int, person: Person) -> dict:
                             "WHERE id = ? AND status = 'pending'", (person.id, db.now_iso(), approval_id)):
         raise ApprovalError(f"This request was already {a['status']}.")
     db.log_activity("approval", f"{person.display_name} withdrew request #{approval_id}", user_id=person.id)
+    _closed(a, person)
     return get(approval_id)

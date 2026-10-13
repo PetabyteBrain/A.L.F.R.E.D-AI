@@ -5307,7 +5307,8 @@ def test_crm_api_tools_and_buttons(monkeypatch):
     with TestClient(app, base_url="http://testserver") as c:
         c.post("/api/login", json={"username": "admin", "password": "correct horse battery"}, headers=CSRF)
         st = c.get("/api/crm/status").json()
-        assert st["can"] == {"edit": True, "approve": True, "view_all": True, "settings": True, "billing": True}             and "client" in st["statuses"]
+        assert st["can"] == {"edit": True, "approve": True, "view_all": True, "settings": True, "billing": True,
+                             "reports": True}             and "client" in st["statuses"]
         made = c.post("/api/crm/companies", json={"fields": {"name": "Api Shop SA", "status": "lead"}}, headers=CSRF).json()
         cid = made["record"]["id"]
         r = c.post("/api/crm/companies", json={"fields": {"name": "API shop"}}, headers=CSRF)
@@ -5756,3 +5757,379 @@ def test_billing_api_and_tools(monkeypatch, tmp_path):
     assert '"approval_id"' in out and "waiting for approval" in out
     out, _ = asyncio.run(tools.execute("billing_docs", {"state": "draft"}, ctx))
     assert '"summary"' in out
+
+
+# --- CRM stage 4: employees, absences, checklists, time tracking ---------------------------------------
+
+def _next_monday(weeks: int = 1):
+    from datetime import timedelta
+    from orchestrator import employees
+    t = employees._today()
+    return t + timedelta(days=7 * weeks - t.weekday())
+
+
+def test_employees_changes_absences_balances_and_checklists(monkeypatch):
+    import asyncio
+    from datetime import date, timedelta
+    from orchestrator import approvals, employees, permissions, scheduler
+    boss = permissions.Actor(0, "test", permissions.KEYS, True)
+    hr = registry.get_person(registry.add_user("Hanna HR", "cofounder"))
+    erika_user = registry.get_person(registry.add_user("Erika Staff", "cofounder"))
+    friend = registry.lookup("telegram", "22222222")
+    if not registry.role_exists("staff-self"):
+        permissions.create_role(boss, "Staff self")
+        permissions.set_rule(boss, "staff-self", "employees.self", "allow")
+    max_user = registry.get_person(registry.add_user("Max Staff", "staff-self"))
+    assert all(hr.can(p) for p in ("employees.view", "employees.manage", "employees.approve", "employees.self"))
+    assert not friend.can("employees.self")
+    db.execute("DELETE FROM employee_absences")
+
+    # Nothing about an employee changes without an approval; approving applies it and starts onboarding.
+    with pytest.raises(employees.EmployeeError):
+        employees.request_change(friend, {"name": "Nope"})
+    req = employees.request_change(hr, {"name": "Erika Staff", "job_title": "Designer", "user_id": erika_user.id,
+                                        "start_date": f"{employees._today().year}-01-01", "holiday_days": 25},
+                                   onboarding=True)
+    assert req["status"] == "pending" and "Add the employee Erika Staff" in req["summary"] and "onboarding" in req["summary"]
+    assert not db.query_one("SELECT 1 FROM employees WHERE name = 'Erika Staff'")
+    done = asyncio.run(approvals.decide(req["id"], hr, True))
+    assert done["status"] == "approved", done
+    erika = employees.own_record(erika_user)
+    assert erika and erika["job_title"] == "Designer"
+    lists = employees.checklists(hr, employee_id=erika["id"])
+    assert lists[0]["kind"] == "onboarding" and lists[0]["total"] == len(employees.DEFAULT_ONBOARDING)
+    assert all(t["assignee_id"] == hr.id for t in lists[0]["tasks"])        # no manager / account steps -> the starter
+    with pytest.raises(employees.EmployeeError):
+        employees.request_change(hr, {"job_title": "Designer"}, erika["id"])   # nothing changes
+    with pytest.raises(employees.EmployeeError):
+        employees.request_change(hr, {"name": "Someone", "user_id": erika_user.id})   # account taken
+    with pytest.raises(employees.EmployeeError):
+        employees.request_change(hr, {"manager_id": erika["id"]}, erika["id"])         # own manager
+    ch = employees.request_change(hr, {"job_title": "Lead designer", "workload": 80}, erika["id"])
+    assert "job title Designer → Lead designer" in ch["summary"] and "workload 100 % → 80 %" in ch["summary"]
+    asyncio.run(approvals.decide(ch["id"], hr, False, "not yet"))
+    assert employees.get(hr, erika["id"])["job_title"] == "Designer"
+    ch = employees.request_change(hr, {"job_title": "Lead designer"}, erika["id"])
+    asyncio.run(approvals.decide(ch["id"], hr, True))
+    e = employees.get(hr, erika["id"])
+    assert e["job_title"] == "Lead designer" and e["history"][0]["fields"] == ["job title"]
+    assert e["status"] == "onboarding" and e["can"]["manage"]
+
+    # Working days skip weekends and public holidays; balances are pro rata.
+    employees.save_settings(hr, {"public_holidays": ["2026-12-25", "2026-12-26"]})
+    assert employees.working_days(date(2026, 12, 21), date(2026, 12, 27)) == 4
+    assert employees.working_days(date(2026, 12, 21), date(2026, 12, 21), half_day=True) == 0.5
+    assert employees.allowance({"start_date": "2026-07-01", "end_date": None, "holiday_days": 25}, 2026) == 12.5
+    assert employees.allowance({"start_date": "2027-02-01", "end_date": None, "holiday_days": 25}, 2026) == 0
+
+    # Absences: requested by the person, decided by an approver, shown in the balance and the calendar.
+    mon = _next_monday(2)
+    out = employees.request_absence(erika_user, kind="holiday", start=mon.isoformat(),
+                                    end=(mon + timedelta(days=4)).isoformat(), note="Family trip")
+    assert out["absence"]["days"] == 5 and out["absence"]["status"] == "pending"
+    assert "Holiday for Erika Staff" in out["approval"]["summary"] and "left in" in out["approval"]["summary"]
+    assert employees.balance(erika, mon.year)["pending"] == 5 if mon.year == employees._today().year else True
+    with pytest.raises(employees.EmployeeError):                         # overlaps the pending request
+        employees.request_absence(erika_user, kind="training", start=(mon + timedelta(days=2)).isoformat())
+    with pytest.raises(employees.EmployeeError):                         # someone else's: needs employees.manage
+        employees.request_absence(erika_user, kind="sick", start=mon.isoformat(), employee_id=erika["id"] + 999)
+    with pytest.raises(employees.EmployeeError):                         # weekend only
+        employees.request_absence(erika_user, kind="other", start=(mon - timedelta(days=2)).isoformat(),
+                                  end=(mon - timedelta(days=1)).isoformat())
+    asyncio.run(approvals.decide(out["approval"]["id"], hr, True))
+    a = db.query_one("SELECT * FROM employee_absences WHERE id = ?", (out["absence"]["id"],))
+    assert a["status"] == "approved"
+    cal = employees.calendar(hr, mon.strftime("%Y-%m"))
+    assert any(x["id"] == a["id"] for x in cal["absences"]) and any(p["id"] == erika["id"] for p in cal["people"])
+    # Rejected and withdrawn requests close the absence too.
+    r2 = employees.request_absence(erika_user, kind="training", start=(mon + timedelta(days=14)).isoformat())
+    asyncio.run(approvals.decide(r2["approval"]["id"], hr, False))
+    assert db.query_one("SELECT status FROM employee_absences WHERE id = ?", (r2["absence"]["id"],))["status"] == "rejected"
+    r3 = employees.request_absence(erika_user, kind="training", start=(mon + timedelta(days=15)).isoformat())
+    approvals.cancel(r3["approval"]["id"], erika_user)
+    assert db.query_one("SELECT status FROM employee_absences WHERE id = ?", (r3["absence"]["id"],))["status"] == "cancelled"
+    r4 = employees.request_absence(erika_user, kind="training", start=(mon + timedelta(days=16)).isoformat())
+    assert employees.cancel_absence(erika_user, r4["absence"]["id"])["cancelled"]
+    assert approvals.get(r4["approval"]["id"])["status"] == "cancelled"
+
+    # Away: calls others ask for wait until the person is back (Monday after a Mon-Fri holiday).
+    gone = employees.away(erika_user.id, mon + timedelta(days=1))
+    assert gone and gone["back"] == (mon + timedelta(days=7)).isoformat() and gone["label"] == "holiday"
+    assert employees.away(erika_user.id, mon + timedelta(days=7)) is None
+    assert scheduler._away(erika_user.id, hr.id, False, scheduler.datetime.combine(
+        mon + timedelta(days=1), scheduler.datetime.min.time(), scheduler.ZoneInfo("Europe/Zurich")))
+    assert scheduler._away(erika_user.id, erika_user.id, False, None) is None    # their own call
+    assert scheduler._back_at(gone).hour == 9
+
+    # Cancelling an approved absence needs approval too.
+    c = employees.cancel_absence(erika_user, a["id"])
+    assert c["approval"]["kind"] == "absence_cancel"
+    asyncio.run(approvals.decide(c["approval"]["id"], hr, True))
+    assert db.query_one("SELECT status FROM employee_absences WHERE id = ?", (a["id"],))["status"] == "cancelled"
+
+    # Visibility: the directory needs employees.view; with only employees.self one sees oneself.
+    with pytest.raises(employees.EmployeeError):
+        employees.directory(max_user)
+    with pytest.raises(employees.EmployeeError):
+        employees.request_absence(max_user, kind="holiday", start=mon.isoformat())    # not in the directory yet
+    mx = employees.request_change(hr, {"name": "Max Staff", "user_id": max_user.id, "manager_id": erika["id"]})
+    asyncio.run(approvals.decide(mx["id"], hr, True))
+    mrow = employees.own_record(max_user)
+    with pytest.raises(employees.EmployeeError):
+        employees.get(max_user, erika["id"])
+    assert employees.get(max_user, mrow["id"])["is_me"] and employees.get(max_user, mrow["id"])["history"] == []
+    assert employees.absences(max_user, start="2000-01-01", end="2100-01-01") == []
+    # Offboarding needs a last day; manager steps go to the manager's account.
+    with pytest.raises(employees.EmployeeError):
+        employees.request_change(hr, {}, mrow["id"], offboarding=True)
+    off = employees.request_change(hr, {"end_date": (employees._today() + timedelta(days=40)).isoformat()}, mrow["id"],
+                                   offboarding=True)
+    asyncio.run(approvals.decide(off["id"], hr, True))
+    ol = employees.checklists(hr, employee_id=mrow["id"])[0]
+    manager_steps = [t for t in ol["tasks"] if t["title"] == "Exit conversation"]
+    assert ol["kind"] == "offboarding" and manager_steps[0]["assignee_id"] == erika_user.id
+    assert employees.get(hr, mrow["id"])["status"] == "leaving"
+    # Ticking: the person responsible or a manager; the checklist closes when everything is done.
+    with pytest.raises(employees.EmployeeError):
+        employees.tick(max_user, manager_steps[0]["id"])
+    assert employees.tick(erika_user, manager_steps[0]["id"])["done_at"]
+    mine = employees.checklists(erika_user, mine=True)
+    assert all(t["assignee_id"] == erika_user.id for c in mine for t in c["tasks"])
+    for t in ol["tasks"]:
+        employees.tick(hr, t["id"])
+    assert db.query_one("SELECT closed_at FROM employee_checklists WHERE id = ?", (ol["id"],))["closed_at"]
+    employees.tick(hr, ol["tasks"][0]["id"], False)
+    assert not db.query_one("SELECT closed_at FROM employee_checklists WHERE id = ?", (ol["id"],))["closed_at"]
+    extra = employees.add_task(hr, ol["id"], "Return the parking card", (employees._today()).isoformat())
+    assert extra["assignee_id"] == hr.id and any(t["id"] == extra["id"] for t in employees.due_tasks())
+    employees.mark_reminded([extra["id"]])
+    assert not any(t["id"] == extra["id"] for t in employees.due_tasks())
+    assert any(t["id"] == extra["id"] for t in employees.due_tasks(unreminded_only=False))
+    employees.remove_task(hr, extra["id"])
+    # Data export carries one's own employee record and absences.
+    from orchestrator import privacy
+    exp = privacy.collect(erika_user.id)["employee"]
+    assert exp["employee_record"]["name"] == "Erika Staff" and exp["absences"]
+
+
+def test_employee_settings_and_api_and_tools(monkeypatch):
+    import asyncio
+    from fastapi.testclient import TestClient
+    from orchestrator import employees
+    from orchestrator.main import app
+    from orchestrator.tools import registry as tools
+    admin = registry.lookup("telegram", "111")
+    friend = registry.lookup("telegram", "22222222")
+    with pytest.raises(employees.EmployeeError):
+        employees.save_settings(admin, {"onboarding": [{"title": "x", "days": 999}]})
+    s = employees.save_settings(admin, {"holiday_days": 26, "onboarding": [{"title": "Laptop", "days": -2, "who": "x"}]})
+    assert s["holiday_days"] == 26 and s["onboarding"] == [{"title": "Laptop", "days": -2, "who": "starter"}]
+    employees.save_settings(admin, {"holiday_days": 25, "onboarding": employees.DEFAULT_ONBOARDING})
+    names = {t["name"] for t in tools.tools_for(admin)}
+    assert {"absence", "team_directory", "employee_change", "employee_checklist", "crm_follow_ups", "crm_email",
+            "crm_report"} <= names
+    assert not ({"absence", "team_directory", "employee_change", "list_approvals"} & {t["name"] for t in tools.tools_for(friend)})
+
+    with TestClient(app, base_url="http://testserver") as c:
+        c.post("/api/login", json={"username": "admin", "password": "correct horse battery"}, headers=CSRF)
+        st = c.get("/api/team/status").json()
+        assert st["can"] == {"view": True, "manage": True, "approve": True, "self": True} and "holiday" in st["kinds"]
+        made = c.post("/api/team/employees", json={"fields": {"name": "Api Person", "department": "Studio"},
+                                                    "onboarding": False}, headers=CSRF).json()
+        assert made["status"] == "pending" and made["area"] == "employees"
+        assert any(a["id"] == made["id"] for a in c.get("/api/approvals?area=employees").json())
+        assert c.post(f"/api/approvals/{made['id']}", json={"approve": True}, headers=CSRF).json()["status"] == "approved"
+        emp = next(e for e in c.get("/api/team/employees").json() if e["name"] == "Api Person")
+        assert c.get(f"/api/team/employees/{emp['id']}").json()["department"] == "Studio"
+        assert c.post("/api/team/employees", json={"fields": {"bogus": 1}}, headers=CSRF).status_code == 400
+        started = c.post(f"/api/team/employees/{emp['id']}/checklists", json={"kind": "onboarding"}, headers=CSRF).json()
+        assert started["total"] == len(employees.DEFAULT_ONBOARDING)
+        tid = started["tasks"][0]["id"]
+        assert c.patch(f"/api/team/tasks/{tid}", json={"done": True}, headers=CSRF).json()["done_at"]
+        assert c.get("/api/team/checklists").json()
+        cal = c.get("/api/team/calendar?month=2026-12").json()
+        assert len(cal["days"]) == 31 and cal["month"] == "2026-12"
+        assert c.get("/api/team/employees/999999").status_code == 400
+        assert c.get(f"/api/team/employees/{emp['id']}/time").json() == {"configured": False}
+        c.post("/api/logout", headers=CSRF)
+
+    ctx = tools.ToolContext(admin, None, "telegram")
+    out, err = asyncio.run(tools.execute("employee_change", {"employee": "Api Person", "fields": {"job_title": "Intern"}}, ctx))
+    assert not err and "approval_id" in out
+    out, err = asyncio.run(tools.execute("team_directory", {"employee": "Api Person"}, ctx))
+    assert not err and "holiday_balance" in out
+    out, err = asyncio.run(tools.execute("absence", {"action": "list"}, ctx))
+    assert not err and "not in the employee directory" in out
+    out, err = asyncio.run(tools.execute("list_approvals", {}, ctx))
+    assert not err and "employees" in out
+
+
+def test_timetrack_hours_per_client_and_employee(monkeypatch):
+    import asyncio, dataclasses
+    from orchestrator import crm, timetrack
+    from orchestrator.config import settings
+    co = registry.get_person(registry.add_user("Tina Time", "cofounder"))
+    assert asyncio.run(timetrack.company_hours(co, crm.save(co, "company", {"name": "Hours Probe AG"},
+                                                                force=True)["record"]["id"])) == {"configured": False}
+    monkeypatch.setattr(timetrack, "settings", dataclasses.replace(settings, timetrack_url="http://tt.example.test",
+                                                                   timetrack_token="t" * 30))
+    today = timetrack._today().isoformat()
+    sessions = [{"day": today, "user": "erika", "user_name": "Erika", "minutes": 90, "tag": "Timely", "group": "Clients",
+                 "note": "logo"},
+                {"day": today, "user": "max", "user_name": "Max", "minutes": 30, "tag": "Admin",
+                 "group": "Timely GmbH", "note": ""},
+                {"day": today, "user": "erika", "user_name": "Erika", "minutes": 60, "tag": "Internal", "group": "",
+                 "note": ""}]
+
+    async def fake_fetch(start, end):
+        return sessions
+    monkeypatch.setattr(timetrack, "fetch", fake_fetch)
+    timely = crm.save(co, "company", {"name": "Timely AG"}, force=True)["record"]
+    h = asyncio.run(timetrack.company_hours(co, timely["id"]))
+    assert h["year"] == 2.0 and h["month"] == 2.0 and h["by_person"][0] == {"name": "Erika", "hours": 1.5}
+    crm.save(co, "company", {"timetrack_tag": "Internal"}, timely["id"])          # an explicit tag wins over the name
+    assert asyncio.run(timetrack.company_hours(co, timely["id"]))["year"] == 1.0
+    crm.save(co, "company", {"timetrack_tag": ""}, timely["id"])
+    emp = asyncio.run(timetrack.employee_hours({"name": "Erika", "timetrack_user": ""}))
+    assert emp["month"] == 2.5 and {c["name"] for c in emp["by_client"]} >= {"Timely AG"}
+    by = asyncio.run(timetrack.hours_by_company(co, timetrack._today(), timetrack._today()))
+    assert by["total_hours"] == 3.0 and by["clients"][0]["name"] == "Timely AG" and by["other_hours"] == 1.0
+
+
+# --- CRM stage 5: follow-ups, reports, emails to clients, meetings, the morning jobs ---------------------
+
+def test_crm_follow_ups_reports_emails_and_meetings(monkeypatch, tmp_path):
+    import asyncio
+    from datetime import datetime, timedelta, timezone
+    from orchestrator import approvals, crm, crm_deals, crm_proactive, employees
+    sent = _mail_on(monkeypatch, tmp_path)
+    co = registry.get_person(registry.add_user("Fritz Follow", "cofounder"))
+    old = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat(timespec="seconds")
+    lead = crm.save(co, "company", {"name": "Sleepy Lead GmbH", "status": "lead", "email": "info@sleepy.example"},
+                    force=True)["record"]
+    db.execute("UPDATE crm_companies SET created_at = ? WHERE id = ?", (old, lead["id"]))
+    erika = crm.save(co, "contact", {"first_name": "Erika", "last_name": "Sleepy", "email": "erika@sleepy.example",
+                                     "company_id": lead["id"]}, force=True)["record"]
+    nostep = crm_deals.save(co, {"title": "Follow deal A", "company_id": lead["id"], "value": 1000})["record"]
+    yesterday = (crm_proactive._today() - timedelta(days=1)).isoformat()
+    due = crm_deals.save(co, {"title": "Follow deal B", "next_step": "Send the offer", "next_step_at": yesterday,
+                              "expected_close": yesterday})["record"]
+    items = crm_proactive.follow_ups(co)
+    kinds = {(i["type"], i["id"]) for i in items}
+    assert ("stale", lead["id"]) in kinds and ("no_next_step", nostep["id"]) in kinds
+    assert ("next_step_due", due["id"]) in kinds and ("close_passed", due["id"]) in kinds
+    assert [i["type"] for i in items].index("next_step_due") < [i["type"] for i in items].index("stale")
+    crm.log(co, "company", lead["id"], "call", "Spoke to Erika")
+    assert ("stale", lead["id"]) not in {(i["type"], i["id"]) for i in crm_proactive.follow_ups(co)}
+    crm_proactive.snooze(co, f"no_next_step:deal:{nostep['id']}", 3)
+    assert ("no_next_step", nostep["id"]) not in {(i["type"], i["id"]) for i in crm_proactive.follow_ups(co)}
+    assert any(i["id"] == nostep["id"] for i in crm_proactive.follow_ups(co, include_snoozed=True))
+    with pytest.raises(crm_proactive.ProactiveError):
+        crm_proactive.snooze(co, "bogus:deal:1")
+    other = registry.get_person(registry.add_user("Olaf Other", "cofounder"))
+    assert not any(i["id"] == due["id"] for i in crm_proactive.follow_ups(other))           # not theirs
+    assert any(i["id"] == due["id"] for i in crm_proactive.follow_ups(other, mine=False))
+    text = crm_proactive.digest(co)
+    assert text.startswith("📌") and "Follow deal B" in text
+
+    # The report: pipeline, won and lost in the period, text for Telegram.
+    crm_deals.move(co, nostep["id"], next(s["id"] for s in crm_deals.stages() if s["kind"] == "won"), "Great fit")
+    r = asyncio.run(crm_proactive.report(co, "this_week"))
+    assert r["won"]["count"] >= 1 and any(d["title"] == "Follow deal A" for d in r["won"]["deals"])
+    assert r["period"]["label"] == "This week" and "billing" in r and "away_next_7_days" in r
+    assert "Follow deal A" in crm_proactive.report_text(r)
+    friend = registry.lookup("telegram", "22222222")
+    with pytest.raises(crm_proactive.ProactiveError):
+        asyncio.run(crm_proactive.report(friend))
+    s, e, _ = crm_proactive.period_range("last_quarter", crm_proactive.date(2026, 2, 10))
+    assert (s.isoformat(), e.isoformat()) == ("2025-10-01", "2025-12-31")
+    s, e, _ = crm_proactive.period_range("last_month", crm_proactive.date(2026, 3, 31))
+    assert (s.isoformat(), e.isoformat()) == ("2026-02-01", "2026-02-28")
+
+    # Emails to clients wait for approval, then go out from the company mailbox in its layout.
+    assert [x["email"] for x in crm_proactive.recipients(co, "company", lead["id"])] == ["erika@sleepy.example",
+                                                                                       "info@sleepy.example"]
+    draft = asyncio.run(crm_proactive.draft_email(co, "deal", due["id"]))              # no AI configured: a template
+    assert draft["subject"] and "Fritz Follow" in draft["body"]
+    req = crm_proactive.request_email(co, "company", lead["id"], to="erika@sleepy.example", subject="Next steps",
+                                      body="Hello Erika,\n\nShall we meet next week?\n\nFritz")
+    assert req["status"] == "pending" and not sent
+    with pytest.raises(crm_proactive.ProactiveError):
+        crm_proactive.request_email(co, "company", lead["id"], to="nope", subject="x", body="y")
+    done = asyncio.run(approvals.decide(req["id"], co, True))
+    assert done["status"] == "approved", done
+    assert sent and sent[-1][1] == ["erika@sleepy.example"] and sent[-1][0]["Subject"] == "Next steps"
+    assert any(i["type"] == "email" and i["summary"] == "Next steps" for i in crm.timeline(co, "company", lead["id"]))
+    req2 = crm_proactive.request_email(co, "company", lead["id"], to="else@elsewhere.example", subject="Hi", body="Text")
+    asyncio.run(approvals.decide(req2["id"], co, True))
+    assert any(i["summary"].startswith("Emailed else@elsewhere.example") for i in crm.timeline(co, "company", lead["id"]))
+
+    # Meetings from the calendar land on the timeline once, for contacts and the company address.
+    ev = {"id": "evt1", "summary": "Workshop with Sleepy", "start": old, "end": old, "all_day": False,
+          "location": "Zürich", "attendees": ["ERIKA@sleepy.example", "someone@else.example"]}
+    assert crm_proactive._log_event(co, ev) == 1
+    assert crm_proactive._log_event(co, ev) == 0
+    meet = [i for i in crm.timeline(co, "company", lead["id"]) if i["type"] == "meeting"]
+    assert meet[0]["summary"] == "Workshop with Sleepy" and "Erika Sleepy" in meet[0]["body"]
+    assert crm_proactive._log_event(friend, ev) == 0 if friend.can("crm.use") else True
+
+    async def fake_events(uid, start, end, max_results=25):
+        return [ev, {**ev, "id": "evt2", "summary": "Later", "end": "2999-01-01T10:00:00+00:00"}]
+    from orchestrator import google_calendar
+    monkeypatch.setattr(google_calendar, "is_linked", lambda uid: uid == co.id)
+    monkeypatch.setattr(google_calendar, "list_events", fake_events)
+    assert asyncio.run(crm_proactive.log_meetings()) == 0             # evt1 already there, evt2 not over yet
+
+    # The morning jobs: nudges and checklist steps by Telegram unless the briefing carries them; once a day.
+    msgs = []
+
+    async def fake_send(uid, text, note):
+        msgs.append((uid, note))
+        return True
+    monkeypatch.setattr(crm_proactive, "_send", fake_send)
+    assert asyncio.run(crm_proactive.send_nudges()) >= 1 and (co.id, "CRM follow-ups") in msgs
+    db.execute("INSERT INTO briefings(user_id, enabled, days) VALUES (?, 1, 'daily') ON CONFLICT(user_id) DO UPDATE "
+               "SET enabled = 1, days = 'daily'", (co.id,))
+    msgs.clear()
+    asyncio.run(crm_proactive.send_nudges())
+    assert (co.id, "CRM follow-ups") not in msgs
+    db.execute("DELETE FROM briefings WHERE user_id = ?", (co.id,))
+    assert asyncio.run(crm_proactive.send_weekly_reports()) >= 1
+    db.execute("DELETE FROM app_settings WHERE key = 'crm_proactive_state'")
+    spawned = []
+    monkeypatch.setattr(crm_proactive, "_spawn", lambda coro: (spawned.append(coro.__qualname__), coro.close()))
+    monday = datetime(2026, 10, 12, 9, 0, tzinfo=crm_proactive._tz())
+    asyncio.run(crm_proactive.tick(monday))
+    asyncio.run(crm_proactive.tick(monday))
+    assert spawned.count("_safely") == 3                               # nudges, checklists, report; not twice
+    with pytest.raises(crm_proactive.ProactiveError):
+        crm_proactive.save_settings(co, {"nudge_time": "8"})
+    assert crm_proactive.save_settings(co, {"stale_days": 21})["stale_days"] == 21
+    crm_proactive.save_settings(co, {"stale_days": 14})
+    assert employees  # noqa: B018 (module used above through the report)
+
+
+def test_crm_stage5_api(monkeypatch):
+    from fastapi.testclient import TestClient
+    from orchestrator.main import app
+    with TestClient(app, base_url="http://testserver") as c:
+        c.post("/api/login", json={"username": "admin", "password": "correct horse battery"}, headers=CSRF)
+        st = c.get("/api/crm/status").json()
+        assert st["can"]["reports"] and "follow_ups" in st and st["timetrack"] is False
+        fu = c.get("/api/crm-actions/follow-ups?mine=false").json()
+        assert "items" in fu and "stale" in fu["types"]
+        rep = c.get("/api/crm-actions/report?period=last_month").json()
+        assert rep["period"]["key"] == "last_month" and "pipeline" in rep
+        assert c.get("/api/crm-actions/report?period=bogus").status_code == 422
+        co = c.post("/api/crm/companies", json={"fields": {"name": "Mail Probe SA", "email": "hi@probe.example"},
+                                                "force": True}, headers=CSRF).json()["record"]
+        assert c.get(f"/api/crm-actions/recipients?entity=company&id={co['id']}").json()[0]["email"] == "hi@probe.example"
+        req = c.post("/api/crm-actions/email", json={"entity": "company", "id": co["id"], "to": "hi@probe.example",
+                                                     "subject": "Hello", "body": "Text"}, headers=CSRF).json()
+        assert req["status"] == "pending" and req["kind"] == "email"
+        assert c.post("/api/crm-actions/follow-ups/snooze", json={"key": "stale:company:1", "days": 5},
+                      headers=CSRF).status_code == 200
+        assert c.put("/api/crm-actions/proactive-settings", json={"settings": {"report_day": 9}},
+                     headers=CSRF).status_code == 400
+        assert c.get(f"/api/crm-actions/time/company/{co['id']}").json() == {"configured": False}
+        c.post("/api/logout", headers=CSRF)

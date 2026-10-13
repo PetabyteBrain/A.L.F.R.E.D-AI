@@ -28,7 +28,7 @@ from .identity.registry import Person, normalize_phone
 STATUSES = ("lead", "prospect", "client", "partner", "supplier", "former", "other")
 ACTIVITY_KINDS = ("note", "call", "meeting", "task", "document")
 COMPANY_FIELDS = ("name", "status", "industry", "website", "email", "phone", "address", "notes", "tags", "custom",
-                  "source", "owner_id", "group_id")
+                  "source", "owner_id", "group_id", "timetrack_tag")
 CONTACT_FIELDS = ("first_name", "last_name", "company_id", "title", "email", "phone", "notes", "tags", "custom",
                   "source", "owner_id", "group_id")
 DEAL_FIELDS = ("title", "company_id", "contact_id", "stage_id", "value", "probability", "expected_close", "source",
@@ -182,7 +182,7 @@ def _clean(person: Person, entity: str, data: dict) -> dict:
         raise CrmError(f"Unknown field(s): {', '.join(sorted(unknown))}.")
     out: dict = {}
     for k, v in data.items():
-        if k in ("name", "industry", "first_name", "last_name", "title", "source"):
+        if k in ("name", "industry", "first_name", "last_name", "title", "source", "timetrack_tag"):
             out[k] = _text(v, 120)
         elif k == "status":
             v = _text(v, 20).lower()

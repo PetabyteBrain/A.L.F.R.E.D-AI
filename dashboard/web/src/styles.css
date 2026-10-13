@@ -1938,3 +1938,157 @@ main[hidden], [hidden] { display: none !important; }
   .bill-product { grid-template-columns: 1fr auto; }
   .bill-product .meta { grid-column: 1 / -1; }
 }
+
+/* ---------- CRM stage 5: follow-ups, reports, emails to clients, time logged ---------- */
+.crm-followups, .crm-reports { display: grid; gap: 12px; align-content: start; }
+.crm-fu-group { display: grid; gap: 6px; }
+.crm-fu-group .sub { display: flex; align-items: center; gap: 8px; margin: 0; }
+.crm-fu-group .sub .lab-ico { width: 16px; height: 16px; color: var(--accent); }
+.crm-fu-group > p { margin: 0; }
+.crm-fu-list { display: grid; border-top: 1px solid var(--line); }
+.crm-fu { display: flex; align-items: center; gap: 10px; padding: 8px 6px; border-bottom: 1px solid var(--line); min-width: 0; }
+.crm-fu.snoozed { opacity: .6; }
+.crm-fu-main { flex: 1; min-width: 0; display: grid; gap: 3px; border: 0; background: none; padding: 0; text-align: left;
+  font: inherit; color: var(--text); cursor: pointer; }
+.crm-fu-main:hover b { color: var(--accent); }
+.crm-fu-top { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; }
+.crm-fu-top b { color: var(--text-strong); overflow-wrap: anywhere; }
+.crm-fu-actions { flex: none; display: flex; gap: 6px; align-items: center; }
+.crm-email { overflow-x: hidden; }
+.crm-email-draft { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+.crm-email-draft input { flex: 1 1 260px; }
+.crm-time-nums { display: flex; flex-wrap: wrap; gap: 8px 18px; }
+.crm-time-nums > div { display: grid; }
+.crm-time-nums b { font-size: 18px; color: var(--text-strong); font-variant-numeric: tabular-nums; }
+.crm-time p { margin: 4px 0 0; }
+.crm-time > .btn { justify-self: start; }
+.crm-report-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px; align-items: start; }
+.crm-report-card { display: grid; gap: 8px; padding: 12px 14px; border: 1px solid var(--line); background: var(--fill); min-width: 0; }
+.crm-report-card.wide { grid-column: 1 / -1; }
+.crm-report-card.ok { border-top: 2px solid var(--ok); }
+.crm-report-card.bad { border-top: 2px solid var(--bad); }
+.crm-report-card .sub { display: flex; align-items: center; gap: 8px; margin: 0; }
+.crm-report-card .sub .lab-ico { width: 16px; height: 16px; color: var(--accent); }
+.crm-report-card p { margin: 0; }
+.crm-report-sum { margin-left: auto; font-variant-numeric: tabular-nums; color: var(--text-strong); font-weight: 400; letter-spacing: 0;
+  text-transform: none; font-family: inherit; font-size: 14px; }
+.crm-report-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.crm-report-list li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; }
+.crm-report-list li b { margin-left: auto; font-weight: 400; color: var(--text-strong); font-variant-numeric: tabular-nums; }
+.crm-report-note { flex-basis: 100%; font-size: 13px; color: var(--muted); }
+.crm-report-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.crm-report-chip { display: grid; justify-items: center; min-width: 72px; padding: 6px 8px; border: 1px solid var(--line); font-size: 12px; color: var(--muted); }
+.crm-report-chip b { font-size: 18px; color: var(--text-strong); font-variant-numeric: tabular-nums; }
+.crm-hbars { display: grid; gap: 6px; }
+.crm-hbar { display: grid; grid-template-columns: minmax(90px, 200px) minmax(0, 1fr) 64px; align-items: center; gap: 10px; border: 0;
+  background: none; padding: 2px 0; font: inherit; color: var(--text); cursor: pointer; text-align: left; }
+.crm-hbar:hover .crm-hbar-name { color: var(--accent); }
+.crm-hbar-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.crm-hbar-track { height: 10px; background: rgb(var(--accent-rgb) / .08); border: 1px solid var(--line); }
+.crm-hbar-fill { display: block; height: 100%; background: var(--accent); }
+.crm-hbar b { text-align: right; font-weight: 400; font-variant-numeric: tabular-nums; color: var(--text-strong); }
+
+/* ---------- Team (pages/Team.jsx, components/team/*): CRM stage 4 ---------- */
+.team-settings-btn { margin: 10px 8px 0; justify-self: start; }
+.team-away { padding: 0 8px; gap: 4px; }
+.team-away-row { display: flex; align-items: center; gap: 8px; font-size: 13px; min-width: 0; }
+.team-away-row .meta { margin-left: auto; }
+.dot.s-away { --lab: var(--warn); }
+.team-col { display: grid; gap: 14px; align-content: start; min-width: 0; }
+.team-card { display: grid; gap: 8px; padding: 12px 14px; border: 1px solid var(--line); min-width: 0; }
+.team-card .sub { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0; }
+.team-card .sub .lab-ico { width: 16px; height: 16px; color: var(--accent); }
+.team-card .sub > .btn { margin-left: auto; }
+.team-card > .btn { justify-self: start; }
+.team-balance { display: grid; gap: 6px; padding: 12px 14px; border: 1px solid var(--line); background: var(--fill); }
+.team-balance.compact { padding: 8px 10px; margin: 6px 0; }
+.team-balance-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+.team-balance-head > span { font: 600 10px var(--font-display); letter-spacing: .18em; text-transform: uppercase; color: var(--muted); }
+.team-balance-head b { font-size: 22px; color: var(--text-strong); font-variant-numeric: tabular-nums; }
+.team-balance-head small { font-size: 12px; color: var(--muted); font-weight: 400; }
+.team-meter { display: flex; height: 10px; border: 1px solid var(--line); background: rgb(var(--ok-rgb) / .12); overflow: hidden; }
+.team-meter span { display: block; height: 100%; }
+.team-meter .taken, .team-meter-legend i.taken { background: var(--muted); }
+.team-meter .planned, .team-meter-legend i.planned { background: var(--accent); }
+.team-meter .pending, .team-meter-legend i.pending { background: repeating-linear-gradient(45deg, var(--warn) 0 4px, transparent 4px 8px); }
+.team-meter-legend { display: flex; flex-wrap: wrap; gap: 4px 12px; }
+.team-meter-legend i { display: inline-block; width: 10px; height: 10px; margin-right: 5px; vertical-align: -1px; }
+.team-absences { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.team-absences li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; padding: 6px 8px;
+  border-left: 3px solid var(--kind, var(--line)); background: var(--fill); }
+.team-absences.past li { opacity: .75; }
+.team-absences li .btn { margin-left: auto; }
+.team-abs-kind { font: 600 10px var(--font-display); letter-spacing: .16em; text-transform: uppercase; color: var(--muted); }
+.team-abs-who { color: var(--text-strong); font-weight: 400; }
+.team-abs-when { color: var(--text-strong); }
+.team-abs-note { flex-basis: 100%; }
+.k-holiday { --kind: var(--accent); }
+.k-sick { --kind: var(--bad); }
+.k-unpaid { --kind: var(--muted); }
+.k-training { --kind: #b58cff; }
+.k-parental { --kind: var(--ok); }
+.k-other { --kind: var(--warn); }
+.team-progress { height: 6px; background: rgb(var(--accent-rgb) / .1); border: 1px solid var(--line); }
+.team-progress span { display: block; height: 100%; background: var(--ok); transition: width .3s; }
+.team-checklist.k-offboarding .team-progress span { background: var(--warn); }
+.team-checklists { display: grid; gap: 12px; align-content: start; }
+.team-steps { list-style: none; margin: 0; padding: 0; display: grid; }
+.team-steps li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; padding: 6px 0; border-bottom: 1px solid var(--line); }
+.team-steps li .team-step-check { flex: 1 1 240px; }
+.team-steps li .team-step-due { flex: none; min-width: 84px; }
+.team-steps li.mine .team-step-title { font-weight: 600; }
+.team-steps li.done .team-step-title { text-decoration: line-through; color: var(--muted); }
+.team-steps li.overdue .team-step-due { color: var(--bad); }
+.team-step-check { display: flex; align-items: center; gap: 10px; min-width: 0; cursor: pointer; }
+.team-step-check input { width: 18px; height: 18px; flex: none; accent-color: var(--ok); }
+.team-step-title { overflow-wrap: anywhere; color: var(--text-strong); }
+.team-step-who { max-width: 170px; }
+.icon-x { border: 1px solid transparent; background: none; color: var(--muted); cursor: pointer; font: inherit; padding: 2px 7px; line-height: 1.2; }
+.icon-x:hover:not(:disabled) { color: var(--text-strong); border-color: var(--line); }
+.icon-x:disabled { opacity: .35; cursor: default; }
+.team-step-add { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.team-step-add input:first-child { flex: 1 1 200px; }
+.team-step-add input[type="date"] { width: auto; }
+.team-kinds { margin: 4px 0 12px; }
+.team-month-nav { display: flex; align-items: center; gap: 4px; }
+.team-month { min-width: 130px; text-align: center; color: var(--text-strong); }
+.team-grid-wrap { overflow-x: auto; border: 1px solid var(--line); }
+.team-grid { display: grid; min-width: 760px; font-size: 12px; }
+.team-grid-row { display: contents; }
+.team-grid-corner, .team-person { position: sticky; left: 0; z-index: 1; background: var(--bg); border-right: 1px solid var(--line); }
+.team-person { display: flex; align-items: center; padding: 0 8px; min-height: 30px; overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap; border-bottom: 1px solid var(--line); text-align: left; text-decoration: none; }
+button.team-person { color: var(--text-strong); }
+.team-day-head { display: grid; justify-items: center; padding: 4px 0; border-bottom: 1px solid var(--line); color: var(--muted); }
+.team-day-head b { color: var(--text-strong); font-weight: 400; }
+.team-day-head.we, .team-day-head.ph { color: var(--faint); }
+.team-day-head.today b { color: var(--accent); font-weight: 700; }
+.team-cell { min-height: 30px; border-bottom: 1px solid var(--line); border-left: 1px solid rgb(var(--accent-rgb) / .05); }
+.team-cell.we { background: rgb(var(--accent-rgb) / .035); }
+.team-cell.ph { background: repeating-linear-gradient(135deg, rgb(var(--accent-rgb) / .08) 0 3px, transparent 3px 7px); }
+.team-cell.today { box-shadow: inset 1px 0 0 var(--accent), inset -1px 0 0 var(--accent); }
+.team-cell.s-approved { background: var(--kind); opacity: .85; }
+.team-cell.s-pending { background: repeating-linear-gradient(45deg, var(--kind) 0 4px, transparent 4px 8px); }
+.team-cell.half.s-approved { background: linear-gradient(to top, var(--kind) 50%, transparent 50%); }
+.team-grid-empty { grid-column: 1 / -1; padding: 16px; }
+.team-legend { display: flex; flex-wrap: wrap; gap: 6px 14px; }
+.team-legend i { display: inline-block; width: 14px; height: 10px; min-height: 0; margin-right: 6px; vertical-align: -1px; border: 1px solid var(--line); }
+.team-steps-edit { display: grid; gap: 6px; border: 1px solid var(--line); padding: 10px 12px; margin: 12px 0 0; min-width: 0; }
+.team-steps-edit legend { padding: 0 6px; font: 600 10px var(--font-display); letter-spacing: .18em; text-transform: uppercase; color: var(--muted); }
+.team-steps-edit p { margin: 0 0 4px; }
+.team-step-row { display: grid; grid-template-columns: minmax(0, 1fr) 76px minmax(120px, 190px) auto auto auto; gap: 6px; align-items: center; }
+.team-steps-edit > .btn { justify-self: start; }
+.team-settings { width: min(860px, 100%); }
+
+@media (max-width: 760px) {
+  .crm-fu { flex-wrap: wrap; }
+  .crm-fu-actions { width: 100%; justify-content: flex-end; }
+  .crm-hbar { grid-template-columns: minmax(70px, 120px) minmax(0, 1fr) 54px; }
+  .team-steps li .team-step-due { padding-left: 28px; }
+  .team-step-row { grid-template-columns: minmax(0, 1fr) 64px auto auto auto; }
+  .team-step-row select { grid-column: 1 / -1; grid-row: 2; }
+}
+@media print {
+  .mail-side, .mail-toolbar .btn, .crm-billing-tools { display: none !important; }
+  .crm-report-card { break-inside: avoid; }
+}

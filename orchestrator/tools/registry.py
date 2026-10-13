@@ -24,7 +24,7 @@ class ToolSpec:
     kind: str
     description: str
     input_schema: dict
-    permission: str | None = None   # orchestrator/permissions.py; None = everyone
+    permission: str | None = None   # orchestrator/permissions.py; "a|b" = either one; None = everyone
     config: dict = field(default_factory=dict)
     channels: tuple[str, ...] = ()  # empty = every channel
 
@@ -32,7 +32,7 @@ class ToolSpec:
         if not self.permission:
             return True
         from .. import permissions
-        return permissions.can(person, self.permission)
+        return any(permissions.can(person, p) for p in self.permission.split("|"))
 
     def api_definition(self) -> dict:
         if self.kind == "anthropic_server":   # runs on Anthropic's side (e.g. web search): no schema
@@ -62,7 +62,7 @@ def load() -> dict[str, ToolSpec]:
             continue
         from .. import permissions
         perm = entry.pop("permission", None)
-        if perm is not None and perm not in permissions.KEYS:
+        if perm is not None and not set(perm.split("|")) <= permissions.KEYS:
             log.error("Tool %s: unknown permission %r — skipped", name, perm)
             continue
         tools[name] = ToolSpec(
@@ -131,7 +131,7 @@ def tools_for(person: Person | str, channel: str | None = None, person_id: int |
     else:
         perms, link_id = permissions.for_person(person), person.id
     return [s.api_definition() for s in sorted(_TOOLS.values(), key=lambda s: s.name)
-            if (not s.permission or s.permission in perms)
+            if (not s.permission or any(p in perms for p in s.permission.split("|")))
             and (not s.channels or channel is None or channel in s.channels)
             and _available(s, link_id)]
 

@@ -1,6 +1,6 @@
 ---
 title: CRM: clients and contacts
-description: The sales pipeline and deals, quotes and invoices with the QR-bill, companies and people, suggested leads, the timeline, undo and approvals.
+description: The sales pipeline and deals, follow-ups, quotes and invoices with the QR-bill, companies and people, suggested leads, emails to clients, reports, the timeline, undo and approvals.
 sidebar_position: 12
 ---
 
@@ -40,6 +40,8 @@ You can do most things just by telling Alfred:
 > "Write an invoice for Acme: 10 hours of web design." / "Make a quote for Beispiel Shop: online shop, CHF 9'000."
 >
 > "Send it." · "Acme paid invoice R-2026-0003." · "Which invoices are overdue?" · "Remind Café Muster about their invoice."
+>
+> "What should I follow up on?" · "Email Acme and ask whether they've looked at our offer." · "How did last week go?"
 
 Alfred looks a record up before he changes it and only uses details you give him. If something looks like a record
 that already exists, he tells you which and asks before creating a second one. He never deletes or merges anything
@@ -47,8 +49,31 @@ himself: that becomes a request that someone with approval rights decides (see b
 
 ## The CRM tab
 
-The tab has the same layout as Mail: views on the left (**Pipeline**, **Companies**, **People**, **Leads**,
-**Approvals**), a list or the board, and a record that opens in place.
+The tab has the same layout as Mail: views on the left (**Pipeline**, **Follow-ups**, **Companies**, **People**,
+**Quotes & invoices**, **Leads**, **Reports**, **Approvals**), a list or the board, and a record that opens in place.
+
+### Follow-ups
+
+What needs a nudge, most pressing first: deals whose **next step is due**, deals **past their expected close date**,
+open deals **without a next step**, **leads and prospects nobody has been in touch with** for a while (14 days by
+default), **overdue invoices** and **quotes about to expire**. **Mine** shows the records you own; **Everyone's**
+all the ones you can see.
+
+- Click an entry to open it. **Email** opens a follow-up email (see below).
+- **Put off…** hides an entry for a day, a few days, a week or a month; **Show put off** brings them back into view.
+- Each weekday morning Alfred sends you your follow-ups: inside the morning briefing if you get one, otherwise as a
+  short Telegram message.
+- **Settings** (for whoever sets up the CRM): after how many days a lead needs a nudge, when the morning message goes
+  out, the weekly report, and whether meetings are logged from calendars.
+
+### Emails to clients
+
+The **Email** button on a company, a person, a deal or a follow-up opens an email to them. **Let Alfred draft it**
+writes one from the record and its recent history (optionally tell him what it should say); for deals he also
+suggests a **next step** you can save on the deal with one click. Edit it as you like, pick the address, and **Send
+for approval**: like quotes and invoices, an email to a client goes out only once someone with approval rights agrees
+(you may approve your own). It's sent from the company mailbox in the company layout, signed on your behalf, and
+shows on the timeline. You can also just ask Alfred to write to a client; it waits for approval the same way.
 
 ### Pipeline
 
@@ -103,8 +128,12 @@ company** or **Add anyway**. The dropdown shows what was added, linked or dismis
 - **People**: everyone at the company; **Add a person** creates one already linked to it.
 - **Timeline**: write a **note**, log a **call**, **meeting** or **document** (with an optional date if it happened
   earlier). Emails to and from the company's or person's addresses appear by themselves (only mail you're allowed to
-  read), and so do calls Alfred made to their numbers for you. Filter by kind; open an entry to read the details.
-  You can remove entries you wrote yourself.
+  read), and so do calls Alfred made to their numbers for you. **Meetings** in a linked Google Calendar that one of
+  their people (or the company's address) was invited to are added once they're over. Filter by kind; open an entry
+  to read the details. You can remove entries you wrote yourself.
+- **Time logged** (when the time-tracking app is linked): hours this month, in the last 30 days and this year, by
+  person, and the latest sessions. Work counts for a client when its tag has the client's name, or the
+  **time-tracking tag** set on the company (Edit).
 - **History**: every change, who made it and when. **Undo** reverts your own latest change. After saving, a message
   at the bottom of the screen also offers **Undo** for a few seconds.
 - **More**: **Archive** hides a record from the lists without deleting it (undoable; find it again with **Archive** in
@@ -142,10 +171,18 @@ goes to clients, and the billing settings are three separate permissions.
   quotes are valid, number formats (for example R-{year}-{seq:04d}; numbers run without gaps per year), rounding to
   5 Rappen, the footer texts and the email texts, and the **products & services** list.
 
+### Reports
+
+The same figures as the **weekly CRM report** Alfred sends on Monday mornings to everyone allowed to see reports, for
+any period (this or last week, month or quarter): the open pipeline and weighted value, **won** and **lost** deals
+with their reasons, new deals and companies, activity (notes, calls, meetings), invoices issued, payments received and
+what's overdue, **hours per client** from time tracking, and who's away in the next seven days. **Print** gives a
+clean page.
+
 ## Approvals
 
-Deleting a record or a deal for good, merging two records into one, sending a quote or an invoice, payment reminders
-and cancelling an issued document never happen directly.
+Deleting a record or a deal for good, merging two records into one, emails to clients, sending a quote or an
+invoice, payment reminders and cancelling an issued document never happen directly.
 
 1. Someone asks (on the record's **More** menu, or by telling Alfred).
 2. Everyone allowed to approve gets a Telegram message with **Approve** / **Reject** buttons, and the request waits
@@ -163,4 +200,4 @@ other is then deleted. You can withdraw your own request while it's waiting.
   at those companies).
 - Emails show up on a timeline only if you may read them anyway (company mail needs access to the Mail tab).
 
-Next: back to the [contents](index.md).
+Next: [Team: employees, time off and onboarding](13-team.md).

@@ -9,7 +9,9 @@ Deletion is asked for by the person on Profile and carried out by an admin (Peop
   mode, Google link (revoked at Google), activity lines and blocked-access lines with their
   numbers. Account and connections stay, so Alfred still knows them.
 - scope "account": all of that, then the person, their connections, 2FA and sessions.
-Usage/cost rows are kept without the name (bookkeeping). Backups: database snapshots age out
+Usage/cost rows are kept without the name (bookkeeping). Employee records and absences (orchestrator/employees.py)
+are business records with a legal retention period: they are in the export but stay on deletion (an erased
+account is unlinked from its employee record); CRM records are the company's, not the person's. Backups: database snapshots age out
 of the Jetson within 14 days; recordings already in the backup within the retention period.
 """
 from __future__ import annotations
@@ -54,6 +56,7 @@ def collect(user_id: int) -> dict:
                                 (s["id"],))
     google = db.query_one("SELECT email, scopes, share_availability, linked_at FROM google_accounts WHERE user_id = ?",
                           (user_id,))
+    from . import employees
     return {
         "exported_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "service": settings.assistant_name,
@@ -78,6 +81,7 @@ def collect(user_id: int) -> dict:
                                "FROM external_calls WHERE requested_by = ?", (user_id,)),
         "emails": _rows("SELECT direction, kind, scope, from_addr, to_addrs, cc_addrs, subject, body_text, "
                         "attachments, summary, created_at FROM emails WHERE user_id = ? ORDER BY id", (user_id,)),
+        "employee": employees.collect(user_id),
         "escalations": _rows("SELECT source, topic, summary, urgency, status, note, created_at, handled_at "
                              "FROM escalations WHERE requester_id = ?", (user_id,)),
         "settings": {
@@ -210,7 +214,7 @@ async def erase(user_id: int, scope: str, *, by: Person) -> dict:
         conn.execute("DELETE FROM scheduled_calls WHERE target_user_id = ? OR requested_by = ?", (user_id, user_id))
         conn.execute("DELETE FROM external_calls WHERE requested_by = ?", (user_id,))
         for table in ("briefings", "quiet_hours", "voice_mode", "context_resets", "google_accounts", "nas_recent",
-                      "event_categories"):
+                      "event_categories", "crm_snoozes"):
             conn.execute(f"DELETE FROM {table} WHERE user_id = ?", (user_id,))
         conn.execute("DELETE FROM activity WHERE user_id = ?", (user_id,))
         for value in idents:

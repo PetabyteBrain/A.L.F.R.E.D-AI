@@ -85,7 +85,10 @@ Every morning (or weekdays only) at a time you choose, Alfred sends a short brie
 - what happened overnight (calls made for you and their outcome),
 - your open tasks,
 - for admins and cofounders: the most important company to-dos (and on Mondays, items that have been "in
-  progress" for a long time), and failed automations for admins.
+  progress" for a long time), and failed automations for admins,
+- with the CRM: the clients and deals you should follow up on ([CRM](12-crm.md#follow-ups)),
+- with the employee directory: who's away today, and onboarding or offboarding steps that are yours today
+  ([Team](13-team.md)).
 
 **Set it up:** **Profile → How Alfred serves you → Daily briefing** (time, every day or weekdays, Telegram or a
 call, weather town), or ask: "Send me a briefing every weekday at 7:30 by Telegram, weather for Bern."

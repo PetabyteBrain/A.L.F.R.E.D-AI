@@ -15,7 +15,8 @@ const FIELD_WORD = { stage_id: "stage", value: "value", probability: "probabilit
                      next_step: "next step", next_step_at: "next step date", outcome_note: "outcome", company_id: "company",
                      contact_id: "contact", owner_id: "owner", group_id: "group" };
 
-export default function DealView({ id, status, onBack, onOpen, onEdit, onToast, onChanged, canBilling, onNewDoc, onOpenDoc }) {
+export default function DealView({ id, status, onBack, onOpen, onEdit, onToast, onChanged, canBilling, onNewDoc, onOpenDoc,
+                                  onEmail }) {
   const path = `/crm/deals/${id}`;
   const { data: d, error, reload } = usePoll(() => api(path), 0, [path]);
   const [hist, setHist] = useState(null);
@@ -58,6 +59,8 @@ export default function DealView({ id, status, onBack, onOpen, onEdit, onToast, 
             <button className="btn small" onClick={() => onEdit(d)} disabled={d.archived}>Edit</button>
             <button className="btn small" onClick={() => document.getElementById("crm-composer-input")?.focus()} disabled={d.archived}>
               <Icon name="note" className="btn-ico" />Log</button>
+            {onEmail && <button className="btn small" onClick={() => onEmail("deal", { ...d, name: d.title }, () => changed(null))}
+                                disabled={d.archived}><Icon name="mail" className="btn-ico" />Email</button>}
             <div className="crm-menu">
               <button className="btn ghost small" aria-haspopup="menu" aria-expanded={menu} onClick={() => setMenu(!menu)}>More ▾</button>
               {menu && (

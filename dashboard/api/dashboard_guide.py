@@ -35,8 +35,23 @@ PAGES: dict[str, tuple[str, str]] = {
                    "call, meeting or document; emails to and from their addresses and Alfred's outside calls appear "
                    "by themselves), History with Undo, More: archive, merge into, delete (merging and deleting wait "
                    "for approval). New company / New person (duplicate warning while typing). Sidebar: status and "
-                   "tag filters, only mine, archive; Approvals (approve/reject with a note, withdraw own). Keys: / "
+                   "tag filters, only mine, archive; Approvals (approve/reject with a note, withdraw own). "
+                   "Follow-ups: stale leads, deals without a next step or past their close date, overdue invoices, "
+                   "expiring quotes (mine/everyone's; Email drafts a follow-up that waits for approval; Put off for a "
+                   "while; Settings: nudge time, days without contact, weekly report, meeting logging). Reports: "
+                   "pipeline, won/lost with reasons, new business, invoices, hours per client, who's away, for a "
+                   "chosen period (Print). Email button on a company, person or deal: Alfred drafts it, you edit, "
+                   "it's sent after approval. Time logged on companies when time tracking is linked. Keys: / "
                    "search, n new, Esc back."),
+    "team": ("Team", "Me: own holiday balance (taken, planned, waiting, left) and time off; Request time off (kind, "
+                     "dates, half day, note; waits for approval). Directory: employees with title, department, "
+                     "manager, status (starting, onboarding, leaving, former) and who's away; open one for details, "
+                     "balance, time off (withdraw or cancel), onboarding/offboarding checklist (tick steps, add, "
+                     "assign, close), responsibilities, hours tracked, history. New employee / Edit send the change "
+                     "for approval (optionally starting onboarding or offboarding). Absences: month calendar of the "
+                     "team (striped = waiting for approval) and the month's list. Checklists: all running ones or "
+                     "My steps. Approvals: employee changes and time off. Holidays & checklists: default holiday "
+                     "days, public holidays, the checklist templates."),
     "mail": ("Mail", "admins/cofounders: Alfred's own mailbox: inbox, unread, starred, sent, archived, all, "
                      "inquiries and matters passed to the team (mark handled). Groups (like folders) and coloured "
                      "tags in the sidebar (+ to add, pencil to rename/recolour/delete; own ones, plus shared team ones "
@@ -61,6 +76,7 @@ PAGES: dict[str, tuple[str, str]] = {
 }
 # Tabs that need a permission (any of them); the dashboard's App.jsx uses the same rules.
 TAB_PERMISSIONS = {"people": ("people.manage",), "usage": ("usage.view",), "mail": ("mail.tab",), "crm": ("crm.use",),
+                   "team": ("employees.self", "employees.view", "employees.manage", "employees.approve"),
                    "settings": ("settings.manage", "roles.manage")}
 
 

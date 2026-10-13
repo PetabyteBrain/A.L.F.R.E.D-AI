@@ -7,7 +7,7 @@ import { ErrorNote } from "../common.jsx";
 
 const EMPTY = {
   company: { name: "", status: "lead", industry: "", website: "", email: "", phone: "", address: "", notes: "",
-             tags: [], custom: {}, source: "", owner_id: "", group_id: "" },
+             tags: [], custom: {}, source: "", owner_id: "", group_id: "", timetrack_tag: "" },
   contact: { first_name: "", last_name: "", company_id: "", title: "", email: "", phone: "", notes: "",
              tags: [], custom: {}, source: "", owner_id: "", group_id: "" },
 };
@@ -250,6 +250,12 @@ export default function RecordEditor({ entity, record, status, presetCompany, on
           <label className="field wide"><span>Source</span>
             <input value={form.source} maxLength={120} placeholder="e.g. referral, website, market analysis" onChange={(e) => set("source", e.target.value)} />
           </label>
+          {entity === "company" && status?.timetrack && (
+            <label className="field wide"><span>Time-tracking tag</span>
+              <input value={form.timetrack_tag} maxLength={120} onChange={(e) => set("timetrack_tag", e.target.value)}
+                     placeholder={`Empty = sessions tagged “${form.name || "with its name"}”; several: comma-separated`} />
+            </label>
+          )}
         </div>
         <p className="muted tiny">Who sees it: the owner, whoever added it{form.group_id ? ", everyone in the group" : ""} and people
           allowed to see every record.</p>

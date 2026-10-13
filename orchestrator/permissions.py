@@ -57,10 +57,16 @@ _CATALOGUE = [
     ("crm.edit", "CRM", "CRM: add and change clients, contacts and their timeline", "c"),
     ("crm.settings", "CRM", "CRM: set up the sales pipeline (stages)", "c"),
     ("crm.approve", "CRM", "CRM: approve deletions, merges and anything sent to clients", "c"),
+    ("crm.reports", "CRM", "CRM: reports and the weekly CRM report", "c"),
 
     ("billing.use", "Billing", "Quotes and invoices: write, issue and record payments", "c"),
     ("billing.approve", "Billing", "Approve sending quotes, invoices and reminders to clients", "c"),
     ("billing.settings", "Billing", "Billing settings: bank account, VAT, numbering, products", "c"),
+
+    ("employees.self", "Employees", "Own employee record: request holidays and absences, see own balance", "c"),
+    ("employees.view", "Employees", "Employee directory, absences calendar and onboarding checklists", "c"),
+    ("employees.manage", "Employees", "Propose employee changes, record absences, run onboarding and offboarding", "c"),
+    ("employees.approve", "Employees", "Approve employee data changes and absence requests", "c"),
 
     ("automations.view", "Automations", "See n8n workflows and their runs", "c"),
     ("automations.run", "Automations", "Run n8n workflows", "c"),

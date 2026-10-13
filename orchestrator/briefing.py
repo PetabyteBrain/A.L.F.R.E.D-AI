@@ -206,6 +206,27 @@ async def gather(person: Person) -> dict:
     if company:
         out["company_todo"] = company
 
+    # CRM stage 4/5: the person's client follow-ups, who's away, their onboarding/offboarding steps.
+    try:
+        if person.can("crm.use"):
+            from . import crm_proactive
+            items = crm_proactive.follow_ups(person)
+            if items:
+                out["crm_follow_ups"] = {"count": len(items), "top": [
+                    f"{i['title']}" + (f" ({i['company_name']})" if i.get("company_name") and i["entity"] == "deal" else "")
+                    + f": {i['detail']}" for i in items[:5]]}
+        from . import employees
+        if person.can("employees.view"):
+            away = employees.away_today(now.date())
+            if away:
+                out["team_away_today"] = away
+        steps = [t for t in employees.due_tasks(now.date(), unreminded_only=False) if t["assignee_id"] == person.id]
+        if steps:
+            out["checklist_steps_due"] = [f"{t['employee_name']} ({t['kind']}): {t['title']}" for t in steps[:6]]
+            employees.mark_reminded([t["id"] for t in steps], now.date())
+    except Exception as e:  # noqa: BLE001
+        log.warning("Briefing CRM part failed: %s", e)
+
     if settings.n8n_enabled and person.can("automations.view"):
         try:
             from .tools import n8n_tool
@@ -262,13 +283,15 @@ async def compose(person: Person, data: dict, channel: str) -> str:
     style = ("It will be read aloud on a phone call: 4-7 short spoken sentences, no lists, no symbols, "
              "no emoji, times said naturally." if channel == "call" else
              "It is a Telegram message: a greeting line, then short lines grouped as needed (weather, "
-             "calendar, reminders, calls, tasks, company to-do), plain text with at most a few emoji as markers, no "
+             "calendar, reminders, calls, tasks, company to-do, clients, team), plain text with at most a few emoji as markers, no "
              "headings, no Markdown tables. Under 900 characters.")
     system = (f"You are {settings.assistant_name}, a discreet, warm British butler (Alfred Pennyworth's manner) "
               f"writing {who}'s daily briefing. Use ONLY the facts in the JSON; never invent events or details. "
               f"Skip sections that are empty or missing; say 'a clear calendar' if calendar_today is an empty "
               f"list. For company_todo give the top few items briefly; if in_progress_for_2_weeks_or_more is "
-              f"present, add a gentle nudge about those. Mention anything 'unavailable' in a few words. {style} "
+              f"present, add a gentle nudge about those. crm_follow_ups are clients and deals to follow up on: name the top "
+              f"one or two briefly and the count. team_away_today: who's away. checklist_steps_due: onboarding or "
+              f"offboarding steps that are theirs today. Mention anything 'unavailable' in a few words. {style} "
               f"Address them as {who}. End with one "
               f"brief, dry, kind remark, not a question.")
     if not ai_config.configured():

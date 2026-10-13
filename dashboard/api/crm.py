@@ -7,7 +7,7 @@ from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException, Path, Query
 from pydantic import BaseModel, ConfigDict, Field
 
-from orchestrator import approvals, crm, crm_deals, crm_leads, db, permissions
+from orchestrator import approvals, crm, crm_deals, crm_leads, crm_proactive, db, permissions, timetrack
 from orchestrator.identity.registry import Person
 
 from .routes import current_person, requires
@@ -59,7 +59,7 @@ def _run(fn, *args, **kwargs):
         return fn(*args, **kwargs)
     except crm.DuplicateError as e:
         raise HTTPException(status_code=409, detail={"message": str(e), "duplicates": e.matches})
-    except (crm.CrmError, approvals.ApprovalError) as e:
+    except (crm.CrmError, approvals.ApprovalError, crm_proactive.ProactiveError) as e:
         raise HTTPException(status_code=400, detail=str(e))
 
 
@@ -75,7 +75,8 @@ async def status(person: Person = Depends(current_person)) -> dict:
     return {"counts": _run(crm.counts, person), "statuses": crm.STATUSES, "activity_kinds": crm.ACTIVITY_KINDS,
             "can": {"edit": person.can("crm.edit"), "approve": person.can("crm.approve"),
                     "view_all": person.can("crm.view_all"), "settings": person.can("crm.settings"),
-                    "billing": person.can("billing.use")},
+                    "billing": person.can("billing.use"), "reports": person.can("crm.reports")},
+            "follow_ups": len(_run(crm_proactive.follow_ups, person)), "timetrack": timetrack.configured(),
             "stages": crm_deals.stages(), "leads": crm_leads.counts(person),
             "deals_open": _run(crm_deals.search, person, status="open", limit=1)["total"],
             "approvals_pending": approvals.pending_count(person),
@@ -259,6 +260,102 @@ async def link_lead(body: LeadLink, lead_id: int = Path(ge=1), person: Person = 
 @actions.post("/leads/dismiss")
 async def dismiss_leads(body: Ids, person: Person = Depends(current_person)) -> dict:
     return {"dismissed": _run(crm_leads.dismiss, person, body.ids)}
+
+
+class SnoozeBody(Strict):
+    key: str = Field(min_length=3, max_length=60)
+    days: int = Field(default=7, ge=1, le=90)
+
+
+class DraftBody(Strict):
+    entity: Entity
+    id: int = Field(ge=1)
+    hint: str = Field(default="", max_length=500)
+
+
+class EmailBody(Strict):
+    entity: Entity
+    id: int = Field(ge=1)
+    to: str = Field(min_length=3, max_length=254)
+    subject: str = Field(min_length=1, max_length=200)
+    body: str = Field(min_length=1, max_length=5000)
+
+
+class SettingsBody(Strict):
+    settings: dict
+
+
+@actions.get("/follow-ups")
+async def follow_ups(person: Person = Depends(current_person), mine: bool = True, snoozed: bool = False) -> dict:
+    items = _run(crm_proactive.follow_ups, person, mine=mine, include_snoozed=snoozed)
+    if snoozed:
+        until = {r["item_key"]: r["until"] for r in db.query(
+            "SELECT item_key, until FROM crm_snoozes WHERE user_id = ? AND until > ?",
+            (person.id, crm_proactive._today().isoformat()))}
+        for i in items:
+            i["snoozed_until"] = until.get(i["key"])
+    return {"items": items, "types": crm_proactive.TYPES, "settings": crm_proactive.get_settings()}
+
+
+@actions.post("/follow-ups/snooze")
+async def snooze(body: SnoozeBody, person: Person = Depends(current_person)) -> dict:
+    return _run(crm_proactive.snooze, person, body.key, body.days)
+
+
+@actions.delete("/follow-ups/snooze")
+async def unsnooze(person: Person = Depends(current_person), key: str = Query(max_length=60)) -> dict:
+    crm_proactive.unsnooze(person, key)
+    return {"key": key}
+
+
+@actions.get("/report")
+async def report(person: Person = Depends(current_person),
+                 period: Literal["this_week", "last_week", "this_month", "last_month", "this_quarter",
+                                 "last_quarter"] = "last_week") -> dict:
+    try:
+        return await crm_proactive.report(person, period)
+    except crm_proactive.ProactiveError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+
+
+@actions.get("/proactive-settings")
+async def proactive_settings(person: Person = Depends(current_person)) -> dict:
+    return crm_proactive.get_settings()
+
+
+@actions.put("/proactive-settings")
+async def save_proactive_settings(body: SettingsBody, person: Person = Depends(current_person)) -> dict:
+    return _run(crm_proactive.save_settings, person, body.settings)
+
+
+@actions.get("/recipients")
+async def recipients(person: Person = Depends(current_person), entity: Entity = Query(...),
+                     id: int = Query(ge=1)) -> list[dict]:
+    return _run(crm_proactive.recipients, person, entity, id)
+
+
+@actions.post("/email-draft")
+async def email_draft(body: DraftBody, person: Person = Depends(current_person)) -> dict:
+    try:
+        return await crm_proactive.draft_email(person, body.entity, body.id, body.hint)
+    except (crm.CrmError, crm_proactive.ProactiveError) as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@actions.post("/email")
+async def email(body: EmailBody, person: Person = Depends(current_person)) -> dict:
+    return _run(crm_proactive.request_email, person, body.entity, body.id, to=body.to, subject=body.subject,
+                body=body.body)
+
+
+@actions.get("/time/company/{company_id}")
+async def company_time(company_id: int = Path(ge=1), person: Person = Depends(current_person)) -> dict:
+    try:
+        return await timetrack.company_hours(person, company_id)
+    except crm.CrmError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except timetrack.TimetrackError as e:
+        return {"configured": True, "error": str(e)}
 
 
 @actions.delete("/activities/{activity_id}")

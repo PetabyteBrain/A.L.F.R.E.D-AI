@@ -127,6 +127,21 @@ docs and the real homelab map are git-ignored (`docs/PROJECT_PLAN.md`, `CLAUDE.l
 - API `dashboard/api/crm.py` (`/api/crm/{companies|contacts|deals}...` and fixed paths under `/api/crm-actions`:
   pipeline, stages, leads, approvals, undo); UI `pages/CRM.jsx` + `components/crm/*` (same layout classes as Mail).
   Tools crm_*, crm_deals, crm_deal_save, crm_leads, crm_lead_decide and list/decide_approval.
+- Employees (stage 4): `orchestrator/employees.py` (`employees` linked to a user by `user_id`, `employee_history`,
+  `employee_absences`, `employee_checklists` + `employee_tasks`; settings "employees": holiday days, public holidays,
+  checklist templates). Permissions employees.self / view / manage / approve. EVERY change to employee data is an
+  approval (area "employees": save, absence, absence_cancel); checklist ticking is direct. `approvals.on_close` tidies
+  up rejected/withdrawn requests. `employees.away(user_id, day)` is what `scheduler` checks before calls others ask
+  for (refused at request time, postponed to the day they're back at dispatch). API `dashboard/api/team.py`
+  (`/api/team/...`, plus the generic `/api/approvals` used by both tabs); UI `pages/Team.jsx` + `components/team/*`.
+- Time tracking: `orchestrator/timetrack.py` reads the time-tracking app's read-only export (TIMETRACK_URL /
+  TIMETRACK_TOKEN; Chrono `GET /api/export/sessions`), cached 5 min; client = tag or tag group matching the
+  company's `timetrack_tag` or name (`crm.name_key`), employee = `timetrack_user` or name. Never writes there.
+- Proactive (stage 5): `orchestrator/crm_proactive.py` (follow_ups + `crm_snoozes`, weekday nudges unless the
+  briefing carries them, weekly report to crm.reports, emails to clients as approval kind crm/email, meetings from
+  linked calendars logged once per event via `crm_activities.source_ref`, checklist reminders); its loop starts in
+  `main.lifespan`, jobs claim their day/hour in app_settings "crm_proactive_state". Tools crm_follow_ups, crm_email,
+  crm_report, team_directory, absence, employee_change, employee_checklist. A tool `permission:` may be "a|b".
 
 ## Calls, calendar, usage
 - Call requests: `orchestrator/scheduler.py` (tools place_call/schedule_call/...; `end_call` is
