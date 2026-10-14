@@ -688,6 +688,9 @@ async def tick(now: datetime | None = None) -> None:
         _spawn(_safely("weekly report", send_weekly_reports))
     if s["auto_meetings"] and settings.google_enabled and _claim("meetings", now.strftime("%Y-%m-%dT%H")):
         _spawn(_safely("meetings logged", log_meetings))
+    if settings.google_enabled and _claim("deadline_sync", now.strftime("%Y-%m-%dT%H")):
+        from . import deadlines                    # followed CRM/board sources stay in step with Google Calendar
+        _spawn(_safely("deadlines synced", deadlines.keep_synced))
 
 
 async def background_loop() -> None:

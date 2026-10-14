@@ -6331,3 +6331,88 @@ def test_boards_api_tools_and_buttons(monkeypatch):
     monkeypatch.setattr(telegram_handler, "_append_note", lambda q, note: asyncio.sleep(0))
     asyncio.run(telegram_handler.on_button(type("Upd", (), {"callback_query": Q()})(), None))
     assert answered and answered[0].startswith("✓ Accepted")
+
+
+def test_deadlines_in_the_agenda_and_their_google_sync(monkeypatch):
+    import asyncio
+    from datetime import timedelta
+    from orchestrator import agenda, boards, crm_deals, deadlines, google_calendar
+    p = registry.get_person(registry.add_user("Dora Deadline", "cofounder"))
+    other = registry.get_person(registry.add_user("Otto Other", "cofounder"))
+    today = deadlines._today()
+    d = lambda n: (today + timedelta(days=n)).isoformat()  # noqa: E731
+    b = boards.create_board(p, name="Deadline board", key="DLB", template="simple")
+    mine = boards.save_item(p, {"title": "Write the offer", "assignee_id": p.id, "due_date": d(3)}, board_id=b["id"])
+    theirs = boards.save_item(p, {"title": "Someone else's", "assignee_id": other.id, "due_date": d(4)}, board_id=b["id"])
+    deal = crm_deals.save(p, {"title": "Deadline deal", "expected_close": d(10), "next_step": "Call back",
+                              "next_step_at": d(2)})["record"]
+    rng = (d(-1), d(30))
+
+    got = deadlines.items(p, *rng)
+    keys = {i["key"] for i in got}
+    assert {f"work:{mine['id']}", f"deal_close:{deal['id']}", f"deal_step:{deal['id']}"} <= keys
+    assert f"work:{theirs['id']}" not in keys                        # mine only, by default
+    assert f"work:{theirs['id']}" in {i["key"] for i in deadlines.items(p, *rng, scope="all")}
+    w = next(i for i in got if i["key"] == f"work:{mine['id']}")
+    assert w["kind"] == "deadline" and w["badge"] == "DLB" and w["source"] == f"board:{b['id']}" and w["all_day"]
+    assert w["open"] == {"tab": "boards", "item": mine["id"], "board": b["id"]} and not w["synced"]
+    assert {i["key"] for i in deadlines.items(other, *rng)} == {f"work:{theirs['id']}"}     # only what's his
+
+    # Syncing needs a linked calendar; then one deadline becomes one all-day event, updated when it moves.
+    with pytest.raises(deadlines.DeadlineError):
+        asyncio.run(deadlines.sync(p, [w["key"]]))
+    events = {}
+    made = []
+
+    async def create_event(uid, summary, start, end, description=""):
+        made.append(1)
+        eid = f"ev{len(made)}"
+        events[eid] = {"summary": summary, "start": start, "end": end}
+        return {"id": eid}
+
+    async def update_event(uid, eid, **f):
+        if eid not in events:
+            raise google_calendar.GoogleError("gone")
+        events[eid].update({k: v for k, v in f.items() if k in ("summary", "start", "end")})
+        return {"id": eid}
+
+    async def delete_event(uid, eid):
+        events.pop(eid, None)
+    monkeypatch.setattr(google_calendar, "is_linked", lambda uid: uid == p.id)
+    monkeypatch.setattr(google_calendar, "create_event", create_event)
+    monkeypatch.setattr(google_calendar, "update_event", update_event)
+    monkeypatch.setattr(google_calendar, "delete_event", delete_event)
+    assert asyncio.run(deadlines.sync(p, [w["key"]])) == {"created": 1, "updated": 0, "unchanged": 0}
+    assert events["ev1"] == {"summary": "DLB-1 Write the offer", "start": d(3), "end": d(4)}
+    assert asyncio.run(deadlines.sync(p, [w["key"]]))["unchanged"] == 1
+    boards.save_item(p, {"due_date": d(5)}, mine["id"])
+    moved = next(i for i in deadlines.items(p, *rng) if i["key"] == w["key"])
+    assert moved["synced"] and moved["sync_stale"]
+    assert asyncio.run(deadlines.sync(p, [w["key"]]))["updated"] == 1 and events["ev1"]["start"] == d(5)
+    del events["ev1"]                                                 # deleted in Google meanwhile: made again
+    boards.save_item(p, {"due_date": d(6)}, mine["id"])
+    assert asyncio.run(deadlines.sync(p, [w["key"]]))["updated"] == 1 and "ev2" in events
+
+    # The agenda flags the Google copy so it shows once.
+    async def list_events(uid, start, end, max_results=100):
+        return [{"id": eid, "summary": e["summary"], "start": e["start"], "end": e["end"], "all_day": True, "location": "",
+                 "attendees": [], "description": ""} for eid, e in events.items()]
+    monkeypatch.setattr(google_calendar, "list_events", list_events)
+    ag = asyncio.run(agenda.items(p, f"{d(-1)}T00:00:00+00:00", f"{d(30)}T00:00:00+00:00"))
+    assert any(i["kind"] == "event" and i.get("copy_of") == w["key"] for i in ag["items"])
+    assert any(i["kind"] == "deadline" and i["key"] == w["key"] and i["synced"] for i in ag["items"])
+
+    # Following the pipeline adds its deadlines and keeps them in step; finished ones disappear.
+    r = asyncio.run(deadlines.follow(p, "pipeline", True))
+    assert r["created"] == 2 and len(events) == 3
+    src = {s["source"]: s for s in deadlines.sources(p)}
+    assert src["pipeline"]["followed"] and src["pipeline"]["synced"] == 2 and src[f"board:{b['id']}"]["synced"] == 1
+    won = next(s["id"] for s in crm_deals.stages() if s["kind"] == "won")
+    crm_deals.move(p, deal["id"], won)
+    assert asyncio.run(deadlines.keep_synced()) == 2 and len(events) == 1     # both deal events removed
+    asyncio.run(deadlines.follow(p, "pipeline", False))
+    assert not deadlines.sources(p) or not any(s["followed"] for s in deadlines.sources(p))
+    asyncio.run(deadlines.unsync(p, w["key"]))
+    assert events == {} and not db.query_one("SELECT 1 FROM calendar_links WHERE user_id = ?", (p.id,))
+    with pytest.raises(deadlines.DeadlineError):
+        asyncio.run(deadlines.follow(p, "nonsense", True))

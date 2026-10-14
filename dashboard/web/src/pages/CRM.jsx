@@ -84,7 +84,8 @@ export default function CRM({ me, assistant }) {
   }
 
   useNavTarget("crm", (t) => {                            // "open this deal / client" from a board item
-    if (t.deal) setOpen({ entity: "deal", id: Number(t.deal) });
+    if (t.billing) setOpen({ entity: "billing", id: Number(t.billing) });
+    else if (t.deal) setOpen({ entity: "deal", id: Number(t.deal) });
     else if (t.company) setOpen({ entity: "company", id: Number(t.company) });
   });
   const setView = (v) => { setViewState(v); if (!["approvals", "leads", "followups"].includes(v)) setSavedView(v); setOpen(null); setOffset(0); };

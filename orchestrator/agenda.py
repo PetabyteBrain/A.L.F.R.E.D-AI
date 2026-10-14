@@ -228,7 +228,7 @@ def _expand(r: dict, start: datetime, end: datetime) -> list[datetime]:
     return out
 
 
-async def items(person: Person, start: str, end: str) -> dict:
+async def items(person: Person, start: str, end: str, scope: str = "mine") -> dict:
     s, e = _utc(start), _utc(end)
     if e <= s or e - s > timedelta(days=62):
         raise AgendaError("Pick a range of up to two months.")
@@ -263,9 +263,14 @@ async def items(person: Person, start: str, end: str) -> dict:
         out.append({"key": f"call:{c['id']}", "kind": "call", "id": c["id"], "title": f"Call {c['target']}"
                     + (f": {c['purpose'][:60]}" if c["purpose"] else ""), "start": c["run_at"], "all_day": False,
                     "category": "call", "editable": False})
-    if person.can("boards.use"):                 # due dates of the person's board items (#59)
-        from . import boards
-        out += boards.agenda_items(person, s.astimezone(_tz()).date().isoformat(), e.astimezone(_tz()).date().isoformat())
+    # Deadlines from the CRM and the boards (orchestrator/deadlines.py); Google events that are their synced copies
+    # are flagged so the dashboard shows one entry, not two.
+    from . import deadlines
+    out += deadlines.items(person, s.astimezone(_tz()).date().isoformat(), e.astimezone(_tz()).date().isoformat(), scope)
+    copies = deadlines.copies(person.id)
+    for it in out:
+        if it["kind"] == "event" and it["id"] in copies:
+            it["copy_of"] = copies[it["id"]]
     out.sort(key=lambda i: (i["start"][:10], not i["all_day"], i["start"]))
     return {"items": out, "calendar": calendar, "categories": list(CATEGORIES)}
 

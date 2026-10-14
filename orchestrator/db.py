@@ -820,6 +820,24 @@ CREATE TABLE IF NOT EXISTS board_requests (
     created_at   TEXT NOT NULL
 );
 
+-- CRM and board deadlines synced to a person's Google Calendar (orchestrator/deadlines.py): which event is the copy
+-- of which deadline (with the title and date written), and the sources kept in sync automatically.
+CREATE TABLE IF NOT EXISTS calendar_links (
+    user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    source_key TEXT NOT NULL,                     -- work:<id> | deal_close:<id> | deal_step:<id> | invoice:<id> | quote:<id>
+    event_id   TEXT NOT NULL,
+    title      TEXT NOT NULL DEFAULT '',
+    date       TEXT NOT NULL DEFAULT '',
+    synced_at  TEXT NOT NULL,
+    PRIMARY KEY (user_id, source_key)
+);
+CREATE TABLE IF NOT EXISTS calendar_follows (
+    user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    source     TEXT NOT NULL,                     -- board:<id> | pipeline | billing
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (user_id, source)
+);
+
 -- Follow-up nudges someone put off (orchestrator/crm_proactive.py, #58 stage 5): key = "<type>:<entity>:<id>".
 CREATE TABLE IF NOT EXISTS crm_snoozes (
     user_id  INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,

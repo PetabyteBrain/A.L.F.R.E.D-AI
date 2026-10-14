@@ -159,6 +159,10 @@ docs and the real homelab map are git-ignored (`docs/PROJECT_PLAN.md`, `CLAUDE.l
 - API `dashboard/api/boards.py` (`/api/boards/...`, `/api/teams`), UI `pages/Boards.jsx` + `components/boards/*`,
   teams in `components/team/Teams.jsx`. Tools board_items, board_item_save, board_comment, board_request.
   `hooks.navigate(tab, target)` + `useNavTarget` open another tab at a record (boards item, CRM deal, a file).
+- Deadlines in the agenda: `orchestrator/deadlines.py` (board items, deals' close / next step, invoices and quotes as
+  agenda kind "deadline" with a `source` board:<id> | pipeline | billing; `calendar_links` = synced Google copies,
+  `calendar_follows` = sources kept in sync hourly by the crm_proactive loop; agenda flags Google events that are
+  copies, `copy_of`). API under `/api/agenda/deadline*`, UI `components/DeadlinePanels.jsx` + AgendaCalendar filters.
 - Personnel lives in the Team tab now (Accounts, Access log: `pages/People.jsx` exports them); Settings is paged
   like Profile (`pages/Settings.jsx` SECTIONS).
 

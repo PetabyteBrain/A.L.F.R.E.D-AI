@@ -7,7 +7,7 @@ from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException, Path, Query
 from pydantic import BaseModel, ConfigDict, Field
 
-from orchestrator import agenda, reminders
+from orchestrator import agenda, deadlines, reminders
 from orchestrator.identity.registry import Person
 
 from .routes import current_person
@@ -55,9 +55,9 @@ def _fail(e: Exception) -> HTTPException:
 
 @router.get("/agenda")
 async def get_agenda(start: str = Query(max_length=40), end: str = Query(max_length=40),
-                     person: Person = Depends(current_person)) -> dict:
+                     scope: Literal["mine", "all"] = "mine", person: Person = Depends(current_person)) -> dict:
     try:
-        return await agenda.items(person, start, end)
+        return await agenda.items(person, start, end, scope)
     except (agenda.AgendaError, ValueError) as e:
         raise _fail(e)
 
@@ -117,3 +117,52 @@ async def dismiss(reminder_id: int = Path(ge=1), person: Person = Depends(curren
         return agenda.dismiss(person, reminder_id)
     except (agenda.AgendaError, reminders.ReminderError) as e:
         raise _fail(e)
+
+
+# --- deadlines from the CRM and the boards, synced to Google Calendar (orchestrator/deadlines.py) --------------
+
+class SyncBody(Strict):
+    keys: list[str] = Field(min_length=1, max_length=500)
+
+
+class FollowBody(Strict):
+    source: str = Field(min_length=3, max_length=30)
+    follow: bool
+
+
+def _deadline_fail(e: Exception) -> HTTPException:
+    from orchestrator.google_calendar import GoogleError
+    if isinstance(e, (deadlines.DeadlineError, GoogleError)):
+        return HTTPException(status_code=400, detail=str(e))
+    return HTTPException(status_code=502, detail="Google Calendar isn't answering just now; try again in a moment.")
+
+
+@router.get("/agenda/deadline-sources")
+async def deadline_sources(person: Person = Depends(current_person)) -> list[dict]:
+    return deadlines.sources(person)
+
+
+@router.post("/agenda/deadlines/sync")
+async def sync_deadlines(body: SyncBody, person: Person = Depends(current_person)) -> dict:
+    try:
+        return await deadlines.sync(person, body.keys)
+    except Exception as e:  # noqa: BLE001
+        raise _deadline_fail(e)
+
+
+@router.delete("/agenda/deadlines/sync")
+async def unsync_deadline(key: str = Query(max_length=40), person: Person = Depends(current_person)) -> dict:
+    try:
+        await deadlines.unsync(person, key)
+    except Exception as e:  # noqa: BLE001
+        raise _deadline_fail(e)
+    return {"removed": key}
+
+
+@router.post("/agenda/deadlines/follow")
+async def follow_source(body: FollowBody, person: Person = Depends(current_person)) -> dict:
+    try:
+        return await deadlines.follow(person, body.source, body.follow)
+    except Exception as e:  # noqa: BLE001
+        raise _deadline_fail(e)
+

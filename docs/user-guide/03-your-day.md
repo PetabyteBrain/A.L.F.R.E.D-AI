@@ -57,6 +57,17 @@ due date, planned calls, and the due dates of board items assigned to you (🗂;
   - **Task**: due at that time, optionally with a follow-up.
   - **Calendar only**: an entry in your Google Calendar that Alfred doesn't act on.
 - **Click an entry** to change its title, time or category, tie a reminder to an event, or add "remind me before".
+- **Show** your own entries (calendar, reminders, tasks, calls) and the **deadlines** from the CRM and the boards,
+  each source on its own (every board, the **Sales pipeline** with deals' expected close and next steps, and
+  **Invoices & quotes**). *Mine* shows your own deadlines; *Everything I can see* the whole team's.
+- **Deadlines look different**: outlined and dashed, with a tag saying where they come from (the board's key, DEAL,
+  INV, QUO); your own calendar entries are solid. Click one to see it, **Open it** where it lives, and:
+  - **Sync this event**: put it into your Google Calendar as an all-day event (✓ on the entry); if the date or
+    title changes, **Update the event**, or **Remove from my calendar**.
+  - **Sync all events from …**: the whole board, the pipeline or your invoices, kept up to date by themselves:
+    new deadlines appear, moved ones move and finished ones disappear (checked hourly). Only your own deadlines
+    are added. **⟳ Sync to Google…** lists every source to switch on or off in one place.
+  A synced copy in Google shows only once here, as the deadline.
 
 The Tasks tab keeps your place (view, date, filters) when you switch to another tab and back.
 

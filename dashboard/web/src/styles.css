@@ -2354,3 +2354,26 @@ textarea.bd-drawer-title.edit:hover, textarea.bd-drawer-title.edit:focus { borde
 .team-member.on { border-color: var(--accent); background: rgb(var(--accent-rgb) / .1); color: var(--text-strong); }
 .team-member input { accent-color: var(--accent); }
 .bd-linked-items .bd-child { font-size: 13px; }
+
+/* ---------- Calendar: deadlines from the CRM and boards, and their Google sync (components/DeadlinePanels.jsx) ---------- */
+.src-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 6px; }
+.src-group-label { font: 600 10px var(--font-display); letter-spacing: .16em; text-transform: uppercase; color: var(--muted); margin-left: 4px; }
+.dl-chip { display: inline-flex; align-items: center; gap: 6px; }
+.dl-badge { display: inline-block; padding: 0 4px; margin-right: 4px; border: 1px solid currentColor; font: 700 9px var(--font-display);
+  letter-spacing: .06em; line-height: 14px; vertical-align: 1px; color: var(--dl, var(--accent)); }
+.src-board { --dl: #7aa7ff; }
+.src-pipeline { --dl: var(--warn); }
+.src-billing { --dl: #5affc4; }
+/* own calendar entries are solid; deadlines are outlined and dashed, in their source's colour */
+.ev.dl, .tg-ev.dl { background: repeating-linear-gradient(135deg, rgb(var(--accent-rgb) / .06) 0 6px, transparent 6px 12px) !important;
+  border: 1px dashed var(--dl) !important; border-left: 3px solid var(--dl) !important; color: var(--text-strong); }
+.ev.dl.overdue, .tg-ev.dl.overdue { border-color: var(--bad) !important; border-left-color: var(--bad) !important; }
+.dl-synced { margin: 0 2px; color: var(--ok); font-weight: 700; }
+.dl-legend .ev { display: inline-block; padding: 0 6px; margin: 0 2px; font-size: 11px; }
+.dl-panel { display: grid; gap: 8px; }
+.dl-title { margin: 0; font-size: 16px; color: var(--text-strong); overflow-wrap: anywhere; }
+.dl-sync { display: grid; gap: 6px; border-top: 1px solid var(--line); padding-top: 8px; }
+.dl-sources { display: grid; gap: 6px; }
+.dl-source { display: flex; align-items: center; gap: 10px; padding: 6px 8px; border: 1px solid var(--line); }
+.dl-source-name { flex: 1; min-width: 0; display: grid; }
+

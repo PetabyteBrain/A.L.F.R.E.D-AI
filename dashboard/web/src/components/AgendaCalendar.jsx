@@ -3,6 +3,7 @@ import { api } from "../api.js";
 import { navigate, usePageActive, useStoredState } from "../hooks.js";
 import { ErrorNote, Tag } from "./common.jsx";
 import { CATEGORIES, CatDot, KIND_ICON } from "./categories.jsx";
+import { DeadlinePanel, SyncSources } from "./DeadlinePanels.jsx";
 
 const REPEAT = { daily: "every day", weekdays: "weekdays", weekly: "every week", monthly: "every month" };
 const VIEWS = { month: "Month", week: "Week", day: "Day" };
@@ -64,6 +65,14 @@ function lanes(list, day) {
 }
 
 function ItemLabel({ it, time = true }) {
+  if (it.kind === "deadline") {
+    return (
+      <>
+        <span className={`dl-badge src-${it.source.split(":")[0]}`}>{it.badge}</span>
+        {it.synced ? <span className="dl-synced" title={it.sync_stale ? "In your Google Calendar, out of date" : "In your Google Calendar"}>{it.sync_stale ? "⟳" : "✓"}</span> : null} {it.title}
+      </>
+    );
+  }
   return (
     <>
       {time && !it.all_day && <span className="mono">{hhmm(it.start)}</span>} {KIND_ICON[it.kind]}
@@ -71,6 +80,15 @@ function ItemLabel({ it, time = true }) {
     </>
   );
 }
+
+/* Classes for an entry: deadlines from the CRM and boards look different from one's own calendar. */
+const evClass = (it, base = "ev") => (it.kind === "deadline"
+  ? `${base} dl src-${it.source.split(":")[0]}${it.overdue ? " overdue" : ""}`
+  : `${base} cat-${it.category}${it.link_state === "event_deleted" ? " gone" : ""}`);
+
+/* Where an entry comes from, for the source filters. */
+const sourceOf = (it) => (it.kind === "deadline" ? it.source : it.kind);
+const OWN = [["event", "📅 Calendar"], ["reminder", "⏰ Reminders"], ["task", "📋 Tasks"], ["call", "☎ Calls"]];
 
 /* Edit one agenda item: title, time, category; reminder links; "remind me before" for events. */
 function ItemEditor({ item, onClose, onChanged }) {
@@ -318,7 +336,7 @@ function TimeGrid({ days, byDay, timed, today, onPick, onNew, onDay }) {
         {days.map((d) => (
           <div key={dayKey(d)} className="tg-allday-cell" onClick={(e) => { if (e.target === e.currentTarget) onNew({ date: dayKey(d), allDay: true }); }}>
             {(byDay[dayKey(d)] || []).filter((it) => it.all_day).map((it) => (
-              <button key={it.key} className={`ev cat-${it.category}`} onClick={() => onPick(it)} title={it.title}><ItemLabel it={it} /></button>
+              <button key={it.key} className={evClass(it)} onClick={() => onPick(it)} title={it.title}><ItemLabel it={it} /></button>
             ))}
           </div>
         ))}
@@ -331,7 +349,7 @@ function TimeGrid({ days, byDay, timed, today, onPick, onNew, onDay }) {
           <div key={dayKey(d)} className={`tg-col${dayKey(d) === today ? " today" : ""}`}
                onClick={(e) => { if (e.target === e.currentTarget) slot(d, e); }} title="Click an empty slot to add something">
             {lanes(timed(d), d).map(({ it, top, height, lane, n }) => (
-              <button key={it.key} className={`tg-ev cat-${it.category}${height < 34 ? " short" : ""}${it.link_state === "event_deleted" ? " gone" : ""}`}
+              <button key={it.key} className={`${evClass(it, "tg-ev")}${height < 34 ? " short" : ""}`}
                       style={{ top, height, left: `calc(${(lane / n) * 100}% + 2px)`, width: `calc(${100 / n}% - 4px)` }}
                       onClick={() => onPick(it)} title={`${hhmm(it.start)} ${it.title}`}>
                 <ItemLabel it={it} />
@@ -356,6 +374,11 @@ export default function AgendaCalendar() {
   const [sel, setSel] = useState(null);
   const [draft, setDraft] = useState(null);
   const [day, setDay] = useState(null);
+  const [scope, setScope] = useStoredState("alfred-cal-scope", "mine");      // deadlines: mine | everything I can see
+  const [hiddenSrc, setHiddenSrcRaw] = useStoredState("alfred-cal-hidden-src", "");
+  const hiddenSources = useMemo(() => new Set(hiddenSrc ? hiddenSrc.split(",") : []), [hiddenSrc]);
+  const toggleSource = (s) => { const n = new Set(hiddenSources); n.has(s) ? n.delete(s) : n.add(s); setHiddenSrcRaw([...n].join(",")); };
+  const [syncOpen, setSyncOpen] = useState(false);
   const days = useMemo(() => viewDays(view, focus), [view, focus]);
   const rangeKey = `${dayKey(days[0])}:${days.length}`;
 
@@ -364,16 +387,32 @@ export default function AgendaCalendar() {
     try {
       const start = new Date(days[0]); start.setHours(0, 0, 0, 0);
       const end = addDays(start, days.length); end.setSeconds(-1);
-      setData(await api(`/agenda?${new URLSearchParams({ start: start.toISOString(), end: end.toISOString() })}`));
+      setData(await api(`/agenda?${new URLSearchParams({ start: start.toISOString(), end: end.toISOString(), scope })}`));
     } catch (e) { setErr(e.message); }
   }
-  useEffect(() => { if (active) load(); }, [rangeKey, active]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (active) load(); }, [rangeKey, active, scope]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {                                   // a reloaded deadline (after syncing it) replaces the open one
+    if (sel?.kind !== "deadline") return;
+    const fresh = (data?.items || []).find((i) => i.key === sel.key);
+    if (fresh && fresh !== sel) setSel(fresh);
+  }, [data]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Deadline sources in view (boards, pipeline, invoices) for the filter chips.
+  const dlSources = useMemo(() => {
+    const m = new Map();
+    for (const it of data?.items || []) if (it.kind === "deadline" && !m.has(it.source)) m.set(it.source, { source: it.source, label: it.source_label, badge: it.badge });
+    return [...m.values()].sort((x, y) => x.source.localeCompare(y.source));
+  }, [data]);
+  // A Google event that is the synced copy of a deadline shown here is left out: one entry, not two.
+  const shownDeadlines = useMemo(() => new Set((data?.items || []).filter((it) => it.kind === "deadline" && !hiddenSources.has(it.source)).map((it) => it.key)),
+    [data, hiddenSources]);
+  const visible = (it) => !hidden.has(it.category) && !hiddenSources.has(sourceOf(it)) && !(it.copy_of && shownDeadlines.has(it.copy_of));
 
   // Items per day; all-day items spanning several days show on each of them.
   const byDay = useMemo(() => {
     const m = {};
     for (const it of data?.items || []) {
-      if (hidden.has(it.category)) continue;
+      if (!visible(it)) continue;
       if (it.all_day) {
         const [s, e] = span(it);
         for (let d = s; d < e && d <= days[days.length - 1]; d = addDays(d, 1)) (m[dayKey(d)] ||= []).push(it);
@@ -382,10 +421,10 @@ export default function AgendaCalendar() {
       }
     }
     return m;
-  }, [data, hidden, days]);
+  }, [data, hidden, days, hiddenSources, shownDeadlines]); // eslint-disable-line react-hooks/exhaustive-deps
   // Timed items touching a day (week/day views also show the part of an event that runs past midnight).
   const timed = (d) => (data?.items || []).filter((it) => {
-    if (it.all_day || hidden.has(it.category)) return false;
+    if (it.all_day || !visible(it)) return false;
     const [s, e] = span(it);
     return s < addDays(d, 1) && e > d;
   });
@@ -426,10 +465,30 @@ export default function AgendaCalendar() {
             </button>
           ))}
         </div>
+        <div className="src-filters" role="group" aria-label="Show">
+          <span className="src-group-label">Yours</span>
+          {OWN.map(([k, l]) => (
+            <button key={k} className={`chip ${hiddenSources.has(k) ? "off" : ""}`} onClick={() => toggleSource(k)} aria-pressed={!hiddenSources.has(k)}>{l}</button>
+          ))}
+          <span className="src-group-label">Deadlines</span>
+          {dlSources.length === 0 && <span className="muted tiny">none in this {view}</span>}
+          {dlSources.map((s) => (
+            <button key={s.source} className={`chip dl-chip ${hiddenSources.has(s.source) ? "off" : ""}`} onClick={() => toggleSource(s.source)}
+                    aria-pressed={!hiddenSources.has(s.source)} title={s.label}>
+              <span className={`dl-badge src-${s.source.split(":")[0]}`}>{s.badge}</span>{s.label}
+            </button>
+          ))}
+          <select className="crm-sort" value={scope} onChange={(e) => setScope(e.target.value)} aria-label="Whose deadlines">
+            <option value="mine">Mine</option><option value="all">Everything I can see</option>
+          </select>
+          <button className="btn ghost small" onClick={() => { setSel(null); setDraft(null); setSyncOpen(true); }}>⟳ Sync to Google…</button>
+        </div>
       </div>
       <ErrorNote error={err || data?.calendar?.error} />
       {data && !linked && <p className="muted small">Link your Google Calendar on your Profile to see its events here.</p>}
-      <p className="muted tiny">Click an empty {view === "month" ? "part of a day" : "slot"} to add a reminder, task or calendar entry.</p>
+      <p className="muted tiny">Click an empty {view === "month" ? "part of a day" : "slot"} to add a reminder, task or calendar entry.
+        <span className="dl-legend"> <span className="ev cat-meeting">Solid</span> = your calendar, reminders and tasks ·
+        <span className="ev dl src-board">Dashed, with a tag</span> = deadlines from the boards and the CRM (✓ = also in Google Calendar)</span></p>
 
       {view === "month" ? (
         <div className="month">
@@ -442,8 +501,8 @@ export default function AgendaCalendar() {
                    onClick={(e) => { if (e.target === e.currentTarget) newItem({ date: k }); }}>
                 <button className="cell-day" onClick={() => setDay(k)} title="Everything on this day">{d.getDate()}</button>
                 {list.slice(0, 4).map((it) => (
-                  <button key={it.key} className={`ev cat-${it.category}${it.link_state === "event_deleted" ? " gone" : ""}`}
-                          onClick={() => pick(it)} title={it.title}>
+                  <button key={it.key} className={evClass(it)}
+                          onClick={() => pick(it)} title={it.kind === "deadline" ? `${it.source_label}: ${it.title}` : it.title}>
                     <ItemLabel it={it} />
                   </button>
                 ))}
@@ -470,7 +529,7 @@ export default function AgendaCalendar() {
           {(byDay[day] || []).map((it) => (
             <button key={it.key} className="row click" onClick={() => pick(it)}>
               <div>
-                <div><CatDot category={it.category} /> {KIND_ICON[it.kind]} {it.title}</div>
+                <div>{it.kind === "deadline" ? <ItemLabel it={it} /> : <><CatDot category={it.category} /> {KIND_ICON[it.kind]} {it.title}</>}</div>
                 <div className="meta">{it.all_day ? "all day" : hhmm(it.start)} · {it.category}{it.recurrence ? ` · repeats ${REPEAT[it.recurrence]}` : ""}
                   {it.link_state === "linked" ? " · in the calendar" : ""}{it.link_state === "event_deleted" ? " · not needed" : ""}</div>
               </div>
@@ -478,7 +537,9 @@ export default function AgendaCalendar() {
           ))}
         </div>
       )}
-      {sel && <ItemEditor item={sel} onClose={() => setSel(null)} onChanged={changed} />}
+      {sel && sel.kind === "deadline" && <DeadlinePanel item={sel} calendarLinked={linked} onClose={() => setSel(null)} onChanged={load} />}
+      {sel && sel.kind !== "deadline" && <ItemEditor item={sel} onClose={() => setSel(null)} onChanged={changed} />}
+      {syncOpen && <SyncSources calendarLinked={linked} onClose={() => setSyncOpen(false)} onChanged={load} />}
       {draft && <NewItemEditor draft={draft} calendarLinked={linked} onClose={() => setDraft(null)}
                                onCreated={async () => { setDraft(null); setDay(null); await load(); }} />}
     </section>

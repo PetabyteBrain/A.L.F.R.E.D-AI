@@ -13,7 +13,10 @@ PAGES: dict[str, tuple[str, str]] = {
     "chat": ("Chat", "the full conversation with Alfred (the same one as this helper)."),
     "history": ("Archive", "past calls and chats with recordings and transcripts; search and filters."),
     "tasks": ("Tasks", "Calendar view (month/week/day, click a day or slot to add a reminder, task or "
-                       "calendar-only entry) and List view (tasks, meetings, reminders, scheduled and archived "
+                       "calendar-only entry; Show filters for your own entries and the deadlines from each board, the "
+                       "sales pipeline and invoices, Mine / Everything I can see; deadlines are dashed with a source "
+                       "tag; click one to open it, Sync this event to Google Calendar or Sync all events from that "
+                       "board/pipeline, kept up to date hourly; ⟳ Sync to Google… for all sources) and List view (tasks, meetings, reminders, scheduled and archived "
                        "calls, n8n automations if allowed)."),
     "notes": ("Files", "notes, lists and files on the NAS: own folder, company for admins/cofounders, every "
                        "folder for admins; editor with Markdown preview and checklists, read-only previews of PDF, Word, Excel, "
