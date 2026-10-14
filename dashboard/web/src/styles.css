@@ -2104,9 +2104,43 @@ button.team-person { color: var(--text-strong); }
   .team-step-row { grid-template-columns: minmax(0, 1fr) 64px auto auto auto; }
   .team-step-row select { grid-column: 1 / -1; grid-row: 2; }
 }
+.print-only { display: none; }
 @media print {
   .mail-side, .mail-toolbar .btn, .crm-billing-tools { display: none !important; }
   .crm-report-card { break-inside: avoid; }
+  /* CRM report: only the report, dark text on white paper, no overlays or animated background */
+  body.printing-report { background: #fff !important; color: #000 !important; }
+  body.printing-report::before, body.printing-report::after, body.printing-report .backdrop { display: none !important; }
+  /* everything that isn't the report or on the way to it is left out; the way there loses its frame and layout */
+  body.printing-report *:not(:has(.crm-reports)):not(.crm-reports):not(.crm-reports *) { display: none !important; }
+  body.printing-report :has(> * .crm-reports), body.printing-report :has(> .crm-reports) {
+    display: block !important; position: static !important; margin: 0 !important; padding: 0 !important; border: 0 !important;
+    background: none !important; box-shadow: none !important; transform: none !important; filter: none !important;
+    backdrop-filter: none !important; animation: none !important; min-height: 0 !important; width: auto !important;
+    max-width: none !important; overflow: visible !important; }
+  body.printing-report :has(> * .crm-reports)::before, body.printing-report :has(> * .crm-reports)::after,
+  body.printing-report :has(> .crm-reports)::before, body.printing-report :has(> .crm-reports)::after { display: none !important; }
+  body.printing-report .crm-reports { position: static; width: 100%; padding: 0; gap: 10px;
+    --text: #111; --text-strong: #000; --muted: #444; --faint: #777; --line: #bbb; --fill: #fff; --bg: #fff;
+    --accent: #1a4f8a; --accent-rgb: 26 79 138; --ok: #1d6b3a; --ok-rgb: 29 107 58; --warn: #8a5a00; --warn-rgb: 138 90 0;
+    --bad: #a3192b; --bad-rgb: 163 25 43; color: #000; font-size: 12px; }
+  body.printing-report .crm-reports * { color: inherit; text-shadow: none !important; box-shadow: none !important;
+    backdrop-filter: none !important; filter: none !important; opacity: 1 !important; }
+  body.printing-report .crm-reports .mail-toolbar, body.printing-report .crm-reports .crm-billing-tools { display: none !important; }
+  body.printing-report .crm-reports .print-only { display: block; }
+  body.printing-report .crm-report-print-head h1 { margin: 0; font: 700 20px sans-serif; }
+  body.printing-report .crm-report-print-head p { margin: 2px 0 8px; color: #444; }
+  body.printing-report .crm-kpi, body.printing-report .crm-report-card, body.printing-report .crm-report-chip {
+    background: #fff !important; border: 1px solid #bbb !important; break-inside: avoid; }
+  body.printing-report .crm-kpi > b, body.printing-report .crm-report-chip b, body.printing-report .crm-report-list li b { color: #000 !important; }
+  body.printing-report .crm-kpi.ok > b { color: #1d6b3a !important; }
+  body.printing-report .crm-kpi.warn > b, body.printing-report .warn-text { color: #a3192b !important; }
+  body.printing-report .crm-kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  body.printing-report .crm-report-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  body.printing-report .crm-hbar-track { border-color: #999 !important; background: #eee !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  body.printing-report .crm-hbar-fill { background: #1a4f8a !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  body.printing-report .linkish { color: #000 !important; text-decoration: none; }
+  @page { margin: 14mm; }
 }
 
 /* ---------- Files: drag and drop upload (pages/Notes.jsx) ---------- */

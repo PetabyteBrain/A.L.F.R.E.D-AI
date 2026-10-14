@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { api } from "../../api.js";
 import { fmtCHF, fmtDate } from "../../format.js";
 import { usePoll, useStoredState } from "../../hooks.js";
@@ -31,9 +32,25 @@ function DealList({ title, tone, block, onOpen }) {
   );
 }
 
+/* Print only the report, dark on white (the dashboard's own dark look would print as white text on white paper). */
+function printReport() {
+  document.body.classList.add("printing-report");
+  const done = () => { document.body.classList.remove("printing-report"); window.removeEventListener("afterprint", done); };
+  window.addEventListener("afterprint", done);
+  window.print();
+  setTimeout(done, 1000);                       // browsers without afterprint
+}
+
 export default function Reports({ onOpen, onSettings, canSettings }) {
   const [period, setPeriod] = useStoredState("alfred-crm-report", "last_week");
   const { data: r, error } = usePoll(() => api(`/crm-actions/report?period=${period}`), 0, [period]);
+  useEffect(() => {                           // Ctrl+P / the browser's Print on this view prints the report the same way
+    const on = () => document.body.classList.add("printing-report");
+    const off = () => document.body.classList.remove("printing-report");
+    window.addEventListener("beforeprint", on);
+    window.addEventListener("afterprint", off);
+    return () => { window.removeEventListener("beforeprint", on); window.removeEventListener("afterprint", off); off(); };
+  }, []);
   const h = r?.hours;
   const maxH = Math.max(1, ...(h?.clients || []).map((c) => c.hours));
   return (
@@ -47,7 +64,7 @@ export default function Reports({ onOpen, onSettings, canSettings }) {
           {r && <span className="meta">{fmtDate(r.period.start)} – {fmtDate(r.period.end)}</span>}
         </div>
         <div className="crm-billing-tools">
-          <button className="btn ghost small" onClick={() => window.print()}>Print</button>
+          <button className="btn ghost small" disabled={!r} onClick={printReport}>Print</button>
           {canSettings && <button className="btn ghost small" onClick={onSettings}><Icon name="settings" className="btn-ico" />Weekly report</button>}
         </div>
       </div>
@@ -55,6 +72,10 @@ export default function Reports({ onOpen, onSettings, canSettings }) {
       {!r && !error && <p className="muted">Loading…</p>}
       {r && (
         <>
+          <div className="print-only crm-report-print-head">
+            <h1>CRM report · {r.period.label}</h1>
+            <p>{fmtDate(r.period.start)} – {fmtDate(r.period.end)} · printed {fmtDate(new Date().toLocaleDateString("sv-SE"))}</p>
+          </div>
           <div className="crm-kpis">
             <div className="crm-kpi"><span>Open pipeline</span><b>{fmtCHF(r.pipeline.open_value)}</b>
               <em>{r.pipeline.open_count} deals · {fmtCHF(r.pipeline.weighted, { compact: true })} weighted</em></div>
