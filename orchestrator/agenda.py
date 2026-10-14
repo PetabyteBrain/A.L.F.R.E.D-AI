@@ -263,6 +263,9 @@ async def items(person: Person, start: str, end: str) -> dict:
         out.append({"key": f"call:{c['id']}", "kind": "call", "id": c["id"], "title": f"Call {c['target']}"
                     + (f": {c['purpose'][:60]}" if c["purpose"] else ""), "start": c["run_at"], "all_day": False,
                     "category": "call", "editable": False})
+    if person.can("boards.use"):                 # due dates of the person's board items (#59)
+        from . import boards
+        out += boards.agenda_items(person, s.astimezone(_tz()).date().isoformat(), e.astimezone(_tz()).date().isoformat())
     out.sort(key=lambda i: (i["start"][:10], not i["all_day"], i["start"]))
     return {"items": out, "calendar": calendar, "categories": list(CATEGORIES)}
 

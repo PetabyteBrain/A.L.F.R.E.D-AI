@@ -62,8 +62,10 @@ needs a nudge, with follow-up emails that wait for approval) and **Reports**. Se
 ## Team (*team*)
 
 The employee directory, everyone's holiday balance and time off on a team calendar, onboarding and offboarding
-checklists, hours from time tracking, and **Approvals** for every change to employee data. With only your own
-record you see **Me**: your holidays and time off, and **Request time off**. See [Team](13-team.md).
+checklists, hours from time tracking, **Teams**, and **Approvals** for every change to employee data. With only your
+own record you see **Me**: your holidays and time off, and **Request time off**. People who manage personnel also find
+**Accounts** (people, roles, connections, logins, two-factor, data requests) and the **Access log** here; they used to
+be on a separate Personnel tab. See [Team](13-team.md).
 
 ## Log
 
@@ -78,10 +80,10 @@ the restore test, the self-hosted search, automations, Google, and each home ser
 temperature, containers). Admins also see the monthly **update report** (pending updates and security fixes per
 machine, newer container images, reboots needed) with **Check now**; nothing is installed automatically.
 
-## Personnel (*admins*)
+## Boards (*team*)
 
-People and their roles, connections, dashboard logins and two-factor status; access attempts from unknown senders;
-data requests. See [Administration](09-administration.md#people-and-roles).
+Work boards: My work across every board, task requests, and each board as columns, team lanes, a list or a
+calendar, with items you open beside the board. See [Boards](14-boards.md).
 
 ## Usage (*admins*)
 
@@ -91,7 +93,7 @@ warnings. See [Usage and budgets](09-administration.md#usage-and-budgets).
 
 ## Settings (*team*)
 
-Household-wide settings (admins by default): the AI model and which key pays, household quiet hours, email (answers
+One section at a time, picked from the menu on the left, like your profile. Household-wide settings (admins by default): the AI model and which key pays, household quiet hours, email (answers
 to outside mail, automatic filing of inquiry attachments) and call screening with blocked numbers. See
 [Settings](09-administration.md#settings).
 

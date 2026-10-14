@@ -5,7 +5,7 @@ import { usePoll } from "../hooks.js";
 import { Empty, ErrorNote, Tag } from "../components/common.jsx";
 import Connections from "../components/Connections.jsx";
 import CallDialog from "../components/CallDialog.jsx";
-import { ConfirmDialog, Panel } from "../components/hud.jsx";
+import { ConfirmDialog } from "../components/hud.jsx";
 import { DataRequests, PersonData } from "../components/DataRequests.jsx";
 
 /* Several roles per person, as toggles; the first one picked is the primary role. Roles that would
@@ -227,22 +227,55 @@ function NewPerson({ roles, onCreated, onCancel }) {
   );
 }
 
-/* ---------------------------------------------------------------- page */
-export default function People({ assistant, me }) {
+/* ---------------------------------------------------------------- access log (Team → Access log) */
+export function AccessLog() {
+  const { data: attempts, error } = usePoll(() => api("/access-attempts?limit=80"), 15000);
+  return (
+    <div className="team-accounts">
+      <div className="mail-toolbar"><b className="mail-title">Access log</b></div>
+      <p className="muted small">Who tried to reach Alfred: allowed people, and numbers or accounts that aren't in the registry (blocked).</p>
+      <ErrorNote error={error} />
+      {attempts && attempts.length === 0 && <Empty>No attempts recorded.</Empty>}
+      <div className="feed">
+        {(attempts || []).map((a, i) => (
+          <div className="e" key={i}>
+            <span className="ts">{fmtTime(a.ts)}</span>
+            <span className={`kind ${a.resolved ? "" : "access"}`}>{a.resolved ? "allowed" : "blocked"}</span>
+            <span>{a.channel} · {a.raw_identifier}{a.detail ? ` · ${a.detail}` : ""}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ---------------------------------------------------------------- accounts (Team → Accounts, people.manage) */
+export default function PeopleAccounts({ assistant, me, openId = null, onOpened }) {
   const { data: people, error, reload } = usePoll(() => api("/people"), 30000);
   const { data: roles } = usePoll(() => api("/roles"));
-  const { data: attempts, error: err2 } = usePoll(() => api("/access-attempts?limit=80"), 15000);
   const [editing, setEditing] = useState(null);
+  const [q, setQ] = useState("");
+  useEffect(() => { if (openId) { setEditing(openId); onOpened?.(); } }, [openId, onOpened]);
   const [adding, setAdding] = useState(false);
   const [callee, setCallee] = useState(null);
   const [notice, setNotice] = useState("");
   const roleLabel = (name) => (roles || []).find((r) => r.name === name)?.label || name;
 
+  const shown = (people || []).filter((p) => !q || `${p.display_name} ${p.dashboard_username || ""} ${p.connections.map((i) => i.value).join(" ")}`
+    .toLowerCase().includes(q.trim().toLowerCase()));
   return (
-    <Panel code="07" title="Personnel registry" actions={
-      !adding && <button className="btn primary small" onClick={() => setAdding(true)} disabled={!roles}>Add person</button>
-    }>
-      <ErrorNote error={error || err2} />
+    <div className="team-accounts">
+      <div className="mail-toolbar">
+        <div className="mail-filters"><b className="mail-title">Accounts</b>
+          <form className="mail-search" onSubmit={(e) => e.preventDefault()}>
+            <input value={q} maxLength={80} onChange={(e) => setQ(e.target.value)} placeholder="Name, login, number…" aria-label="Search accounts" />
+          </form>
+        </div>
+        {!adding && <button className="btn primary small" onClick={() => setAdding(true)} disabled={!roles}>Add person</button>}
+      </div>
+      <p className="muted small">Everyone {assistant} knows: their roles, groups, phone numbers, Telegram and email, dashboard logins and
+        two-factor sign-in. Their employee record (if they work here) is in the Directory.</p>
+      <ErrorNote error={error} />
       {notice && <div className="notice" role="status" onClick={() => setNotice("")}>{notice}</div>}
       <DataRequests onChanged={reload} />
       {adding && roles && (
@@ -250,7 +283,7 @@ export default function People({ assistant, me }) {
                    onCreated={(p) => { setAdding(false); reload(); setEditing(p.id); }} />
       )}
       <div className="list">
-        {(people || []).map((p) => (
+        {shown.map((p) => (
           <div className={`row person-row${p.active ? "" : " inactive"}`} key={p.id}>
             <div>
               <div>
@@ -272,17 +305,6 @@ export default function People({ assistant, me }) {
         ))}
       </div>
 
-      <h3 className="sub">Access attempts</h3>
-      {attempts && attempts.length === 0 && <Empty>No attempts recorded.</Empty>}
-      <div className="feed">
-        {(attempts || []).map((a, i) => (
-          <div className="e" key={i}>
-            <span className="ts">{fmtTime(a.ts)}</span>
-            <span className={`kind ${a.resolved ? "" : "access"}`}>{a.resolved ? "allowed" : "blocked"}</span>
-            <span>{a.channel} · {a.raw_identifier}{a.detail ? ` · ${a.detail}` : ""}</span>
-          </div>
-        ))}
-      </div>
 
       {editing && roles && (
         <PersonEditor personId={editing} roles={roles} me={me} onClose={() => setEditing(null)} onChanged={reload} />
@@ -301,6 +323,6 @@ export default function People({ assistant, me }) {
           }}
         />
       )}
-    </Panel>
+    </div>
   );
 }

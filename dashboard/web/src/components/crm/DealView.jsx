@@ -6,6 +6,7 @@ import { ErrorNote, Tag } from "../common.jsx";
 import { Icon } from "../icons.jsx";
 import { OutcomeDialog } from "./Pipeline.jsx";
 import DocList from "./DocList.jsx";
+import LinkedItems from "../boards/LinkedItems.jsx";
 import Timeline from "./Timeline.jsx";
 
 /* One deal: stage (switch in place), money, dates, next step, the people involved, its timeline and history. */
@@ -16,7 +17,7 @@ const FIELD_WORD = { stage_id: "stage", value: "value", probability: "probabilit
                      contact_id: "contact", owner_id: "owner", group_id: "group" };
 
 export default function DealView({ id, status, onBack, onOpen, onEdit, onToast, onChanged, canBilling, onNewDoc, onOpenDoc,
-                                  onEmail }) {
+                                  onEmail, me }) {
   const path = `/crm/deals/${id}`;
   const { data: d, error, reload } = usePoll(() => api(path), 0, [path]);
   const [hist, setHist] = useState(null);
@@ -132,6 +133,8 @@ export default function DealView({ id, status, onBack, onOpen, onEdit, onToast, 
                                                        ...(d.contact_id ? { contact_id: d.contact_id } : {}), title: d.title }}
                      onOpenDoc={onOpenDoc} onNewDoc={onNewDoc} />
           )}
+          <LinkedItems me={me} filter={`deal_id=${id}`} empty="No work for this deal on the boards yet."
+                       preset={{ deal_id: id, ...(d.company_id ? { company_id: d.company_id } : {}) }} />
           <section className="crm-history">
             <button type="button" className="btn ghost small" onClick={history} aria-expanded={!!hist}>History {hist ? "▴" : "▾"}</button>
             {hist && (

@@ -3648,7 +3648,7 @@ def test_avatar_helper_page_context():
     admin = Person(id=1, display_name="A", role="admin")
     friend = Person(id=2, display_name="F", role="cofounder")
     a = dashboard_guide.context(admin, "tasks")
-    assert "Tasks page" in a and "Settings:" in a and "Personnel:" in a
+    assert "Tasks page" in a and "Settings:" in a and "Team:" in a and "Boards:" in a and "Personnel:" not in a
     f = dashboard_guide.context(friend, "profile")
     assert "Profile page" in f and "Settings:" not in f and "Usage:" not in f
 
@@ -6101,7 +6101,7 @@ def test_crm_follow_ups_reports_emails_and_meetings(monkeypatch, tmp_path):
     monday = datetime(2026, 10, 12, 9, 0, tzinfo=crm_proactive._tz())
     asyncio.run(crm_proactive.tick(monday))
     asyncio.run(crm_proactive.tick(monday))
-    assert spawned.count("_safely") == 3                               # nudges, checklists, report; not twice
+    assert spawned.count("_safely") == 4                   # nudges, checklists, board items due, report; not twice
     with pytest.raises(crm_proactive.ProactiveError):
         crm_proactive.save_settings(co, {"nudge_time": "8"})
     assert crm_proactive.save_settings(co, {"stale_days": 21})["stale_days"] == 21
@@ -6133,3 +6133,201 @@ def test_crm_stage5_api(monkeypatch):
                      headers=CSRF).status_code == 400
         assert c.get(f"/api/crm-actions/time/company/{co['id']}").json() == {"configured": False}
         c.post("/api/logout", headers=CSRF)
+
+
+# --- Work boards and teams (roadmap #59) -------------------------------------------------------------------
+
+def test_boards_teams_levels_items_requests_and_sales(monkeypatch):
+    import asyncio
+    from datetime import timedelta
+    from orchestrator import boards, crm, crm_deals, permissions
+    boss = permissions.Actor(0, "test", permissions.KEYS, True)
+    lead = registry.get_person(registry.add_user("Lea Lead", "cofounder"))
+    dev = registry.get_person(registry.add_user("Dan Dev", "cofounder"))
+    if not registry.role_exists("asker"):
+        permissions.create_role(boss, "Asker")                       # boards, but may only ask on the web board
+        permissions.set_rule(boss, "asker", "boards.use", "allow")
+    asker = registry.get_person(registry.add_user("Ana Asker", "asker"))
+    friend = registry.lookup("telegram", "22222222")
+    told = []
+
+    async def fake_tell(uid, text, note, buttons=None):
+        told.append((uid, note, text, buttons))
+    monkeypatch.setattr(boards, "_tell", fake_tell)
+
+    # Teams are groups with a manager; teams.manage can't touch a group that gives roles.
+    lead_actor = permissions.actor_for(lead)
+    team = permissions.create_group(lead_actor, "Web team 59")
+    permissions.update_group(lead_actor, team, manager_id=lead.id, color="#5ad0e6")
+    permissions.set_group_members(lead_actor, team, [lead.id, dev.id])
+    g = next(x for x in permissions.groups() if x["id"] == team)
+    assert g["manager_id"] == lead.id and g["manager_name"] == "Lea Lead" and g["color"] == "#5ad0e6"
+    roled = permissions.create_group(boss, "Roled 59")
+    permissions.set_group_roles(boss, roled, ["cofounder"])
+    if not registry.role_exists("team-keeper"):
+        permissions.create_role(boss, "Team keeper")
+        permissions.set_rule(boss, "team-keeper", "teams.manage", "allow")
+    keeper = registry.get_person(registry.add_user("Kim Keeper", "team-keeper"))
+    with pytest.raises(permissions.PermissionError_):
+        permissions.set_group_members(permissions.actor_for(keeper), roled, [keeper.id])
+    with pytest.raises(permissions.PermissionError_):
+        permissions.update_group(permissions.actor_for(friend), team, name="x")
+
+    # A board with its own types and states, shared: the team contributes, everyone else may only ask.
+    with pytest.raises(boards.BoardError):
+        boards.create_board(friend, name="Nope")
+    b = boards.create_board(lead, name="Website 59", key="web59", template="agile",
+                            sharing=[{"kind": "group", "subject": str(team), "level": "contribute"},
+                                     {"kind": "everyone", "level": "request"}])
+    assert b["key"] == "WEB59" and [s["name"] for s in b["states"]] == ["New", "Active", "Review", "Done"]
+    assert boards.level_of(lead, boards._board_row(b["id"])) == "manage"
+    assert boards.level_of(dev, boards._board_row(b["id"])) == "contribute"
+    assert boards.level_of(asker, boards._board_row(b["id"])) == "request"
+    assert boards.level_of(friend, boards._board_row(b["id"])) is None          # no boards.use at all
+    with pytest.raises(boards.BoardError):
+        boards.create_board(lead, name="Clash", key="web59")
+    types = boards.save_type(lead, b["id"], name="Design", color="#ff00aa")
+    assert any(t["name"] == "Design" for t in types)
+    with pytest.raises(boards.BoardError):
+        boards.save_type(dev, b["id"], name="Nope")                            # not a manager
+    states = boards.save_state(lead, b["id"], name="Blocked", category="doing", wip_limit=3)
+    blocked = next(s for s in states if s["name"] == "Blocked")
+    done = next(s for s in states if s["category"] == "done")
+
+    # Items: numbered per board, assigned, moved, closed with their column, history, children.
+    epic = boards.save_item(lead, {"title": "Relaunch", "type_id": b["types"][0]["id"], "team_id": team}, board_id=b["id"])
+    assert epic["key"] == "WEB59-1"
+    due = (boards._today() - timedelta(days=1)).isoformat()
+    task = boards.save_item(dev, {"title": "Logo draft", "assignee_id": dev.id, "due_date": due, "parent_id": epic["id"],
+                                  "tags": "Design, design", "priority": 1}, board_id=b["id"])
+    assert task["key"] == "WEB59-2" and task["tags"] == ["design"] and task["overdue"]
+    with pytest.raises(boards.BoardError):
+        boards.save_item(asker, {"title": "Direct"}, board_id=b["id"])         # may only ask
+    with pytest.raises(boards.BoardError):
+        boards.save_item(lead, {"assignee_id": friend.id}, task["id"])           # can't see the board
+    with pytest.raises(boards.BoardError):
+        boards.save_item(lead, {"parent_id": task["id"]}, epic["id"])            # a loop
+    moved = boards.move(lead, b["id"], task["id"], state_id=blocked["id"], index=0)
+    assert moved["state_name"] == "Blocked" and moved["history"][0]["text"].startswith("state New → Blocked")
+    closed = boards.save_item(dev, {"state_id": done["id"]}, task["id"])
+    assert closed["done"] and closed["closed_at"] and boards.get_item(lead, epic["id"])["children_done"] == 1
+    assert any(c["id"] == epic["id"] for c in boards.items(lead, b["id"], team_id=team))
+    assert boards.find_item(dev, "WEB59-2")["id"] == task["id"] and boards.find_item(dev, "logo draft")["id"] == task["id"]
+
+    # Comments notify the assignee and @mentions; files come from the company folders only with access.
+    told.clear()
+    asyncio.run(asyncio.sleep(0))
+    open_item = boards.save_item(lead, {"title": "Copy texts", "assignee_id": dev.id, "due_date": due}, board_id=b["id"])
+    boards.comment(lead, open_item["id"], "@Dan can you check this? cc @Lea Lead")
+    with pytest.raises(boards.BoardError):
+        boards.comment(lead, open_item["id"], "   ")
+    with pytest.raises(boards.BoardError):
+        boards.attach_file(asker, open_item["id"], "Admin/offer.pdf")
+    assert boards.set_archived(dev, open_item["id"], True)["archived"]          # its assignee may remove it
+    boards.set_archived(dev, open_item["id"], False)
+
+    # Requests go to the team's manager, who accepts (the requester is told) or declines.
+    req = boards.request_item(asker, b["id"], {"title": "New photos for the team page", "team_id": team,
+                                               "due_date": (boards._today() + timedelta(days=5)).isoformat()})
+    assert req["status"] == "pending" and boards.deciders(b["id"], team) == [lead.id]
+    assert [r["id"] for r in boards.requests_for(lead, to_decide=True)] == [req["id"]]
+    with pytest.raises(boards.BoardError):
+        asyncio.run(boards.decide_request(dev, req["id"], True))
+    done_req = asyncio.run(boards.decide_request(lead, req["id"], True, assignee_id=dev.id))
+    assert done_req["status"] == "accepted" and done_req["item_key"].startswith("WEB59-")
+    created = boards.find_item(lead, done_req["item_key"])
+    assert created["created_by"] == asker.id and created["assignee_id"] == dev.id
+    r2 = boards.request_item(asker, b["id"], {"title": "Something else"})
+    assert boards.deciders(b["id"], None) == [lead.id]                          # no team: the board's managers
+    assert boards.withdraw_request(asker, r2["id"])["status"] == "withdrawn"
+
+    # Woven in: mine, agenda, briefing, morning reminder.
+    my = boards.mine(dev)
+    assert any(c["key"] == done_req["item_key"] for c in my)
+    ag = boards.agenda_items(dev, (boards._today() - timedelta(days=3)).isoformat(), (boards._today() + timedelta(days=9)).isoformat())
+    assert any(i["kind"] == "work" for i in ag)
+    assert boards.briefing_block(dev)["open_items_assigned"] >= 1
+    told.clear()
+    assert asyncio.run(boards.send_due_reminders()) >= 1 and any(t[1] == "board items due" for t in told)
+    assert asyncio.run(boards.send_due_reminders()) == 0                          # once a day
+
+    # The sales pipeline is a board too: its columns are the stages, moving a card moves the deal.
+    co = registry.get_person(registry.add_user("Sam Sales", "cofounder"))
+    deal = crm_deals.save(co, {"title": "Board deal 59", "value": 5000})["record"]
+    sales = boards.get_board(co, boards.SALES)
+    assert sales["kind"] == "pipeline" and sales["states"][0]["category"] == "todo"
+    cards = boards.items(co, boards.SALES)
+    assert any(c["id"] == deal["id"] and c["key"] == f"DEAL-{deal['id']}" for c in cards)
+    nxt = sales["states"][1]["id"]
+    boards.move(co, boards.SALES, deal["id"], state_id=nxt, team_id=team)
+    d2 = crm_deals.get(co, deal["id"])
+    assert d2["stage_id"] == nxt and d2["group_id"] == team
+    assert any(x["id"] == boards.SALES for x in boards.boards_for(co))
+    with pytest.raises(boards.BoardError):
+        boards.save_item(co, {"title": "x"}, board_id=boards.SALES)
+    assert crm  # noqa: B018
+
+
+def test_boards_api_tools_and_buttons(monkeypatch):
+    import asyncio
+    from fastapi.testclient import TestClient
+    from orchestrator import boards
+    from orchestrator.main import app
+    from orchestrator.tools import registry as tools
+    admin = registry.lookup("telegram", "111")
+    friend = registry.lookup("telegram", "22222222")
+    names = {t["name"] for t in tools.tools_for(admin)}
+    assert {"board_items", "board_item_save", "board_comment", "board_request"} <= names
+    assert not any(t["name"].startswith("board_") for t in tools.tools_for(friend))
+    with TestClient(app, base_url="http://testserver") as c:
+        c.post("/api/login", json={"username": "admin", "password": "correct horse battery"}, headers=CSRF)
+        made = c.post("/api/boards", json={"name": "Api board 59", "template": "simple"}, headers=CSRF).json()
+        bid = made["id"]
+        assert made["level"] == "manage" and [s["name"] for s in made["states"]] == ["To do", "Doing", "Done"]
+        lst = c.get("/api/boards").json()
+        assert any(x["id"] == bid for x in lst["boards"]) and lst["can"]["create"]
+        it = c.post(f"/api/boards/{bid}/items", json={"fields": {"title": "First"}}, headers=CSRF).json()
+        assert it["key"].endswith("-1")
+        doing = made["states"][1]["id"]
+        mv = c.post(f"/api/boards/{bid}/items/{it['id']}/move", json={"state_id": doing, "index": 0}, headers=CSRF).json()
+        assert mv["state_id"] == doing
+        assert c.post(f"/api/boards/items/{it['id']}/comments", json={"body": "Looks good"}, headers=CSRF).json()["comments"] == 1
+        assert c.get(f"/api/boards/{bid}/items?q=first").json()[0]["id"] == it["id"]
+        assert c.post(f"/api/boards/{bid}/items", json={"fields": {"bogus": 1}}, headers=CSRF).status_code == 400
+        acc = c.put(f"/api/boards/{bid}/access", json={"rows": [{"kind": "everyone", "level": "view"}]}, headers=CSRF).json()
+        assert acc["access"][0]["level"] == "view"
+        t = c.post("/api/teams", json={"name": "Api team 59", "color": "#112233"}, headers=CSRF).json()
+        assert c.put(f"/api/teams/{t['id']}/members", json={"user_ids": [admin.id]}, headers=CSRF).status_code == 200
+        assert any(x["id"] == t["id"] and x["mine"] for x in c.get("/api/teams").json()["teams"])
+        assert c.get("/api/boards/sales").status_code == 200
+        assert c.patch("/api/boards/sales", json={"name": "x"}, headers=CSRF).status_code == 400
+        c.post("/api/logout", headers=CSRF)
+
+    ctx = tools.ToolContext(admin, None, "telegram")
+    out, err = asyncio.run(tools.execute("board_item_save", {"board": "Api board 59", "title": "From chat",
+                                                             "assignee": "me", "state": "Doing"}, ctx))
+    assert not err and '"saved": true' in out and "Doing" in out
+    out, err = asyncio.run(tools.execute("board_items", {}, ctx))
+    assert not err and "From chat" in out
+    out, err = asyncio.run(tools.execute("board_items", {"item": "From chat"}, ctx))
+    assert not err and "Doing" in out
+    out, err = asyncio.run(tools.execute("board_comment", {"item": "From chat", "text": "noted"}, ctx))
+    assert not err and "commented_on" in out
+    out, err = asyncio.run(tools.execute("board_item_save", {"board": "Api board 59", "title": "x", "state": "Nowhere"}, ctx))
+    assert not err and "No column" in out
+
+    # The Telegram buttons decide a request.
+    from orchestrator import telegram_handler
+    b = boards.find_item(admin, "From chat")
+    req = boards.request_item(admin, b["board_id"], {"title": "Via button"})
+    answered = []
+
+    class Q:
+        data = f"brq:yes:{req['id']}"
+        from_user = type("U", (), {"id": 111})()
+
+        async def answer(self, text=""):
+            answered.append(text)
+    monkeypatch.setattr(telegram_handler, "_append_note", lambda q, note: asyncio.sleep(0))
+    asyncio.run(telegram_handler.on_button(type("Upd", (), {"callback_query": Q()})(), None))
+    assert answered and answered[0].startswith("✓ Accepted")

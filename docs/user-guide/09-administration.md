@@ -11,7 +11,7 @@ sidebar_position: 9
 
 ## People and roles
 
-**Personnel** lists everyone in the registry.
+**Team → Accounts** lists everyone in the registry (it used to be the Personnel tab).
 
 - **Add a person**: name, one or more roles, optional notes. Then add their connections (phone, Telegram, email). New
   connections must be confirmed with a code (see
@@ -23,7 +23,7 @@ sidebar_position: 9
   role). A person with history can only be disabled, not deleted. The last active admin can't lose the admin role,
   be disabled or deleted. Changing someone's roles, password or status signs them out everywhere.
 - **Call** next to a person rings them now (with a purpose, if you like).
-- **Access attempts**: who tried to reach Alfred without being registered (kept 90 days).
+- **Team → Access log**: who tried to reach Alfred without being registered (kept 90 days).
 
 ## Roles and permissions
 
@@ -32,7 +32,7 @@ sidebar_position: 9
 Everything Alfred can do is a named **permission**, sorted into groups: channels (Telegram, calls, email,
 dashboard), everyday things (own tasks, reminders, calendar, email, files…), team abilities (calling or messaging
 other people, calls to businesses, company files, the mailbox, templates, escalations, market analysis…),
-automations (see, run, edit, delete) and administration (Personnel, roles, settings, usage, home servers, seeing
+automations (see, run, edit, delete), boards and teams, and administration (accounts, roles, settings, usage, home servers, seeing
 everyone's records). A **role** is a set of these permissions.
 
 - **Roles tab**: pick a role on the left. Each permission can be **Allow**, **—** (not set: left to the person's
@@ -43,8 +43,9 @@ everyone's records). A **role** is a set of these permissions.
 - **Inherits from**: a role can build on a parent role; it gets everything the parent allows and denies, plus its
   own rules. The list on the left shows the family tree. A role can't inherit from itself, directly or in a circle.
 - **Rename** a role any time; **Archive** one nobody uses any more (and no other role builds on).
-- **Several roles per person** (on Personnel): their permissions add up, and any Deny wins.
-- **Groups tab**: a group is a set of people (a team, a client project). Tap roles to give them to the group and
+- **Several roles per person** (on Team → Accounts): their permissions add up, and any Deny wins.
+- **Groups tab**: a group is a set of people (a team, a client project); groups are also the teams on the boards
+  (made on Team → Teams, with a manager and a colour). Tap roles to give them to the group and
   tap people to make them members; every member gets the group's roles on top of their own.
 - **Who can what**: pick a person to see every permission they have and which role gives it ("What can Ivo do?"),
   or pick a permission to see everyone who has it ("Who can call businesses?").
@@ -88,7 +89,7 @@ nothing is switched off.
 ## Data requests
 
 When someone asks on their profile for their data to be deleted, every admin is told on Telegram. On
-**Personnel → data requests** you can **Export first** (a ZIP of their data), then **Confirm** or **Reject**.
+**Team → Accounts → data requests** you can **Export first** (a ZIP of their data), then **Confirm** or **Reject**.
 Deleting either removes their history (conversations, recordings, notes, reminders, tasks, personal mail and
 files, settings) or the whole account. You can also export or delete someone's data directly from the person
 editor (for requests by email), with your password. Your own request needs another admin, unless you're the only

@@ -50,7 +50,7 @@ security**:
 - **Backup codes**: when you switch on your first method you get 10 one-time codes. Keep them somewhere safe;
   each works once if you lose your phone. You can make new ones on the same page (needs your password).
 
-Lost your phone and your backup codes? Ask another admin to **Reset 2FA** for you on the Personnel tab; you then
+Lost your phone and your backup codes? Ask another admin to **Reset 2FA** for you (Team → Accounts); you then
 sign in with your password and set it up again.
 
 ## Connecting your phone, Telegram and email

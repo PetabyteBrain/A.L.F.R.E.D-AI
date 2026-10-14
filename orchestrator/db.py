@@ -710,6 +710,116 @@ CREATE TABLE IF NOT EXISTS employee_tasks (
 );
 CREATE INDEX IF NOT EXISTS idx_employee_tasks ON employee_tasks(checklist_id, position);
 
+-- Work boards (orchestrator/boards.py, roadmap #59): boards with their own item types and states, work items
+-- assigned to a person and/or a team (= a people group), comments, attached company files, history, access per
+-- group/role/person/everyone, and task requests for people who may only ask.
+CREATE TABLE IF NOT EXISTS boards (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    name        TEXT NOT NULL,
+    key         TEXT NOT NULL UNIQUE,                  -- short prefix for item numbers, e.g. WEB -> WEB-12
+    description TEXT NOT NULL DEFAULT '',
+    next_number INTEGER NOT NULL DEFAULT 1,
+    created_by  INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    created_at  TEXT NOT NULL,
+    updated_at  TEXT NOT NULL,
+    archived_at TEXT
+);
+CREATE TABLE IF NOT EXISTS board_types (
+    id       INTEGER PRIMARY KEY AUTOINCREMENT,
+    board_id INTEGER NOT NULL REFERENCES boards(id) ON DELETE CASCADE,
+    name     TEXT NOT NULL,
+    color    TEXT NOT NULL DEFAULT '#5ad0e6',
+    position INTEGER NOT NULL DEFAULT 0,
+    archived INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS board_states (
+    id        INTEGER PRIMARY KEY AUTOINCREMENT,
+    board_id  INTEGER NOT NULL REFERENCES boards(id) ON DELETE CASCADE,
+    name      TEXT NOT NULL,
+    category  TEXT NOT NULL DEFAULT 'todo' CHECK (category IN ('todo','doing','done')),
+    position  INTEGER NOT NULL DEFAULT 0,
+    wip_limit INTEGER,
+    archived  INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS board_access (
+    board_id     INTEGER NOT NULL REFERENCES boards(id) ON DELETE CASCADE,
+    subject_kind TEXT NOT NULL CHECK (subject_kind IN ('everyone','group','role','user')),
+    subject      TEXT NOT NULL DEFAULT '',              -- group id, role name or user id; '' for everyone
+    level        TEXT NOT NULL CHECK (level IN ('view','request','contribute','manage')),
+    PRIMARY KEY (board_id, subject_kind, subject)
+);
+CREATE TABLE IF NOT EXISTS board_items (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    board_id    INTEGER NOT NULL REFERENCES boards(id) ON DELETE CASCADE,
+    number      INTEGER NOT NULL,
+    type_id     INTEGER REFERENCES board_types(id) ON DELETE SET NULL,
+    state_id    INTEGER NOT NULL REFERENCES board_states(id),
+    title       TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    priority    INTEGER NOT NULL DEFAULT 2,             -- 1 urgent, 2 normal, 3 low
+    tags        TEXT NOT NULL DEFAULT '[]',
+    start_date  TEXT,
+    due_date    TEXT,
+    estimate    REAL,                                   -- hours
+    parent_id   INTEGER REFERENCES board_items(id) ON DELETE SET NULL,
+    assignee_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    team_id     INTEGER REFERENCES people_groups(id) ON DELETE SET NULL,
+    company_id  INTEGER REFERENCES crm_companies(id) ON DELETE SET NULL,
+    deal_id     INTEGER REFERENCES crm_deals(id) ON DELETE SET NULL,
+    position    REAL NOT NULL DEFAULT 0,                -- order within its column
+    created_by  INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    created_at  TEXT NOT NULL,
+    updated_at  TEXT NOT NULL,
+    closed_at   TEXT,
+    archived_at TEXT,
+    reminded_on TEXT,
+    UNIQUE (board_id, number)
+);
+CREATE INDEX IF NOT EXISTS idx_board_items_board ON board_items(board_id, state_id);
+CREATE INDEX IF NOT EXISTS idx_board_items_assignee ON board_items(assignee_id);
+CREATE TABLE IF NOT EXISTS board_comments (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    item_id    INTEGER NOT NULL REFERENCES board_items(id) ON DELETE CASCADE,
+    user_id    INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    body       TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    edited_at  TEXT
+);
+CREATE TABLE IF NOT EXISTS board_files (
+    id       INTEGER PRIMARY KEY AUTOINCREMENT,
+    item_id  INTEGER NOT NULL REFERENCES board_items(id) ON DELETE CASCADE,
+    scope    TEXT NOT NULL,
+    path     TEXT NOT NULL,
+    added_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    added_at TEXT NOT NULL,
+    UNIQUE (item_id, scope, path)
+);
+CREATE TABLE IF NOT EXISTS board_history (
+    id      INTEGER PRIMARY KEY AUTOINCREMENT,
+    item_id INTEGER NOT NULL REFERENCES board_items(id) ON DELETE CASCADE,
+    user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    action  TEXT NOT NULL,                              -- create | update | archive | restore
+    changes TEXT NOT NULL DEFAULT '{}',                 -- {field: [before, after]}
+    ts      TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS board_requests (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    board_id     INTEGER NOT NULL REFERENCES boards(id) ON DELETE CASCADE,
+    team_id      INTEGER REFERENCES people_groups(id) ON DELETE SET NULL,
+    title        TEXT NOT NULL,
+    description  TEXT NOT NULL DEFAULT '',
+    type_id      INTEGER REFERENCES board_types(id) ON DELETE SET NULL,
+    priority     INTEGER NOT NULL DEFAULT 2,
+    due_date     TEXT,
+    requested_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    status       TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','accepted','declined','withdrawn')),
+    decided_by   INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    decided_at   TEXT,
+    note         TEXT NOT NULL DEFAULT '',
+    item_id      INTEGER REFERENCES board_items(id) ON DELETE SET NULL,
+    created_at   TEXT NOT NULL
+);
+
 -- Follow-up nudges someone put off (orchestrator/crm_proactive.py, #58 stage 5): key = "<type>:<entity>:<id>".
 CREATE TABLE IF NOT EXISTS crm_snoozes (
     user_id  INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -984,6 +1094,8 @@ ADDED_COLUMNS = [
     ("crm_activities", "deal_id", "INTEGER REFERENCES crm_deals(id) ON DELETE CASCADE"),   # timeline of a deal
     ("crm_activities", "source_ref", "TEXT"),       # logged automatically, e.g. "gcal:<event id>" (no duplicates)
     ("crm_companies", "timetrack_tag", "TEXT NOT NULL DEFAULT ''"),   # its tag in the time-tracking app
+    ("people_groups", "manager_id", "INTEGER REFERENCES users(id) ON DELETE SET NULL"),   # team manager (#59)
+    ("people_groups", "color", "TEXT NOT NULL DEFAULT ''"),
 ]
 
 

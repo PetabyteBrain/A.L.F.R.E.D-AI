@@ -63,6 +63,11 @@ _CATALOGUE = [
     ("billing.approve", "Billing", "Approve sending quotes, invoices and reminders to clients", "c"),
     ("billing.settings", "Billing", "Billing settings: bank account, VAT, numbering, products", "c"),
 
+    ("boards.use", "Boards", "Work boards: see and work on the boards shared with them", "c"),
+    ("boards.create", "Boards", "Work boards: create new boards", "c"),
+    ("boards.admin", "Boards", "Work boards: manage every board (sharing, types, states), whatever its sharing", ""),
+    ("teams.manage", "Boards", "Teams: create teams, choose their members and their manager", "c"),
+
     ("employees.self", "Employees", "Own employee record: request holidays and absences, see own balance", "c"),
     ("employees.view", "Employees", "Employee directory, absences calendar and onboarding checklists", "c"),
     ("employees.manage", "Employees", "Propose employee changes, record absences, run onboarding and offboarding", "c"),
@@ -258,6 +263,11 @@ def actor_for(person) -> Actor:
 
 def _need(actor: Actor, permission: str) -> None:
     if permission not in actor.perms:
+        raise PermissionError_("You don't have permission to do that.")
+
+
+def _need_any(actor: Actor, *permissions: str) -> None:
+    if not any(p in actor.perms for p in permissions):
         raise PermissionError_("You don't have permission to do that.")
 
 
@@ -470,7 +480,9 @@ def admin_count(excluding: int | None = None) -> int:
 # --- groups ----------------------------------------------------------------------------------
 
 def groups() -> list[dict]:
-    rows = db.query("SELECT id, name, description FROM people_groups ORDER BY lower(name)")
+    """Groups double as teams (roadmap #59): a manager and a colour on top of members and roles."""
+    rows = db.query("SELECT g.id, g.name, g.description, g.manager_id, g.color, u.display_name AS manager_name "
+                    "FROM people_groups g LEFT JOIN users u ON u.id = g.manager_id ORDER BY lower(g.name)")
     members = db.query("SELECT m.group_id, u.id, u.display_name FROM group_members m JOIN users u ON u.id = m.user_id "
                        "ORDER BY u.display_name")
     roles = db.query("SELECT group_id, role FROM group_roles ORDER BY role")
@@ -500,7 +512,7 @@ def _clean_group_name(name: str) -> str:
 
 
 def create_group(actor: Actor, name: str, description: str = "") -> int:
-    _need(actor, "roles.manage")
+    _need_any(actor, "roles.manage", "teams.manage")
     name = _clean_group_name(name)
     if db.query_one("SELECT 1 FROM people_groups WHERE lower(name) = lower(?)", (name,)):
         raise PermissionError_("A group with that name already exists.")
@@ -510,9 +522,19 @@ def create_group(actor: Actor, name: str, description: str = "") -> int:
     return gid
 
 
-def update_group(actor: Actor, group_id: int, *, name: str | None = None, description: str | None = None) -> None:
-    _need(actor, "roles.manage")
+def update_group(actor: Actor, group_id: int, *, name: str | None = None, description: str | None = None,
+                 manager_id: int | None = None, color: str | None = None) -> None:
+    """Teams managers (teams.manage) may rename a group and set its manager and colour; roles stay with roles.manage."""
+    _need_any(actor, "roles.manage", "teams.manage")
     g = _group(group_id)
+    if manager_id is not None:
+        if manager_id and not db.query_one("SELECT 1 FROM users WHERE id = ? AND active = 1", (manager_id,)):
+            raise PermissionError_("Unknown person.")
+        db.execute("UPDATE people_groups SET manager_id = ? WHERE id = ?", (manager_id or None, group_id))
+    if color is not None:
+        if color and not re.fullmatch(r"#[0-9a-fA-F]{6}", color):
+            raise PermissionError_("Colours look like #5ad0e6.")
+        db.execute("UPDATE people_groups SET color = ? WHERE id = ?", (color, group_id))
     if name is not None:
         name = _clean_group_name(name)
         if db.query_one("SELECT 1 FROM people_groups WHERE lower(name) = lower(?) AND id != ?", (name, group_id)):
@@ -525,8 +547,10 @@ def update_group(actor: Actor, group_id: int, *, name: str | None = None, descri
 
 def delete_group(actor: Actor, group_id: int) -> list[int]:
     """Returns the members (their access may have changed)."""
-    _need(actor, "roles.manage")
+    _need_any(actor, "roles.manage", "teams.manage")
     g = _group(group_id)
+    if "roles.manage" not in actor.perms and _group_has_roles(group_id):
+        raise PermissionError_("This group gives its members roles; only someone who manages roles can delete it.")
     members = [m["user_id"] for m in db.query("SELECT user_id FROM group_members WHERE group_id = ?", (group_id,))]
     if not actor.admin and any(is_admin_user(m) for m in members) and _group_has_roles(group_id):
         raise PermissionError_("Only an admin can change a group with admins in it.")
@@ -540,9 +564,12 @@ def _group_has_roles(group_id: int) -> bool:
 
 
 def set_group_members(actor: Actor, group_id: int, user_ids: list[int]) -> list[int]:
-    """Replace the members. Returns the people added or removed."""
-    _need(actor, "roles.manage")
+    """Replace the members. Returns the people added or removed. A group that gives roles (permissions) can only be
+    changed by someone who manages roles; plain teams also by people with teams.manage."""
+    _need_any(actor, "roles.manage", "teams.manage")
     g = _group(group_id)
+    if "roles.manage" not in actor.perms and _group_has_roles(group_id):
+        raise PermissionError_("This group gives its members roles; only someone who manages roles can change who's in it.")
     old = {m["user_id"] for m in db.query("SELECT user_id FROM group_members WHERE group_id = ?", (group_id,))}
     new = set(user_ids)
     unknown = new - {u["id"] for u in db.query("SELECT id FROM users")}

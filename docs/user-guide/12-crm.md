@@ -131,6 +131,7 @@ company** or **Add anyway**. The dropdown shows what was added, linked or dismis
   read), and so do calls Alfred made to their numbers for you. **Meetings** in a linked Google Calendar that one of
   their people (or the company's address) was invited to are added once they're over. Filter by kind; open an entry
   to read the details. You can remove entries you wrote yourself.
+- **Work items**: board items for this client (or deal); **+ Work item** puts one on a board, already linked.
 - **Time logged** (when the time-tracking app is linked): hours this month, in the last 30 days and this year, by
   person, and the latest sessions. Work counts for a client when its tag has the client's name, or the
   **time-tracking tag** set on the company (Edit).

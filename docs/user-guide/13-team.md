@@ -31,7 +31,8 @@ Alfred tells you when something waits for approval, and you hear the decision on
 
 ## The Team tab
 
-Views on the left: **Me**, **Directory**, **Absences**, **Checklists** and **Approvals**, plus who's **away today**.
+Views on the left: **Me**, **Directory**, **Absences**, **Checklists**, **Teams**, for people who manage personnel
+**Accounts** and **Access log**, and **Approvals**, plus who's **away today**.
 
 ### Me
 
@@ -80,6 +81,18 @@ checklist early. A checklist closes by itself when everything is done.
 New employees, changes to their details, time off and cancelling approved time off. Approvers also get each request
 on Telegram with **Approve** / **Reject** buttons. You may approve your own.
 
+### Teams
+
+The teams that own work on the [boards](14-boards.md): a name, a colour (the team's lane), a **manager** who accepts
+or declines the team's task requests, and its members. People who may manage teams create and change them here.
+
+### Accounts and Access log
+
+For people who manage personnel (admins by default): **Accounts** lists everyone Alfred knows with their roles,
+groups, phone, Telegram and email, dashboard login and two-factor sign-in, and the data requests; **Add person**,
+**Edit** and **Call** work as before. On an employee's page, their **Alfred account** link opens it here. **Access
+log** shows who tried to reach Alfred, allowed or blocked. See [Administration](09-administration.md#people-and-roles).
+
 ### Holidays & checklists
 
 For whoever manages employees: the holiday days a year for new employees, the **public holidays** (they never count
@@ -93,4 +106,4 @@ employee on the Team tab, and per client in the CRM and its reports. An employee
 the app (or the time-tracking name on their record); a client's by the session's tag (its name, or the time-tracking
 tag set on the company).
 
-Next: back to the [contents](index.md).
+Next: [Boards: team work, deadlines and requests](14-boards.md).

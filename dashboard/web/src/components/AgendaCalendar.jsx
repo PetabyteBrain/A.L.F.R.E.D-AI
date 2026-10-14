@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api.js";
-import { usePageActive, useStoredState } from "../hooks.js";
+import { navigate, usePageActive, useStoredState } from "../hooks.js";
 import { ErrorNote, Tag } from "./common.jsx";
 import { CATEGORIES, CatDot, KIND_ICON } from "./categories.jsx";
 
@@ -98,7 +98,7 @@ function ItemEditor({ item, onClose, onChanged }) {
   return (
     <div className="hud agenda-editor" role="dialog" aria-label="Edit item">
       <div className="note-head">
-        <h3 className="sub flush">{KIND_ICON[item.kind]} {item.kind === "event" ? "Calendar event" : item.kind}</h3>
+        <h3 className="sub flush">{KIND_ICON[item.kind]} {item.kind === "event" ? "Calendar event" : item.kind === "work" ? "Board item due" : item.kind}</h3>
         <button className="btn small" onClick={onClose}>Close</button>
       </div>
       <ErrorNote error={err} />
@@ -140,6 +140,11 @@ function ItemEditor({ item, onClose, onChanged }) {
             )}
           </div>
         </form>
+      ) : item.kind === "work" ? (
+        <div className="stack">
+          <p className="small">{item.title} · due {item.start}{item.board ? ` · ${item.board}` : ""}</p>
+          <button className="btn primary small" type="button" onClick={() => navigate("boards", { item: item.id, board: item.board_id })}>Open on the board</button>
+        </div>
       ) : <p className="muted small">{item.title} · {hhmm(item.start)} (shown here; manage it in the call queue)</p>}
       {item.kind === "event" && (
         <div className="field-row">

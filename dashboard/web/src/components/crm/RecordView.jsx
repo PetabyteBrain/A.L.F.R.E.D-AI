@@ -7,6 +7,7 @@ import { Icon } from "../icons.jsx";
 import { STATUS_LABEL } from "./RecordEditor.jsx";
 import DocList from "./DocList.jsx";
 import TimeLogged from "./TimeLogged.jsx";
+import LinkedItems from "../boards/LinkedItems.jsx";
 import Timeline from "./Timeline.jsx";
 
 /* One company or contact: facts, people, tags, the timeline, change history, and the actions
@@ -134,7 +135,7 @@ function History({ entity, id, onUndo }) {
 }
 
 export default function RecordView({ entity, id, status, onBack, onOpen, onEdit, onAddContact, onAddDeal, onToast, onChanged,
-                                    canBilling, onNewDoc, onOpenDoc, onEmail }) {
+                                    canBilling, onNewDoc, onOpenDoc, onEmail, me }) {
   const path = `/crm/${entity === "company" ? "companies" : "contacts"}/${id}`;
   const { data: r, error, reload } = usePoll(() => api(path), 0, [path]);
   const [dialog, setDialog] = useState(null);
@@ -255,6 +256,8 @@ export default function RecordView({ entity, id, status, onBack, onOpen, onEdit,
             </div>
           )}
           {entity === "company" && status?.timetrack && <TimeLogged companyId={id} />}
+          {entity === "company" && <LinkedItems me={me} filter={`company_id=${id}`} preset={{ company_id: id }}
+                                                empty="No work for this client on the boards yet." />}
           {entity === "company" && canBilling && (
             <DocList filter={`company_id=${id}`} preset={{ company_id: id }} onOpenDoc={onOpenDoc} onNewDoc={onNewDoc} />
           )}

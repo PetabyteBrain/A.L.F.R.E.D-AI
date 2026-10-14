@@ -303,6 +303,16 @@ async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await q.answer(note[:190])
         await _append_note(q, note)
         return
+    if kind == "brq" and action in ("yes", "no") and rid.isdigit():
+        from . import boards
+        try:
+            r = await boards.decide_request(person, int(rid), action == "yes")
+            note = f"✓ Accepted: {r.get('item_key') or ''}".strip() if r["status"] == "accepted" else "✕ Declined"
+        except boards.BoardError as e:
+            note = str(e)
+        await q.answer(note[:190])
+        await _append_note(q, note)
+        return
     if kind == "scr" and action == "block" and rid.isdigit():
         from . import screening
         note = screening.block_from_button(int(rid), person)

@@ -44,6 +44,7 @@ from dashboard.api.access import router as access_router
 from dashboard.api.crm import actions as crm_actions_router, router as crm_router
 from dashboard.api.billing import router as billing_router
 from dashboard.api.team import approvals_router, router as team_router
+from dashboard.api.boards import router as boards_router, teams_router
 from dashboard.api.continuity import router as continuity_router
 from dashboard.api.routes import router as dashboard_router
 from dashboard.api.security import SecurityMiddleware
@@ -230,6 +231,8 @@ app.include_router(crm_actions_router)
 app.include_router(billing_router)
 app.include_router(team_router)
 app.include_router(approvals_router)
+app.include_router(boards_router)
+app.include_router(teams_router)
 app.include_router(continuity_router)
 app.include_router(google_router)
 app.include_router(chat_router)

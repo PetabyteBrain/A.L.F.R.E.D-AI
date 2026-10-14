@@ -226,6 +226,13 @@ async def gather(person: Person) -> dict:
             employees.mark_reminded([t["id"] for t in steps], now.date())
     except Exception as e:  # noqa: BLE001
         log.warning("Briefing CRM part failed: %s", e)
+    try:                                          # work boards (#59): what's due, requests to decide
+        from . import boards
+        work = boards.briefing_block(person)
+        if work:
+            out["work_items"] = work
+    except Exception as e:  # noqa: BLE001
+        log.warning("Briefing boards part failed: %s", e)
 
     if settings.n8n_enabled and person.can("automations.view"):
         try:
@@ -291,7 +298,8 @@ async def compose(person: Person, data: dict, channel: str) -> str:
               f"list. For company_todo give the top few items briefly; if in_progress_for_2_weeks_or_more is "
               f"present, add a gentle nudge about those. crm_follow_ups are clients and deals to follow up on: name the top "
               f"one or two briefly and the count. team_away_today: who's away. checklist_steps_due: onboarding or "
-              f"offboarding steps that are theirs today. Mention anything 'unavailable' in a few words. {style} "
+              f"offboarding steps that are theirs today. work_items: their board items due today or overdue (name them) "
+              f"and task requests waiting for their decision. Mention anything 'unavailable' in a few words. {style} "
               f"Address them as {who}. End with one "
               f"brief, dry, kind remark, not a question.")
     if not ai_config.configured():

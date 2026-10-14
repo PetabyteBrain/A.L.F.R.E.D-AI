@@ -50,7 +50,7 @@ Alfred can phone people in the registry for you, now or later, and report back.
 - He respects the other person's quiet hours; say "it's urgent" if it can't wait.
 - "Call me at 7" works for everyone, as a reminder by phone.
 
-**On the dashboard:** **Tasks → Schedule a call** (now or later), or **Call** next to a person on **Personnel**
+**On the dashboard:** **Tasks → Schedule a call** (now or later), or **Call** next to a person on **Team → Accounts**
 (admins). Planned calls are under **Upcoming**, finished ones under **Archived** (searchable).
 
 ## Calls to businesses and numbers outside the registry

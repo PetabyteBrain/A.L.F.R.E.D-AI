@@ -41,6 +41,7 @@ Alfred only ever offers you what your roles allow, and simply says so when you a
 | [Email](06-email.md) | Alfred's address, sending and receiving, attachments, the Mail tab, groups and tags, templates |
 | [Company work](07-company.md) | Company files and to-do list, market analysis, inquiries and matters for the team |
 | [CRM: clients and contacts](12-crm.md) | Pipeline and deals, follow-ups, quotes and invoices with the QR-bill, companies and people, suggested leads, emails to clients, reports, approvals |
+| [Boards: team work, deadlines and requests](14-boards.md) | Work boards with team lanes, list and calendar views, assigning to people and teams, deadlines in your agenda, files, comments, task requests |
 | [Team: employees, time off and onboarding](13-team.md) | The employee directory, holidays and absences with the team calendar, onboarding and offboarding checklists, time tracking |
 | [The dashboard, tab by tab](08-dashboard.md) | Every tab explained, skins, the avatar helper |
 | [Administration](09-administration.md) | People and roles, settings, usage and budgets, data requests, systems and backups (admins) |

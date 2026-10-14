@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api.js";
 import { fmtAgo, fmtPhone } from "../format.js";
-import { usePageActive, usePoll, useStoredState } from "../hooks.js";
+import { useNavTarget, usePageActive, usePoll, useStoredState } from "../hooks.js";
 import { Empty, ErrorNote, Tag } from "../components/common.jsx";
 import { Panel } from "../components/hud.jsx";
 import { Icon } from "../components/icons.jsx";
@@ -47,7 +47,7 @@ function Toast({ toast, onUndo, onClose }) {
   );
 }
 
-export default function CRM({ assistant }) {
+export default function CRM({ me, assistant }) {
   const active = usePageActive();
   const { data: st, reload: reloadStatus } = usePoll(() => api("/crm/status"), 60000);
   const [savedView, setSavedView] = useStoredState("alfred-crm-view", "pipeline");
@@ -83,6 +83,10 @@ export default function CRM({ assistant }) {
     } catch (e) { setErr(e.message); }
   }
 
+  useNavTarget("crm", (t) => {                            // "open this deal / client" from a board item
+    if (t.deal) setOpen({ entity: "deal", id: Number(t.deal) });
+    else if (t.company) setOpen({ entity: "company", id: Number(t.company) });
+  });
   const setView = (v) => { setViewState(v); if (!["approvals", "leads", "followups"].includes(v)) setSavedView(v); setOpen(null); setOffset(0); };
   const openEmail = (entity, record, after) => setEmailFor({ entity, record, after });
   const url = useMemo(() => {
@@ -233,7 +237,7 @@ export default function CRM({ assistant }) {
                       canBilling={canBilling} onNewDoc={(kind, preset) => newDoc(kind, preset)}
                       onOpenDoc={(id) => setOpen({ entity: "billing", id })}
                       onOpen={(entity, id) => setOpen({ entity, id })} onEdit={(deal) => setEditor({ entity: "deal", record: deal })}
-                      onEmail={canEdit ? openEmail : null} onToast={showToast} onChanged={changed} />
+                      onEmail={canEdit ? openEmail : null} me={me} onToast={showToast} onChanged={changed} />
           ) : view === "approvals" && !open ? <Approvals onChanged={changed} />
             : view === "followups" && !open ? (
               <FollowUps status={st} onOpen={(entity, id) => setOpen({ entity, id })} onOpenDoc={(id) => setOpen({ entity: "billing", id })}
@@ -267,7 +271,7 @@ export default function CRM({ assistant }) {
                         onAddDeal={(company) => setEditor({ entity: "deal", presetCompany: { id: company.id, name: company.name } })}
                         canBilling={canBilling} onNewDoc={(kind, preset) => newDoc(kind, preset)}
                         onOpenDoc={(id) => setOpen({ entity: "billing", id })} onEmail={canEdit ? openEmail : null}
-                        onToast={showToast} onChanged={changed} />
+                        me={me} onToast={showToast} onChanged={changed} />
           ) : (
             <>
               <div className="mail-toolbar">

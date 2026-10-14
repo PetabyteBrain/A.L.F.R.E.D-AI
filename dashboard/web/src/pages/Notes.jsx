@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, apiUpload } from "../api.js";
-import { usePageActive, usePoll } from "../hooks.js";
+import { useNavTarget, usePageActive, usePoll } from "../hooks.js";
 import { Empty, ErrorNote } from "../components/common.jsx";
 import { Panel } from "../components/hud.jsx";
 import FileEditor from "../components/FileEditor.jsx";
@@ -368,6 +368,11 @@ export default function Notes({ assistant }) {
     setActive(key(f));
     setTimeout(() => reloadRecent(), 300);
   }, [reloadRecent]);
+  useNavTarget("notes", (t) => {                          // "open this file" from a board item
+    if (!t.scope || !t.path) return;
+    setScope(t.scope);
+    setTimeout(() => { setPath(t.path.includes("/") ? t.path.slice(0, t.path.lastIndexOf("/")) : ""); open({ scope: t.scope, path: t.path }); }, 0);
+  });
   const close = (f) => {
     if (dirty.has(key(f)) && !window.confirm(`"${f.path.split("/").pop()}" has unsaved changes. Close it anyway?`)) return;
     markDirty(key(f), false);

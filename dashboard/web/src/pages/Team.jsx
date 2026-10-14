@@ -12,12 +12,15 @@ import EmployeeEditor from "../components/team/EmployeeEditor.jsx";
 import EmployeeView, { awayText, STATUS } from "../components/team/EmployeeView.jsx";
 import TeamCalendar from "../components/team/TeamCalendar.jsx";
 import TeamSettings from "../components/team/TeamSettings.jsx";
+import Teams from "../components/team/Teams.jsx";
+import PeopleAccounts, { AccessLog } from "./People.jsx";
+import { can as canDo } from "../components/common.jsx";
 
 /* Team (CRM stage 4, roadmap #58): the employee directory linked to Alfred's people, absences and holidays on a
    team calendar, onboarding and offboarding checklists, and the approvals for employee changes. Everyone with
    their own employee record sees "Me": their holiday balance and absences, and can ask for time off. */
 
-export default function Team({ assistant }) {
+export default function Team({ me: viewer, assistant }) {
   const active = usePageActive();
   const { data: st, reload: reloadStatus } = usePoll(() => api("/team/status"), 60000);
   const [saved, setSaved] = useStoredState("alfred-team-view", "directory");
@@ -31,13 +34,14 @@ export default function Team({ assistant }) {
   const [settings, setSettings] = useState(false);
   const [toast, setToast] = useState("");
   const [rev, setRev] = useState(0);
+  const [account, setAccount] = useState(null);         // open this person's account (from their employee record)
   const searchRef = useRef(null);
   const can = st?.can || {};
   const me = st?.me;
 
   // Without the directory, "Me" is the start page.
   useEffect(() => {
-    if (st && !can.view && (view === "directory" || view === "checklists") && me) setViewState("me");
+    if (st && !can.view && (view === "directory" || view === "checklists")) setViewState(me ? "me" : "teams");
   }, [st, can.view, view, me]);
   useEffect(() => { if (!toast) return undefined; const t = setTimeout(() => setToast(""), 6000); return () => clearTimeout(t); }, [toast]);
 
@@ -91,6 +95,16 @@ export default function Team({ assistant }) {
             <Icon name="tasks" className="lab-ico" />Checklists
             {st?.my_steps_due > 0 && <b className="mail-count" title="Your steps due">{st.my_steps_due}</b>}
           </button>
+          <button type="button" className={`mail-side-box${view === "teams" ? " active" : ""}`} onClick={() => setView("teams")}>
+            <Icon name="people" className="lab-ico" />Teams</button>
+          {canDo(viewer, "people.manage") && (
+            <>
+              <button type="button" className={`mail-side-box${view === "accounts" ? " active" : ""}`} onClick={() => setView("accounts")}>
+                <Icon name="profile" className="lab-ico" />Accounts</button>
+              <button type="button" className={`mail-side-box${view === "access" ? " active" : ""}`} onClick={() => setView("access")}>
+                <Icon name="approve" className="lab-ico" />Access log</button>
+            </>
+          )}
           <button type="button" className={`mail-side-box${view === "approvals" ? " active" : ""}`} onClick={() => setView("approvals")}>
             <Icon name="approve" className="lab-ico" />Approvals
             {st?.approvals_pending > 0 && <b className="mail-count">{st.approvals_pending}</b>}
@@ -112,16 +126,23 @@ export default function Team({ assistant }) {
 
         <section className="mail-main">
           {toast && <div className="notice" role="status" onClick={() => setToast("")}>{toast}</div>}
-          {shown ? (
-            <EmployeeView key={`${shown}:${rev}`} id={shown} status={st} isMePage={view === "me"} onBack={view === "me" ? null : () => setOpen(null)}
+          {shown && !["teams", "accounts", "access"].includes(view) ? (
+            <EmployeeView key={`${shown}:${rev}`} id={shown} status={st} viewer={viewer} isMePage={view === "me"} onBack={view === "me" ? null : () => setOpen(null)}
                           onOpen={(id) => { setViewState("directory"); setOpen(id); }}
                           onEdit={(e) => setEditor({ employee: e })} onAbsence={(e) => setAbsence({ employee: e })}
+                          onAccount={canDo(viewer, "people.manage") ? (uid) => { setAccount(uid); setView("accounts"); } : null}
                           onToast={setToast} onChanged={changed} />
           ) : view === "me" ? (
             <Empty>You're not in the employee directory yet. Ask whoever manages employees to add you.</Empty>
           ) : view === "calendar" ? (
             <TeamCalendar status={st} rev={rev} onOpen={can.view ? (id) => { setViewState("directory"); setOpen(id); } : null}
                           onToast={setToast} onChanged={changed} />
+          ) : view === "teams" ? (
+            <Teams onToast={setToast} />
+          ) : view === "accounts" && canDo(viewer, "people.manage") ? (
+            <PeopleAccounts me={viewer} assistant={assistant} openId={account} onOpened={() => setAccount(null)} />
+          ) : view === "access" && canDo(viewer, "people.manage") ? (
+            <AccessLog />
           ) : view === "checklists" ? (
             <Checklists status={st} onOpen={can.view ? (id) => { setViewState("directory"); setOpen(id); } : null} onChanged={changed} />
           ) : view === "approvals" ? (

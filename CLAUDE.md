@@ -143,6 +143,25 @@ docs and the real homelab map are git-ignored (`docs/PROJECT_PLAN.md`, `CLAUDE.l
   `main.lifespan`, jobs claim their day/hour in app_settings "crm_proactive_state". Tools crm_follow_ups, crm_email,
   crm_report, team_directory, absence, employee_change, employee_checklist. A tool `permission:` may be "a|b".
 
+## Boards and teams (roadmap #59)
+- `orchestrator/boards.py`: boards with their own `board_types` and `board_states` (category todo/doing/done, WIP
+  limit), `board_items` (numbered per board, KEY-n; assignee must see the board; team = a people group; company/deal
+  links checked through crm._get_visible), comments (@mentions and the assignee notified), `board_files` (company
+  share only, opened with the viewer's own access), `board_history`. Access: `level_of` = highest of the
+  `board_access` rows for everyone/group/role/user (view < request < contribute < manage); creator and boards.admin
+  manage; a team manager gets contribute on boards their team is on. "request" level -> `board_requests`, decided by
+  the team's manager or the board's managers (`deciders`; Telegram `brq:yes|no:<id>`).
+- The sales pipeline is the virtual board "sales" (columns = crm_stages, cards = deals; moves go through
+  crm_deals.save). Woven in: agenda (`agenda_items`, kind "work"), briefing (`briefing_block`), morning reminder in
+  the crm_proactive loop (`send_due_reminders`, setting board_reminders), Team page / CRM views (`linked_items`).
+- Teams are people groups with `manager_id` and `color`; teams.manage (or roles.manage) changes them, but a group
+  that gives roles stays with roles.manage (`permissions._need_any`). Membership changes revoke dashboard sessions.
+- API `dashboard/api/boards.py` (`/api/boards/...`, `/api/teams`), UI `pages/Boards.jsx` + `components/boards/*`,
+  teams in `components/team/Teams.jsx`. Tools board_items, board_item_save, board_comment, board_request.
+  `hooks.navigate(tab, target)` + `useNavTarget` open another tab at a record (boards item, CRM deal, a file).
+- Personnel lives in the Team tab now (Accounts, Access log: `pages/People.jsx` exports them); Settings is paged
+  like Profile (`pages/Settings.jsx` SECTIONS).
+
 ## Calls, calendar, usage
 - Call requests: `orchestrator/scheduler.py` (tools place_call/schedule_call/...; `end_call` is
   channel-gated to calls). Outcome hook: `call_handler._call_finished` -> `scheduler.on_call_finished`.

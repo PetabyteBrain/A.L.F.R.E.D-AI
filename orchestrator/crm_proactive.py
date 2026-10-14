@@ -31,7 +31,7 @@ from .identity.registry import Person
 log = logging.getLogger(__name__)
 POLL_SECONDS = 60
 DEFAULTS = {"nudges": True, "nudge_time": "08:30", "stale_days": 14, "report": True, "report_day": 0,
-            "report_time": "08:00", "auto_meetings": True, "checklist_reminders": True}
+            "report_time": "08:00", "auto_meetings": True, "checklist_reminders": True, "board_reminders": True}
 TYPES = {"next_step_due": "Next step due", "close_passed": "Close date passed", "no_next_step": "No next step",
          "stale": "No contact lately", "invoice_overdue": "Invoice overdue", "quote_expiring": "Quote expires soon"}
 ORDER = list(TYPES)
@@ -79,7 +79,7 @@ def save_settings(person: Person, data: dict) -> dict:
     if unknown:
         raise ProactiveError(f"Unknown setting(s): {', '.join(sorted(unknown))}.")
     for k, v in data.items():
-        if k in ("nudges", "report", "auto_meetings", "checklist_reminders"):
+        if k in ("nudges", "report", "auto_meetings", "checklist_reminders", "board_reminders"):
             s[k] = bool(v)
         elif k in ("nudge_time", "report_time"):
             if not re.fullmatch(r"([01]\d|2[0-3]):[0-5]\d", str(v)):
@@ -681,6 +681,9 @@ async def tick(now: datetime | None = None) -> None:
             _spawn(_safely("nudges", send_nudges, now.date()))
         if s["checklist_reminders"] and _claim("checklists", today):
             _spawn(_safely("checklist reminders", send_checklist_reminders, now.date()))
+        if s["board_reminders"] and _claim("boards", today):
+            from . import boards
+            _spawn(_safely("board items due", boards.send_due_reminders, now.date()))
     if s["report"] and now.weekday() == s["report_day"] and hhmm >= s["report_time"] and _claim("report", today):
         _spawn(_safely("weekly report", send_weekly_reports))
     if s["auto_meetings"] and settings.google_enabled and _claim("meetings", now.strftime("%Y-%m-%dT%H")):

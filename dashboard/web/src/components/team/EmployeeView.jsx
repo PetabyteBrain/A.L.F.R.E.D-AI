@@ -6,6 +6,7 @@ import { ErrorNote, Tag } from "../common.jsx";
 import { Icon } from "../icons.jsx";
 import { Avatar } from "../crm/RecordView.jsx";
 import { ChecklistCard } from "./Checklists.jsx";
+import LinkedItems from "../boards/LinkedItems.jsx";
 
 /* One employee: details, holiday balance, absences, onboarding/offboarding, responsibilities, hours and history.
    Every change to the details is sent for approval; ticking off checklist steps applies directly. */
@@ -76,7 +77,7 @@ export function absenceWhen(a) {
   return a.start_date === a.end_date ? `${fmtDate(a.start_date)}${a.half_day ? " (half day)" : ""}` : `${fmtDate(a.start_date)} – ${fmtDate(a.end_date)}`;
 }
 
-export default function EmployeeView({ id, status, isMePage, onBack, onOpen, onEdit, onAbsence, onToast, onChanged }) {
+export default function EmployeeView({ id, status, viewer, isMePage, onBack, onOpen, onEdit, onAbsence, onAccount, onToast, onChanged }) {
   const { data: e, error, reload } = usePoll(() => api(`/team/employees/${id}`), 0, [id]);
   const [menu, setMenu] = useState(false);
   const [showPast, setShowPast] = useState(false);
@@ -163,7 +164,9 @@ export default function EmployeeView({ id, status, isMePage, onBack, onOpen, onE
               {onOpen ? <button type="button" className="linkish" onClick={() => onOpen(e.manager_id)}>{e.manager_name}</button> : <b>{e.manager_name}</b>}</div>}
             {e.reports.length > 0 && <div className="kv crm-fact"><span>Team</span><b>{e.reports.map((r, i) => (
               <span key={r.id}>{i > 0 && ", "}{onOpen ? <button type="button" className="linkish" onClick={() => onOpen(r.id)}>{r.name}</button> : r.name}</span>))}</b></div>}
-            <Fact label="Alfred account">{e.user_name || "—"}</Fact>
+            <div className="kv crm-fact"><span>Alfred account</span>
+              {e.user_id && onAccount ? <button type="button" className="linkish" onClick={() => onAccount(e.user_id)}>{e.user_name} (roles, logins…)</button>
+                : <b>{e.user_name || "—"}</b>}</div>
             <Fact label="Holidays a year">{`${e.holiday_days} days`}</Fact>
             {status?.timetrack && <Fact label="Time tracking">{e.timetrack_user || null}</Fact>}
           </div>
@@ -231,6 +234,8 @@ export default function EmployeeView({ id, status, isMePage, onBack, onOpen, onE
               </>
             )}
           </section>
+          {e.user_id && <LinkedItems me={viewer} filter={`user_id=${e.user_id}`} title={e.is_me ? "My board items" : "Board items"}
+                                     empty="Nothing assigned on the boards." />}
           {openLists.map((c) => <ChecklistCard key={c.id} list={c} status={status} canManage={e.can.manage} onChanged={refresh} />)}
           {doneLists.length > 0 && <p className="muted tiny">{doneLists.map((c) => `${c.kind[0].toUpperCase()}${c.kind.slice(1)} completed ${fmtAgo(c.closed_at)}`).join(" · ")}</p>}
         </div>

@@ -58,6 +58,8 @@ export default function ProactiveSettings({ onClose, onChanged }) {
               <span>Log meetings from linked Google Calendars on the client's timeline when a CRM contact was invited</span></label>
             <label className="toggle wide"><input type="checkbox" checked={s.checklist_reminders} onChange={(e) => set("checklist_reminders", e.target.checked)} />
               <span>Remind people of onboarding and offboarding steps on the morning they're due</span></label>
+            <label className="toggle wide"><input type="checkbox" checked={s.board_reminders !== false} onChange={(e) => set("board_reminders", e.target.checked)} />
+              <span>Remind people of their board items on the morning they're due (or overdue)</span></label>
           </div>
         )}
         <div className="modal-actions">

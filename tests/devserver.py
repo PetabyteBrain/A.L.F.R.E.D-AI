@@ -353,6 +353,45 @@ def fake_mail() -> None:
         # A lead nobody has been in touch with, so the follow-ups have something to show (#58 stage 5).
         db.execute("UPDATE crm_companies SET created_at = ? WHERE status = 'lead' AND id = (SELECT MIN(id) FROM "
                    "crm_companies WHERE status = 'lead')", ((today - timedelta(days=24)).isoformat() + "T09:00:00+00:00",))
+    if not db.query_one("SELECT 1 FROM boards LIMIT 1"):                 # work boards demo (#59)
+        from datetime import date, timedelta
+        from orchestrator import boards, permissions
+        boss = reg.get_person(db.query_one("SELECT user_id FROM user_identifiers WHERE type = 'dashboard' "
+                                           "AND value = 'cofounder'")["user_id"])
+        admin_id = db.query_one("SELECT id FROM users WHERE role='admin'")["id"]
+        actor = permissions.actor_for(boss)
+        teams = {}
+        for name, color, manager, members in (("Design", "#b58cff", boss.id, [boss.id]),
+                                               ("Development", "#5ad0e6", admin_id, [admin_id, boss.id])):
+            gid = (db.query_one("SELECT id FROM people_groups WHERE name = ?", (name,)) or {}).get("id") \
+                or permissions.create_group(actor, name)
+            permissions.update_group(actor, gid, manager_id=manager, color=color)
+            permissions.set_group_members(actor, gid, members)
+            teams[name] = gid
+        b = boards.create_board(boss, name="Website relaunch", key="WEB", template="agile",
+                                sharing=[{"kind": "group", "subject": str(teams["Design"]), "level": "contribute"},
+                                         {"kind": "group", "subject": str(teams["Development"]), "level": "contribute"},
+                                         {"kind": "everyone", "level": "request"}])
+        st = {s["name"]: s["id"] for s in b["states"]}
+        ty = {t["name"]: t["id"] for t in b["types"]}
+        d = lambda n: (date.today() + timedelta(days=n)).isoformat()  # noqa: E731
+        epic = boards.save_item(boss, {"title": "New website for the studio", "type_id": ty["Epic"], "state_id": st["Active"]},
+                                board_id=b["id"])
+        for title, typ, state, team, who, due, extra in (
+                ("Logo variants", "Task", "Active", "Design", boss.id, d(2), {"tags": ["brand"]}),
+                ("Colour palette", "Task", "Review", "Design", boss.id, d(-1), {"priority": 1}),
+                ("Home page layout", "Feature", "New", "Design", None, d(9), {}),
+                ("Set up hosting", "Task", "Done", "Development", admin_id, d(-4), {}),
+                ("Contact form", "Feature", "Active", "Development", admin_id, d(5), {"estimate": 6}),
+                ("Broken link in the footer", "Bug", "New", "Development", None, None, {"priority": 1}),
+                ("Shop integration", "Feature", "New", None, None, d(20), {})):
+            boards.save_item(boss, {"title": title, "type_id": ty[typ], "state_id": st[state], "parent_id": epic["id"],
+                                    "team_id": teams.get(team), "assignee_id": who, "due_date": due, **extra},
+                             board_id=b["id"])
+        boards.comment(boss, epic["id"], "Kick-off went well; first drafts by the end of the week.")
+        boards.create_board(boss, name="Office", key="OFF", template="simple")
+        boards.request_item(reg.get_person(admin_id), b["id"], {"title": "Photos of the team for the about page",
+                                                                "team_id": teams["Design"]})
     if db.query_one("SELECT 1 FROM emails LIMIT 1"):
         return
     admin = db.query_one("SELECT id FROM users WHERE role='admin'")["id"]

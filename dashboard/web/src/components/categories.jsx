@@ -3,7 +3,7 @@ import { api } from "../api.js";
 
 // Agenda categories (orchestrator/agenda.py). Colours are set per category in styles.css (.cat-*).
 export const CATEGORIES = ["meeting", "reminder", "task", "call", "work", "personal", "other"];
-export const KIND_ICON = { event: "📅", reminder: "⏰", task: "📋", call: "☎" };
+export const KIND_ICON = { event: "📅", reminder: "⏰", task: "📋", call: "☎", work: "🗂" };
 
 export function CatDot({ category }) {
   return <span className={`cat-dot cat-${category || "other"}`} aria-hidden="true" />;

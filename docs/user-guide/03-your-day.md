@@ -38,7 +38,8 @@ the reminders list to change, snooze or delete them.
 **Who:** everyone with a dashboard login (calendar view); everyone can ask Alfred about their schedule.
 
 Alfred keeps one combined view of your day: Google Calendar events, reminders (including repeats), tasks with a
-due date and planned calls.
+due date, planned calls, and the due dates of board items assigned to you (🗂; click one to open it on its
+[board](14-boards.md)).
 
 **Ask Alfred**
 
@@ -88,7 +89,8 @@ Every morning (or weekdays only) at a time you choose, Alfred sends a short brie
   progress" for a long time), and failed automations for admins,
 - with the CRM: the clients and deals you should follow up on ([CRM](12-crm.md#follow-ups)),
 - with the employee directory: who's away today, and onboarding or offboarding steps that are yours today
-  ([Team](13-team.md)).
+  ([Team](13-team.md)),
+- with the boards: your items due today or overdue, and task requests waiting for you ([Boards](14-boards.md)).
 
 **Set it up:** **Profile → How Alfred serves you → Daily briefing** (time, every day or weekdays, Telegram or a
 call, weather town), or ask: "Send me a briefing every weekday at 7:30 by Telegram, weather for Bern."

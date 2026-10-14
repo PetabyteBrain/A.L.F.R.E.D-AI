@@ -31,6 +31,7 @@ const P = {
   plus: <><path d="M12 5v14M5 12h14" /></>,
   approve: <><path d="M12 3 4 6v6c0 4.4 3.4 8 8 9 4.6-1 8-4.6 8-9V6z" /><path d="m8.5 12 2.5 2.5 4.5-5" /></>,
   team: <><rect x="3" y="4" width="18" height="16" rx="2" /><circle cx="9" cy="10" r="2.3" /><path d="M5.5 16.5c.5-2 1.9-3 3.5-3s3 1 3.5 3M14.5 9h4M14.5 12.5h4" /></>,
+  boards: <><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M9 4v16M15 4v16" /><path d="M5 8h2M11 8h2M11 11h2M17 8h2" /></>,
   logout: <><path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3" /><path d="m10 16 4-4-4-4M14 12H4" /></>,
 };
 

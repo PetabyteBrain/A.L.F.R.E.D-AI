@@ -12,7 +12,7 @@ from orchestrator.identity.registry import Person
 
 from .routes import current_person
 
-_TEAM = ("employees.self", "employees.view", "employees.manage", "employees.approve")
+_TEAM = ("employees.self", "employees.view", "employees.manage", "employees.approve", "teams.manage", "people.manage")
 
 
 def _team_member(person: Person = Depends(current_person)) -> Person:

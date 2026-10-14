@@ -15,6 +15,7 @@ working on the code are in [CLAUDE.md](../CLAUDE.md).
 | Pipeline and leads | Stages, deals, board, forecast (`crm_deals.py`); lead suggestions from market analyses and inquiries (`crm_leads.py`) | `orchestrator/crm_deals.py`, `orchestrator/crm_leads.py` |
 | Quotes & invoices | Documents, lines, numbering, payments, approval-gated sending; PDF with the Swiss QR-bill | `orchestrator/invoicing.py`, `orchestrator/invoicing_pdf.py` |
 | Employees | Directory, absences and balances, onboarding/offboarding checklists; every change through approvals | `orchestrator/employees.py` |
+| Boards | Work boards with editable types and states, levels per board (view/request/contribute/manage), items, comments, files, history, task requests, the sales pipeline as a board, agenda/briefing/reminder hooks | `orchestrator/boards.py` |
 | Time tracking | Read-only hours from the time-tracking app's export, per client and per employee | `orchestrator/timetrack.py` |
 | CRM follow-ups and reports | Nudges, follow-up emails (approval), meetings from calendars on timelines, weekly report, checklist reminders | `orchestrator/crm_proactive.py` |
 | Approvals | Drafts (delete/merge, emails, quotes, invoices and reminders to clients, employee changes, absences) decided by holders of `<area>.approve`; close hooks for rejected/withdrawn ones | `orchestrator/approvals.py` |
@@ -58,6 +59,8 @@ Email ─► provider ─► /mail/inbound/<token> (validated once) ─► sende
 - `crm_companies`, `crm_contacts`, `crm_activities`, `crm_changes` (undo log), `crm_stages`, `crm_deals`,
   `crm_suggestions`, `crm_snoozes`, `billing_products`, `billing_docs`, `billing_lines`, `billing_payments`, `approvals`
 - `employees`, `employee_history`, `employee_absences`, `employee_checklists`, `employee_tasks`
+- `boards`, `board_types`, `board_states`, `board_access`, `board_items`, `board_comments`, `board_files`,
+  `board_history`, `board_requests`; teams are `people_groups` (+ `manager_id`, `color`)
 - `reminders`, `tasks`, `scheduled_calls`, `external_calls`, `memories`, `meetings`, `api_usage`, `activity`, `health`, `app_settings`
 - Recordings: `data/storage/{user_id}/{date}/{session_id}/audio.wav`, moved to the NAS after 14 days.
 - New columns go in `db.ADDED_COLUMNS` and are applied on start.

@@ -45,3 +45,22 @@ export function useStoredState(key, initial) {
   }, [key]);
   return [value, set];
 }
+
+// Open another tab at something specific ("this item", "this deal"): navigate("boards", {item: 12}). App switches the
+// tab; the page picks the target up with useNavTarget, also when it mounts only after the switch.
+const pending = {};
+export function navigate(tab, target = null) {
+  if (target) pending[tab] = target;
+  window.dispatchEvent(new CustomEvent("alfred:navigate", { detail: { tab } }));
+}
+export function useNavTarget(tab, onTarget) {
+  const cb = useRef(onTarget);
+  cb.current = onTarget;
+  useEffect(() => {
+    const take = () => { const t = pending[tab]; if (t) { delete pending[tab]; cb.current(t); } };
+    take();
+    const on = (e) => { if (e.detail?.tab === tab) setTimeout(take, 0); };
+    window.addEventListener("alfred:navigate", on);
+    return () => window.removeEventListener("alfred:navigate", on);
+  }, [tab]);
+}

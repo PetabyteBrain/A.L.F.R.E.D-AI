@@ -16,7 +16,6 @@ import Recordings from "./pages/Recordings.jsx";
 import Tasks from "./pages/Tasks.jsx";
 import Activity from "./pages/Activity.jsx";
 import Health from "./pages/Health.jsx";
-import People from "./pages/People.jsx";
 import Profile from "./pages/Profile.jsx";
 import Usage from "./pages/Usage.jsx";
 import Chat from "./pages/Chat.jsx";
@@ -25,6 +24,7 @@ import Mail from "./pages/Mail.jsx";
 import Settings from "./pages/Settings.jsx";
 import CRM from "./pages/CRM.jsx";
 import Team from "./pages/Team.jsx";
+import Boards from "./pages/Boards.jsx";
 
 const TABS = [
   { id: "live", label: "Live", title: "Live operations", kicker: "Channels in progress", Page: Live },
@@ -34,11 +34,11 @@ const TABS = [
   { id: "notes", label: "Files", title: "Notes & files", kicker: "On the NAS", Page: Notes },
   { id: "mail", label: "Mail", title: "Mail", kicker: "Alfred's mailbox", Page: Mail, perms: ["mail.tab"] },
   { id: "crm", label: "CRM", title: "CRM", kicker: "Clients, pipeline & invoices", Page: CRM, perms: ["crm.use"] },
-  { id: "team", label: "Team", title: "Team", kicker: "Employees, time off & onboarding", Page: Team,
-    perms: ["employees.self", "employees.view", "employees.manage", "employees.approve"] },
+  { id: "boards", label: "Boards", title: "Boards", kicker: "Work, teams & deadlines", Page: Boards, perms: ["boards.use"] },
+  { id: "team", label: "Team", title: "Team", kicker: "People, teams, time off & onboarding", Page: Team,
+    perms: ["employees.self", "employees.view", "employees.manage", "employees.approve", "teams.manage", "people.manage"] },
   { id: "activity", label: "Log", title: "Event log", kicker: "Everything that happened", Page: Activity },
   { id: "health", label: "Systems", title: "Systems", kicker: "Diagnostics", Page: Health },
-  { id: "people", label: "Personnel", title: "Personnel", kicker: "Registry & access", Page: People, perms: ["people.manage"] },
   { id: "usage", label: "Usage", title: "API usage", kicker: "Tokens, minutes & cost", Page: Usage, perms: ["usage.view"] },
   { id: "settings", label: "Settings", title: "Settings", kicker: "Household, roles & permissions", Page: Settings,
     perms: ["settings.manage", "roles.manage"] },
@@ -79,6 +79,11 @@ export default function App() {
   // Returning from Google's consent screen (/app?google=...): open the Profile tab where the result shows.
   useEffect(() => {
     if (new URLSearchParams(window.location.search).has("google")) setTab("profile");
+  }, [setTab]);
+  useEffect(() => {                       // other pages open a tab at something (hooks.navigate)
+    const on = (e) => { if (e.detail?.tab) setTab(e.detail.tab); };
+    window.addEventListener("alfred:navigate", on);
+    return () => window.removeEventListener("alfred:navigate", on);
   }, [setTab]);
   const [theme, setTheme] = useTheme();
   const [visited, setVisited] = useState(() => new Set());

@@ -82,6 +82,10 @@ def collect(user_id: int) -> dict:
         "emails": _rows("SELECT direction, kind, scope, from_addr, to_addrs, cc_addrs, subject, body_text, "
                         "attachments, summary, created_at FROM emails WHERE user_id = ? ORDER BY id", (user_id,)),
         "employee": employees.collect(user_id),
+        "board_items_assigned": _rows("SELECT b.key || '-' || i.number AS item, i.title, i.due_date, i.created_at FROM "
+                                      "board_items i JOIN boards b ON b.id = i.board_id WHERE i.assignee_id = ?", (user_id,)),
+        "board_comments": _rows("SELECT body, created_at FROM board_comments WHERE user_id = ?", (user_id,)),
+        "board_requests": _rows("SELECT title, status, created_at FROM board_requests WHERE requested_by = ?", (user_id,)),
         "escalations": _rows("SELECT source, topic, summary, urgency, status, note, created_at, handled_at "
                              "FROM escalations WHERE requester_id = ?", (user_id,)),
         "settings": {

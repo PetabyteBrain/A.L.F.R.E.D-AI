@@ -44,7 +44,20 @@ PAGES: dict[str, tuple[str, str]] = {
                    "chosen period (Print). Email button on a company, person or deal: Alfred drafts it, you edit, "
                    "it's sent after approval. Time logged on companies when time tracking is linked. Keys: / "
                    "search, n new, Esc back."),
-    "team": ("Team", "Me: own holiday balance (taken, planned, waiting, left) and time off; Request time off (kind, "
+    "boards": ("Boards", "My work: everything assigned to you across boards and your deals, by due date (also your "
+                         "teams' unassigned items). Requests: task requests to accept (assign someone) or decline, and "
+                         "your own. A board: views Board (columns; drag cards), Team lanes (one horizontal lane per team, "
+                         "drag between teams), List (sortable, tree of sub-items, change state in place) and Calendar "
+                         "(drag to change the due date); search, filter by type, person, team, done; + New item (n) or "
+                         "+ Add in a column. An item opens beside the board: type, title, state, assignee, team, "
+                         "priority, due and start date, estimate, parent, tags, description, client and deal links, "
+                         "sub-items, company files, comments (@Name notifies), history, remove. Board settings "
+                         "(managers): name and key, item types, columns (to do / in progress / done, limits), who can "
+                         "do what (see, ask, work on it, manage) per everyone, team, role or person. The Sales pipeline "
+                         "is a board too. New board: from a template, shared with everyone, chosen teams or only you."),
+    "team": ("Team", "Teams: create teams (groups) with a manager and a colour, choose members. Accounts (people.manage): "
+                     "everyone Alfred knows, their roles, groups, connections, logins, 2FA, data requests, Add person; "
+                     "Access log: allowed and blocked contact attempts. Me: own holiday balance (taken, planned, waiting, left) and time off; Request time off (kind, "
                      "dates, half day, note; waits for approval). Directory: employees with title, department, "
                      "manager, status (starting, onboarding, leaving, former) and who's away; open one for details, "
                      "balance, time off (withdraw or cancel), onboarding/offboarding checklist (tick steps, add, "
@@ -64,10 +77,9 @@ PAGES: dict[str, tuple[str, str]] = {
     "activity": ("Log", "the event log of everything that happened; admins can export it."),
     "health": ("Systems", "health of the services, Pis, Jetson and backups; admins also see the monthly "
                          "update report (Check now; report only, nothing is installed)."),
-    "people": ("Personnel", "people, their roles (several each) and groups, connections, logins, access attempts, "
-                            "data requests."),
     "usage": ("Usage", "API usage, costs and monthly budgets."),
-    "settings": ("Settings", "Roles: create, copy and edit roles (each permission allowed, denied or not set; a role "
+    "settings": ("Settings", "One section at a time (menu on the left): AI model, household quiet hours, email, "
+                             "unknown callers (call screening), Roles & groups, View as. Roles: create, copy and edit roles (each permission allowed, denied or not set; a role "
                              "can inherit from a parent), groups of people that get roles, 'who can do X / what can "
                              "Y do', view as a role or a person; plus household quiet hours, how Alfred answers "
                              "email from outside, call screening and blocked numbers."),
@@ -76,8 +88,10 @@ PAGES: dict[str, tuple[str, str]] = {
                            "voice replies, morning briefing, memory notes, download or delete own data."),
 }
 # Tabs that need a permission (any of them); the dashboard's App.jsx uses the same rules.
-TAB_PERMISSIONS = {"people": ("people.manage",), "usage": ("usage.view",), "mail": ("mail.tab",), "crm": ("crm.use",),
-                   "team": ("employees.self", "employees.view", "employees.manage", "employees.approve"),
+TAB_PERMISSIONS = {"usage": ("usage.view",), "mail": ("mail.tab",), "crm": ("crm.use",),
+                   "team": ("employees.self", "employees.view", "employees.manage", "employees.approve", "teams.manage",
+                            "people.manage"),
+                   "boards": ("boards.use",),
                    "settings": ("settings.manage", "roles.manage")}
 
 

@@ -27,7 +27,7 @@ sidebar_position: 11
 
 ## I lost my phone (two-factor sign-in)
 
-Use one of your backup codes. Without them, ask another admin to **Reset 2FA** on Personnel; then sign in with your
+Use one of your backup codes. Without them, ask another admin to **Reset 2FA** on Team → Accounts; then sign in with your
 password and set up two-factor sign-in again.
 
 ## A reminder or call came too late
@@ -42,7 +42,7 @@ date he understood when a phrase could mean two things.
 
 ## I don't see the Mail tab, the company files or the Settings tab
 
-They depend on your roles: by default Mail and company files are for admins and cofounders, Personnel and Usage for
+They depend on your roles: by default Mail and company files are for admins and cofounders, Accounts and Usage for
 admins, and Settings shows what your roles allow there. If you think you should have access, ask your admin; on
 **Settings → Roles and groups → Who can what** they can see exactly which role gives what.
 

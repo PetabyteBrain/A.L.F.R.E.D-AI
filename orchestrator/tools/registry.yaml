@@ -1602,3 +1602,87 @@ tools:
         step_id: {type: integer}
         done: {type: boolean}
         start: {type: string, enum: [onboarding, offboarding]}
+
+  - name: board_items
+    kind: builtin
+    handler: board_items
+    permission: boards.use
+    description: >-
+      Work boards: with no arguments (or mine=true) the person's open items across boards, plus the boards. board =
+      one board's items (filter by query, assignee, team; include_done). item = one item in full (key like WEB-12,
+      or its title) with sub-items, comments and files. Use it for "what's on my plate?", "what's open for the web
+      team?", "where are we with the logo?".
+    input_schema:
+      type: object
+      properties:
+        board: {type: string}
+        query: {type: string}
+        assignee: {type: string}
+        team: {type: string}
+        mine: {type: boolean}
+        include_done: {type: boolean}
+        item: {type: string}
+
+  - name: board_item_save
+    kind: builtin
+    handler: board_item_save
+    permission: boards.use
+    description: >-
+      Add a work item to a board (title, board) or change one (item = key like WEB-12 or title): move it to another
+      column (state, by name), type, assignee (a person's name, "me" or "nobody"), team, due_date (YYYY-MM-DD; resolve
+      spoken dates first), priority (urgent, normal, low), tags, estimate (hours), parent (another item), company /
+      deal (CRM), description; comment adds a note. Only details the person gave you. "Done" = move it to the board's
+      done column.
+    input_schema:
+      type: object
+      properties:
+        title: {type: string}
+        item: {type: string}
+        board: {type: string}
+        description: {type: string}
+        state: {type: string}
+        type: {type: string}
+        assignee: {type: string}
+        team: {type: string}
+        due_date: {type: string}
+        priority: {type: string, enum: [urgent, normal, low]}
+        tags: {type: array, items: {type: string}}
+        parent: {type: string}
+        company: {type: string}
+        deal: {type: string}
+        estimate: {type: number}
+        comment: {type: string}
+
+  - name: board_comment
+    kind: builtin
+    handler: board_comment
+    permission: boards.use
+    description: Add a comment to a work item (item = key like WEB-12 or title). @Name mentions notify that person.
+    input_schema:
+      type: object
+      properties:
+        item: {type: string}
+        text: {type: string}
+      required: [item, text]
+
+  - name: board_request
+    kind: builtin
+    handler: board_request
+    permission: boards.use
+    description: >-
+      Task requests. ask: for people who may only ask for work on a board (not create items): title, board, team,
+      description, due_date; it goes to the team's manager. list: open requests (to decide or the person's own).
+      decide: request_id, accept (true/false), note; only when the person explicitly says so in their own message.
+    input_schema:
+      type: object
+      properties:
+        action: {type: string, enum: [ask, list, decide]}
+        board: {type: string}
+        title: {type: string}
+        description: {type: string}
+        team: {type: string}
+        due_date: {type: string}
+        request_id: {type: integer}
+        accept: {type: boolean}
+        note: {type: string}
+
