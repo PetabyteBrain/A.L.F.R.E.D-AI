@@ -53,7 +53,7 @@ is lost.
 
 - **Mine** (your folder), the company's files (the button carries your company's name; admins and cofounders)
   and **All people** (admins: everyone's folders).
-- Breadcrumbs to move around; **New** note, list, text file or folder; **Upload**; rename/move; download;
+- Breadcrumbs to move around; **New** note, list, text file or folder; **Upload** (or drag files and whole folders from your computer onto the list; drop them on a folder to put them in it; up to 50 MB per file); rename/move; download;
   delete (to the trash).
 - Open files as tabs: Markdown with **Edit** and **Preview** and a formatting bar, lists as checklists,
   **Ctrl+S** to save. A dot marks unsaved changes. If someone else changed the file meanwhile, you're warned

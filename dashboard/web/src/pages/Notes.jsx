@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, apiUpload } from "../api.js";
-import { usePoll } from "../hooks.js";
+import { usePageActive, usePoll } from "../hooks.js";
 import { Empty, ErrorNote } from "../components/common.jsx";
 import { Panel } from "../components/hud.jsx";
 import FileEditor from "../components/FileEditor.jsx";
@@ -16,6 +16,29 @@ const TEMPLATES = {
   text: { label: "Text (.txt)", ext: ".txt", body: () => "" },
 };
 
+const MAX_UPLOAD = 50_000_000;                     // nas_files.MAX_UPLOAD_BYTES
+
+/* Files (and whole folders) from a drop, each with the sub-folder it came from. */
+async function droppedFiles(dt) {
+  const entries = [...(dt.items || [])].map((it) => (it.kind === "file" && it.webkitGetAsEntry ? it.webkitGetAsEntry() : null));
+  if (!entries.some(Boolean)) return [...(dt.files || [])].map((file) => ({ file, dir: "" }));
+  const out = [];
+  const fileOf = (entry) => new Promise((res, rej) => entry.file(res, rej));
+  const readAll = (reader) => new Promise((res, rej) => {
+    const all = [];
+    const next = () => reader.readEntries((batch) => (batch.length ? (all.push(...batch), next()) : res(all)), rej);
+    next();
+  });
+  async function walk(entry, dir) {
+    if (out.length > 500) return;                   // a sane cap for one drop
+    if (entry.isFile) out.push({ file: await fileOf(entry), dir });
+    else if (entry.isDirectory) for (const child of await readAll(entry.createReader())) await walk(child, join(dir, entry.name));
+  }
+  for (const entry of entries.filter(Boolean)) await walk(entry, "");
+  return out;
+}
+const hasFiles = (e) => [...(e.dataTransfer?.types || [])].includes("Files");
+
 /* ---------------------------------------------------------------- explorer */
 function Explorer({ scope, path, setPath, onOpen, refreshKey, onChanged }) {
   const { data, error, reload } = usePoll(() => api(`/nas/browse?${q({ scope, path })}`), 0, [scope, path, refreshKey]);
@@ -23,8 +46,22 @@ function Explorer({ scope, path, setPath, onOpen, refreshKey, onChanged }) {
   const [rename, setRename] = useState(null);       // {name, value}
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
+  const [drop, setDrop] = useState(null);           // null | "" (this folder) | sub-folder name
+  const [progress, setProgress] = useState(null);   // {done, total, current}
+  const [note, setNote] = useState("");
+  const depth = useRef(0);
+  const active = usePageActive();
   const upRef = useRef(null);
   const crumbs = path ? path.split("/") : [];
+
+  // A file dropped next to the explorer must not make the browser open it instead (only while this tab is shown).
+  useEffect(() => {
+    if (!active) return undefined;
+    const stop = (ev) => { if (hasFiles(ev)) ev.preventDefault(); };
+    window.addEventListener("dragover", stop);
+    window.addEventListener("drop", stop);
+    return () => { window.removeEventListener("dragover", stop); window.removeEventListener("drop", stop); };
+  }, [active]);
 
   async function run(fn) {
     setBusy(true); setErr("");
@@ -46,18 +83,61 @@ function Explorer({ scope, path, setPath, onOpen, refreshKey, onChanged }) {
       setCreate(null); onOpen({ scope, path: full });
     }
   }
-  async function upload(e) {
-    const files = [...(e.target.files || [])];
-    for (const f of files) {
-      const fd = new FormData();
-      fd.append("scope", scope); fd.append("folder", path); fd.append("file", f);
-      await run(() => apiUpload("/nas/upload", fd));
+  /* Uploads one after the other, carrying on past a failed file; a summary at the end. */
+  async function uploadAll(items, base) {
+    if (!items.length || busy) return;
+    setBusy(true); setErr(""); setNote("");
+    const failed = [];
+    let done = 0;
+    for (const { file, dir } of items) {
+      const folder = join(base, dir);
+      setProgress({ done, total: items.length, current: join(dir, file.name) });
+      if (file.size > MAX_UPLOAD) failed.push(`${file.name}: too big (max 50 MB)`);
+      else {
+        const fd = new FormData();
+        fd.append("scope", scope); fd.append("folder", folder); fd.append("file", file);
+        try { await apiUpload("/nas/upload", fd); } catch (x) { failed.push(`${file.name}: ${x.message}`); }
+      }
+      done += 1;
     }
+    setProgress(null); setBusy(false);
+    await reload(); onChanged?.();
+    const ok = items.length - failed.length;
+    if (ok) setNote(`Uploaded ${ok} file${ok === 1 ? "" : "s"}${base !== path ? ` to ${base.split("/").pop()}` : ""}.`);
+    if (failed.length) setErr(`Not uploaded: ${failed.slice(0, 5).join("; ")}${failed.length > 5 ? ` and ${failed.length - 5} more` : ""}`);
+  }
+  async function upload(e) {
+    const files = [...(e.target.files || [])].map((file) => ({ file, dir: "" }));
     e.target.value = "";
+    await uploadAll(files, path);
+  }
+  const dragEnter = (e) => { if (!hasFiles(e)) return; e.preventDefault(); depth.current += 1; if (drop === null) setDrop(""); };
+  const dragLeave = (e) => { if (!hasFiles(e)) return; depth.current -= 1; if (depth.current <= 0) { depth.current = 0; setDrop(null); } };
+  const dragOver = (e, target = "") => {
+    if (!hasFiles(e)) return;
+    e.preventDefault(); e.stopPropagation();
+    e.dataTransfer.dropEffect = busy ? "none" : "copy";
+    if (drop !== target) setDrop(target);
+  };
+  async function onDrop(e, target = "") {
+    if (!hasFiles(e)) return;
+    e.preventDefault(); e.stopPropagation();
+    depth.current = 0; setDrop(null);
+    if (busy) return;
+    await uploadAll(await droppedFiles(e.dataTransfer), join(path, target));
   }
 
   return (
-    <section className="explorer">
+    <section className={`explorer${drop !== null ? " dropping" : ""}`} onDragEnter={dragEnter} onDragLeave={dragLeave}
+             onDragOver={(e) => dragOver(e)} onDrop={(e) => onDrop(e)}>
+      {drop !== null && (
+        <div className="drop-hint" aria-hidden="true">
+          <div className="drop-card">
+            <span>⤒ Drop to upload to <b>{drop ? drop : crumbs.length ? crumbs[crumbs.length - 1] : SCOPE_LABEL[scope]}</b></span>
+            <span className="muted tiny">Files and whole folders, up to 50 MB each. Drop on a folder to put them in it.</span>
+          </div>
+        </div>
+      )}
       <div className="crumbs">
         <button className="link" onClick={() => setPath("")}>{SCOPE_LABEL[scope]}</button>
         {crumbs.map((c, i) => (
@@ -70,7 +150,8 @@ function Explorer({ scope, path, setPath, onOpen, refreshKey, onChanged }) {
           {Object.entries(TEMPLATES).map(([k, t]) => <option key={k} value={k}>{t.label}</option>)}
           <option value="folder">Folder</option>
         </select>
-        <button className="btn small" disabled={busy} onClick={() => upRef.current?.click()}>Upload</button>
+        <button className="btn small" disabled={busy} onClick={() => upRef.current?.click()}
+                title="Or drag files and folders from your computer onto the list">Upload</button>
         <input ref={upRef} type="file" multiple hidden onChange={upload} />
         {path && <button className="btn small" onClick={() => setPath(path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "")}>↑ Up</button>}
       </div>
@@ -84,11 +165,20 @@ function Explorer({ scope, path, setPath, onOpen, refreshKey, onChanged }) {
         </form>
       )}
       {create?.kind === "list" && !path && <p className="muted tiny">New lists go into the Lists folder.</p>}
+      {progress && (
+        <div className="upload-progress" role="status">
+          <span>Uploading {progress.done + 1} of {progress.total}: {progress.current}</span>
+          <span className="upload-bar"><span style={{ width: `${(progress.done / progress.total) * 100}%` }} /></span>
+        </div>
+      )}
+      {note && !progress && <div className="notice" role="status" onClick={() => setNote("")}>{note}</div>}
       <ErrorNote error={error || err} />
-      {data && data.items.length === 0 && <Empty>Empty folder.</Empty>}
+      {data && data.items.length === 0 && <Empty>Empty folder. Drop files here to upload them.</Empty>}
       <div className="file-list">
         {(data?.items || []).map((it) => (
-          <div className="file-row" key={it.name}>
+          <div className={`file-row${it.dir && drop === it.name ? " drop-target" : ""}`} key={it.name}
+               onDragOver={it.dir ? (e) => dragOver(e, it.name) : undefined}
+               onDrop={it.dir ? (e) => onDrop(e, it.name) : undefined}>
             {rename?.name === it.name ? (
               <form className="field-row" onSubmit={async (e) => {
                 e.preventDefault();
