@@ -474,7 +474,8 @@ async def test_call_requests_schedule_retry_and_report(monkeypatch):
 
     # --- future call stays pending, can be cancelled only by requester/admin
     from datetime import datetime, timedelta
-    later = (datetime.now() + timedelta(hours=2)).strftime("%Y-%m-%dT%H:%M")
+    from zoneinfo import ZoneInfo
+    later = (datetime.now(ZoneInfo(settings.timezone)) + timedelta(hours=2)).strftime("%Y-%m-%dT%H:%M")
     row = await scheduler.request_call("Friend", requested_by=admin, purpose="Ask about Friday", when=later)
     assert row["status"] == "pending" and not placed
     friend = registry.lookup("telegram", "22222222")
