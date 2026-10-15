@@ -3035,7 +3035,8 @@ def test_backup_copy_to_nas(monkeypatch, tmp_path):
     assert backup_nas.fetch() == snap.name
     drill = backup_nas.drill_dir()
     assert (drill / "alfred.db").read_bytes() == snap.read_bytes() and list((drill / "storage").rglob("audio.wav"))
-    wavs[0].write_bytes(b"RIFF damaged")
+    # fetch() checks the newest recordings only (same ordering), so damage the last of them; rglob order is arbitrary
+    max(wavs, key=lambda w: (w.parts[-3], list(w.parts[-4:-1]))).write_bytes(b"RIFF damaged")
     try:
         backup_nas.fetch()
         raise AssertionError("a damaged NAS copy passed")
