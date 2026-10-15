@@ -1,23 +1,72 @@
-# Alfred
+<div align="center">
 
-*A.L.F.R.E.D.: A Loyal Family Retainer, Exceedingly Discreet.*
+<img src="docs/assets/alfred-telegram.png" alt="Alfred, the butler" width="140" />
 
-Personal AI butler (persona modelled on Alfred Pennyworth) reachable by **phone** (Twilio, Swiss
-number), **Telegram** (text, voice notes, files and photos) and a **web chat**, backed by
-**Claude Haiku 4.5**, with self-hosted speech on a **Jetson Orin**, notes/lists/files on a
-**TrueNAS** box, wired into **n8n**, and a **dashboard** with two-factor sign-in. Only people in
-the registry get answers; unknown callers can leave a message, everyone else is ignored silently.
+# A.L.F.R.E.D.
 
-Runs as one Docker container on a small home server (a Raspberry Pi 5 here). Service and container
-are called `alfred` (`docker compose exec alfred`); the assistant's name comes from `ASSISTANT_NAME`, the
-operator details on the public pages from `OPERATOR_NAME`, `OPERATOR_LOCATION` and `CONTACT_EMAIL`. The site has four skins, chosen on the
-homepage, the sign-in page or the dashboard and applied everywhere (homepage, dashboard, legal pages,
-404 page): **Stark** (holographic HUD), **Batcave** (bat-signal yellow on gunmetal, Gotham skyline), **Matrix**
-(green-screen terminal with digital rain) and **Alfred** (the butler's outfit: black, white and silver).
+**A Loyal Family Retainer, Exceedingly Discreet**
 
-**Using Alfred:** the [user guide](docs/user-guide/index.md) explains every feature for everyday users and admins.
+*A private, self-hosted AI butler you can phone, message, email, or talk to on his own dashboard.*
+
+![Claude](https://img.shields.io/badge/Claude-Haiku%20%C2%B7%20Sonnet%20%C2%B7%20Opus%20%C2%B7%20Fable-d97757)
+![Python](https://img.shields.io/badge/Python-FastAPI-009688)
+![React](https://img.shields.io/badge/React%2019-Vite-61dafb)
+![Docker](https://img.shields.io/badge/Docker-one%20container-2496ed)
+![Self-hosted](https://img.shields.io/badge/self--hosted-Raspberry%20Pi%20%2B%20Jetson-c51a4a)
+
+<a href="docs/media/alfred-intro.mp4">
+  <img src="docs/media/alfred-intro-teaser.webp" alt="Alfred in ten seconds: calls, Telegram, calendar, CRM" width="860" />
+</a>
+
+**[▶ Watch the 51-second intro with sound](docs/media/alfred-intro.mp4)**, narrated by Alfred in his own self-hosted voice
+
+</div>
+
+---
+
+## Meet Alfred
+
+Alfred is a personal and small-company assistant modelled on Alfred Pennyworth. You reach him the way you'd
+reach a person: **ring his phone number**, **message him on Telegram** (text, voice notes, files, photos),
+**email him**, or chat on the **dashboard**. He answers in a calm British voice, and he doesn't just talk:
+he places calls, keeps the diary, files documents, chases tasks, runs the CRM and invoicing, and tells you
+every morning what the day holds.
+
+Everything runs at home: one Docker container on a Raspberry Pi 5, speech recognition and synthesis on a
+Jetson Orin, files on a TrueNAS box, automations in n8n. The language model is Claude, chosen by the admins on
+the Settings tab. Only people in the registry get answers; unknown callers can leave a message, and everyone
+else is ignored without a reply.
+
+| | |
+|---|---|
+| 📞 **Reachable everywhere** | Phone (Twilio media streams, replies spoken sentence by sentence as they stream in), Telegram, email, web chat. Conversations can follow you across channels. |
+| 🧠 **Does real work** | Reminders, calendar, calls on your behalf, meetings, email with approval, notes and files on the NAS, market analyses, CRM, quotes and Swiss QR-bill invoices, work boards, employee time off. |
+| 🏠 **Runs on your hardware** | Self-hosted Whisper + Kokoro on a Jetson (ElevenLabs only as a fallback), SQLite, nightly verified backups with a monthly automatic restore test. |
+| 🔒 **Private by design** | Registry-only access, named permissions and roles, verified connections, dashboard 2FA, approvals for anything that leaves the house, data export and deletion per person. |
+
+### At a glance
+
+| Channel or tab | What you'd use it for |
+|---|---|
+| **Phone** | "Call Max tomorrow at nine and ask whether the invoice went out." Alfred dials, talks, summarises and reports back. Unknown numbers are screened and a message is taken. |
+| **Telegram** | Quick requests, voice notes, photos of receipts, files to put away, Done/Snooze buttons on reminders, approvals with one tap. |
+| **Email** | Alfred's own address: drafts and sends after your yes, files the replies, answers inquiries from public company information, escalates the rest. |
+| **Dashboard** | Chat, agenda calendar, tasks and calls, files, mail, CRM and pipeline, boards, team, usage and costs, settings, in four skins: Stark, Batcave, Matrix and Alfred. |
+
+The [user guide](docs/user-guide/index.md) explains every feature for everyday users and admins; the
+[architecture notes](docs/ARCHITECTURE.md) explain how it is built.
+
+## Contents
+
+- [What Alfred can do](#what-alfred-can-do) · [How it works](#how-it-works) · [Tech stack](#tech-stack) · [Documentation](#documentation) · [Status by phase](#status-by-phase)
+- Running it yourself: [first start](#first-start-on-the-server) · [people](#managing-people) · [new capabilities](#adding-a-capability) · [going public](#going-public-needed-for-phone-calls) · [storage](#storage-layout) · [security](#dashboard-security) · [development](#development)
 
 ## What Alfred can do
+
+Every area in one table: what it does and where you use it.
+
+<details>
+<summary><b>Full feature reference</b> (click to expand)</summary>
 
 | Area | What it does | Where |
 |---|---|---|
@@ -52,6 +101,37 @@ homepage, the sign-in page or the dashboard and applied everywhere (homepage, da
 | Continuity | Optional: Alfred sees your last few messages from your other channels (12 h), so a call can pick up a Telegram thread | Profile |
 | Dashboard | Alfred's avatar helper on every tab (portrait that reacts to what he's doing, speech bubble, knows the page you're on); live sessions (terminate), archive with audio and search/filters, calendar + tasks/reminders/calls (archived calls searchable), notes & files, event log (CSV export), health, people, API usage, budgets; admin Settings tab (role permissions such as n8n for cofounders, household quiet hours, call screening, view as role) | `/app` |
 
+</details>
+
+## How it works
+
+```mermaid
+flowchart LR
+  subgraph Channels
+    P[Phone] -->|Twilio media stream| TW[Voice endpoints]
+    T[Telegram] -->|long polling| TG[Telegram bot]
+    E[Email] -->|inbound webhook| MI[Mail inbound]
+    D[Dashboard] -->|API + SSE| API[Dashboard API]
+  end
+  TW --> ID{Identity registry}
+  TG --> ID
+  MI --> ID
+  API --> ID
+  ID -->|known and permitted| AC[Agent Core: Claude]
+  ID -->|unknown caller| SC[Call screening, no tools]
+  ID -->|anyone else| X[Dropped silently]
+  TW <-->|STT and TTS, mu-law 8 kHz| J[Jetson: Whisper + Kokoro]
+  AC --> TOOLS[Tools, permission-checked]
+  TOOLS --> N8N[n8n]
+  TOOLS --> GC[Google Calendar]
+  TOOLS --> NAS[(TrueNAS over SMB)]
+  TOOLS --> HL[Homelab via alfred-ops]
+  AC --> DB[(SQLite + recordings)]
+```
+
+<details>
+<summary>The same as plain text</summary>
+
 ```
 Phone ──► Twilio ──► /twilio/voice ─► identity ─┬─► <Stream> ─► /twilio/stream (WS), mu-law 8k
                                     unknown no. ─┘     ├─► Jetson Whisper (STT)   ┐ ElevenLabs as
@@ -66,7 +146,33 @@ Background loops: calls · reminders · task follow-ups · briefings · health �
 Nightly: backup → Jetson + NAS · monthly restore test · external watchdog every 2 min
 ```
 
+</details>
+
 How it fits together (components, data flow, security model, operations): [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+
+## Tech stack
+
+| Layer | Built with |
+|---|---|
+| Language model | Anthropic Claude (Haiku 4.5 by default; Sonnet 5.5, Opus 5.5 and Fable 5.1 selectable, separately for calls), prompt caching, tool use |
+| Backend | Python, FastAPI + uvicorn, SQLite with FTS5 search, background loops for calls, reminders, briefings and follow-ups |
+| Telephony | Twilio Programmable Voice with media streams over WebSocket, stereo call recording |
+| Speech | Self-hosted on a Jetson Orin: Whisper large-v3-turbo (STT) and Kokoro `bm_george` (TTS); ElevenLabs as automatic fallback |
+| Messaging and mail | python-telegram-bot, SMTP out + inbound webhook (e.g. Maileroo), branded HTML templates |
+| Dashboard | React 19 + Vite, strict CSP, server-side sessions, two-factor sign-in (authenticator app or Telegram) |
+| Documents | reportlab + qrbill (Swiss QR-bill invoices), openpyxl, pypdf, LibreOffice previews |
+| Integrations | n8n (workflows as tools), Google Calendar, TrueNAS over SMB, OpenStreetMap + SearXNG for market analyses, a time-tracking export |
+| Operations | One Docker container, Cloudflare Tunnel for Twilio, nightly backups to two targets, monthly restore drill, external watchdog |
+
+## Documentation
+
+| Read this | For |
+|---|---|
+| [User guide](docs/user-guide/index.md) | Everyday use, page by page: [getting started](docs/user-guide/01-getting-started.md), [talking to Alfred](docs/user-guide/02-talking-to-alfred.md), [your day](docs/user-guide/03-your-day.md), [tasks, calls, meetings](docs/user-guide/04-tasks-calls-meetings.md), [memory, notes, files](docs/user-guide/05-memory-notes-files.md), [email](docs/user-guide/06-email.md), [company work](docs/user-guide/07-company.md), [the dashboard](docs/user-guide/08-dashboard.md), [CRM](docs/user-guide/12-crm.md), [team](docs/user-guide/13-team.md), [boards](docs/user-guide/14-boards.md) |
+| [Administration](docs/user-guide/09-administration.md) · [Privacy and safety](docs/user-guide/10-privacy-and-safety.md) · [Troubleshooting](docs/user-guide/11-troubleshooting.md) | Roles and permissions, settings, costs, what Alfred keeps and for how long, common problems |
+| [Architecture](docs/ARCHITECTURE.md) | Components, request flow, data, security model, operations |
+| [Backups and restore](infra/README-backup.md) · [Homelab access](infra/ops/README.md) | Running and recovering the system |
+| The sections below | Installing, managing people, adding capabilities, exposing it for phone calls, storage, security, development |
 
 ## Status by phase
 
@@ -83,6 +189,8 @@ How it fits together (components, data flow, security model, operations): [docs/
 Email extras (live): attachments can be previewed, downloaded and saved to Files from the Mail tab (risky ones only
 downloaded, never opened) and filed by Alfred at any time; a **Template manager** on the Mail tab holds the email
 layouts and reusable text templates, switched on or off, with live preview, test send and usage per template.
+
+# Running it yourself
 
 ## First start on the server
 

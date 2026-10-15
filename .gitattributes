@@ -1,2 +1,7 @@
 *.sh text eol=lf
 infra/ops/* text eol=lf
+
+# Demo media: in the repo for the README, but never shipped by the git-archive deploy
+docs/media/** export-ignore
+*.mp4 binary
+*.webp binary
