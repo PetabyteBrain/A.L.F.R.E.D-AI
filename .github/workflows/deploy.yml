@@ -1,0 +1,70 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - run: python -m pytest -q
+
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      DEPLOY_DIR: jarvis
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Join the tailnet
+        uses: tailscale/github-action@v3
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:ci
+          use-cache: "true"
+
+      - name: Upload the commit to ~/${{ env.DEPLOY_DIR }}
+        # Tailscale SSH: no key to manage. Extracting over the existing folder keeps the
+        # server-only files (.env, data/, homelab.yaml, company_profile.md, banner).
+        run: |
+          SSH="ssh -o StrictHostKeyChecking=accept-new ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}"
+          $SSH "mkdir -p ~/$DEPLOY_DIR"
+          git archive --format=tar HEAD | $SSH "tar -x -C ~/$DEPLOY_DIR"
+
+      - name: Build and restart
+        run: |
+          ssh -o StrictHostKeyChecking=accept-new ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} bash -s <<'REMOTE'
+          set -euo pipefail
+          cd ~/jarvis
+          [ -f .env ] || { echo "~/jarvis/.env is missing"; exit 1; }
+          # compose bind-mounts this file; without it Docker would create a directory in its place
+          [ -e orchestrator/homelab.yaml ] || cp orchestrator/homelab.example.yaml orchestrator/homelab.yaml
+          docker compose up -d --build
+          docker image prune -f >/dev/null
+          for i in $(seq 1 30); do
+            if curl -fsS "http://127.0.0.1:${ALFRED_PORT:-8000}/healthz" >/dev/null; then
+              echo "Alfred is healthy"; exit 0
+            fi
+            sleep 2
+          done
+          docker compose logs --tail 50 alfred
+          echo "Health check failed"; exit 1
+          REMOTE

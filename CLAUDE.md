@@ -14,8 +14,9 @@ docs and the real homelab map are git-ignored (`docs/PROJECT_PLAN.md`, `CLAUDE.l
 `orchestrator/homelab.yaml`); keep real phone numbers, IPs, names and hostnames out of tracked files.
 
 ## Where things run
-- The local checkout is the master; deploy with `git archive HEAD` to the server's `~/alfred` and run
-  `docker compose up -d --build` (details per machine in `CLAUDE.local.md`, if present).
+- The local checkout is the master; pushes to `main` deploy through GitHub Actions + Tailscale SSH to the
+  server's `~/jarvis` (`.github/workflows/deploy.yml`, `infra/README-deploy.md`); by hand it is `git archive HEAD`
+  there + `docker compose up -d --build` (details per machine in `CLAUDE.local.md`, if present).
 - One container `alfred`, port 8000, data in `./data` (SQLite + recordings). `.env` only on the server.
 - Public exposure (when needed for Twilio) goes through a reverse proxy on another machine + a
   Cloudflare Tunnel; never add a Caddy/proxy service to this compose file.
