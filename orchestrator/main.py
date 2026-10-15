@@ -107,7 +107,7 @@ app = FastAPI(title="Alfred", lifespan=lifespan, docs_url=None, redoc_url=None, 
 
 # Files in public/ keep a fixed name (no build hash), so pages link them with ?v=<content hash>:
 # a changed file gets a new URL and no browser or Cloudflare copy can be stale.
-_FIXED_NAME_ASSETS = ("/legal/legal.css", "/theme-boot.js")
+_FIXED_NAME_ASSETS = ("/legal/legal.css", "/theme-boot.js", "/media/alfred-intro.mp4", "/media/alfred-intro-poster.jpg")
 _asset_versions: dict[str, tuple[float, str]] = {}
 
 

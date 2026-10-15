@@ -14,11 +14,11 @@
 ![Docker](https://img.shields.io/badge/Docker-one%20container-2496ed)
 ![Self-hosted](https://img.shields.io/badge/self--hosted-Raspberry%20Pi%20%2B%20Jetson-c51a4a)
 
-<a href="docs/media/alfred-intro.mp4">
+<a href="dashboard/web/public/media/alfred-intro.mp4">
   <img src="docs/media/alfred-intro-teaser.webp" alt="Alfred in ten seconds: calls, Telegram, calendar, CRM" width="860" />
 </a>
 
-**[▶ Watch the 51-second intro with sound](docs/media/alfred-intro.mp4)**, narrated by Alfred in his own self-hosted voice
+**[▶ Watch the 51-second intro with sound](dashboard/web/public/media/alfred-intro.mp4)**, narrated by Alfred in his own self-hosted voice
 
 </div>
 
