@@ -1,0 +1,74 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: alfred
+  labels: { app: alfred }
+spec:
+  replicas: 1
+  strategy: { type: Recreate }        # single SQLite DB on an RWO (node-local) data volume
+  selector:
+    matchLabels: { app: alfred }
+  template:
+    metadata:
+      labels: { app: alfred }
+    spec:
+      # No node pin needed: the data PVC is a node-local volume, so its node affinity already
+      # keeps the pod on the node that holds the SQLite database.
+      enableServiceLinks: false        # Alfred reads its own env; don't let k8s inject *_PORT vars
+      securityContext:
+        fsGroup: 1000
+      initContainers:
+        # Secret files land root:root 0400; `ssh -i` needs the key owned by uid 1000, mode 0600.
+        - name: fix-ops-key
+          image: busybox:1.36
+          command:
+            - sh
+            - -c
+            - |
+              cp /src/alfred_ops /keys/alfred_ops
+              cp /src/alfred_ops_known_hosts /keys/ops_known_hosts
+              chown 1000:1000 /keys/alfred_ops /keys/ops_known_hosts
+              chmod 600 /keys/alfred_ops
+              chmod 644 /keys/ops_known_hosts
+          volumeMounts:
+            - { name: ops-key-src, mountPath: /src, readOnly: true }
+            - { name: ops-key, mountPath: /keys }
+      containers:
+        - name: alfred
+          image: ghcr.io/petabytebrain/alfred:latest   # tag rewritten by CI (kustomize images:)
+          imagePullPolicy: IfNotPresent
+          ports:
+            - { name: http, containerPort: 8000 }
+          env:
+            - { name: DB_PATH, value: /data/alfred.db }   # compose set this as a container env
+          envFrom:
+            - secretRef: { name: alfred-env }             # created out-of-band (secrets never in git)
+          volumeMounts:
+            - { name: data, mountPath: /data }
+            - { name: ops-key, mountPath: /run/secrets }
+            - name: homelab
+              mountPath: /app/orchestrator/homelab.yaml
+              subPath: homelab.yaml
+              readOnly: true
+          readinessProbe:
+            httpGet: { path: /healthz, port: 8000 }
+            initialDelaySeconds: 10
+            periodSeconds: 15
+          livenessProbe:
+            httpGet: { path: /healthz, port: 8000 }
+            initialDelaySeconds: 30
+            periodSeconds: 30
+          resources:
+            requests: { cpu: "250m", memory: 512Mi }
+            limits: { memory: 2Gi }
+      volumes:
+        - name: data
+          persistentVolumeClaim: { claimName: alfred-data }
+        - name: ops-key-src
+          secret:
+            secretName: alfred-ops
+            defaultMode: 0400
+        - name: ops-key
+          emptyDir: {}
+        - name: homelab
+          configMap: { name: alfred-homelab }

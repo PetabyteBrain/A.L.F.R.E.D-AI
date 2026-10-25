@@ -1,0 +1,12 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+# Argo CD watches this path. Only the generic workload objects live here; the namespace,
+# Secrets (alfred-env, alfred-ops), the homelab ConfigMap, the data PVC and the public Ingress
+# are created out-of-band and never committed (public-repo hygiene + secrets out of git).
+namespace: apps
+resources:
+  - deployment.yaml
+  - service.yaml
+images:
+  - name: ghcr.io/petabytebrain/alfred
+    newTag: latest        # CI rewrites this to the built commit SHA (GitOps image update)
