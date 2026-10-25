@@ -9,4 +9,4 @@ resources:
   - service.yaml
 images:
   - name: ghcr.io/petabytebrain/alfred
-    newTag: latest        # CI rewrites this to the built commit SHA (GitOps image update)
+    newTag: 71b54cf3b5e173984eac5ae399b3bb8121ebdf46
