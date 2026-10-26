@@ -520,8 +520,12 @@ async def get_health(person: Person = Depends(current_person)) -> list[dict]:
 
 @router.post("/health/refresh")
 async def refresh_health(person: Person = Depends(requires("homelab.manage"))) -> list[dict]:
-    from orchestrator import homelab
+    import asyncio
+
+    from orchestrator import homelab, kube
     await health.check_all()
+    if kube.enabled():
+        await asyncio.to_thread(kube.refresh)
     if homelab.enabled():
         await homelab.poll_and_alert()
     return _health_rows(person)

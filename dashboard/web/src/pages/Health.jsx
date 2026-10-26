@@ -142,8 +142,10 @@ export default function Health({ me }) {
     }
   }
 
-  const alfred = (data || []).filter((h) => h.group !== "homelab").sort((a, b) => order(a.service) - order(b.service));
-  const lab = (data || []).filter((h) => h.group === "homelab");
+  const alfred = (data || []).filter((h) => h.group === "alfred" || !h.group).sort((a, b) => order(a.service) - order(b.service));
+  const cluster = (data || []).filter((h) => h.group === "cluster");
+  const nodes = cluster.filter((h) => h.role === "node");
+  const services = cluster.filter((h) => h.role === "service");
 
   return (
     <Panel code="06" title="Systems diagnostics" actions={isAdmin && (
@@ -152,11 +154,14 @@ export default function Health({ me }) {
       <ErrorNote error={error || err} />
       {data && data.length === 0 && <Empty>No checks yet — they run every 5 minutes.</Empty>}
       {alfred.length > 0 && <Group title="Alfred" rows={alfred} />}
-      {isAdmin && lab.length > 0 && (
-        <Group title="Homelab" rows={lab}
-               note="Your machines, checked every 5 minutes. Problems are sent to you on Telegram (silently during quiet hours)." />
+      {isAdmin && nodes.length > 0 && (
+        <Group title="Cluster · nodes" rows={nodes}
+               note="Kubernetes (K3s) nodes, checked every 5 minutes. Alerts go to Telegram via the cluster monitor (Prometheus)." />
       )}
-      {isAdmin && lab.length > 0 && <Updates />}
+      {isAdmin && services.length > 0 && (
+        <Group title="Cluster · services" rows={services}
+               note="Each service runs as a Kubernetes Deployment — shown here as ready replicas out of desired." />
+      )}
     </Panel>
   );
 }

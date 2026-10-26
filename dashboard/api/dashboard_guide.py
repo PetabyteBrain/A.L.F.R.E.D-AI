@@ -78,8 +78,8 @@ PAGES: dict[str, tuple[str, str]] = {
                      "texts: create, edit, duplicate, archive, switch on/off, live preview, send a test to yourself. "
                      "Emails are sent by asking Alfred."),
     "activity": ("Log", "the event log of everything that happened; admins can export it."),
-    "health": ("Systems", "health of the services, Pis, Jetson and backups; admins also see the monthly "
-                         "update report (Check now; report only, nothing is installed)."),
+    "health": ("Systems", "health of Alfred's own components; admins also see the Kubernetes cluster — "
+                         "each node's readiness and each service's ready replicas."),
     "usage": ("Usage", "API usage, costs and monthly budgets."),
     "settings": ("Settings", "One section at a time (menu on the left): AI model, household quiet hours, email, "
                              "unknown callers (call screening), Roles & groups, View as. Roles: create, copy and edit roles (each permission allowed, denied or not set; a role "

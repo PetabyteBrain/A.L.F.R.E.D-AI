@@ -251,7 +251,15 @@ def host_rows_visible(rows: list[dict], is_admin: bool) -> list[dict]:
                 out.append({**r, "group": "homelab", "label": "Updates (monthly)",
                             "role": "Report only: nothing is installed", "order": len(configured)})
             continue
-        if r["service"].startswith("host "):
+        if r["service"].startswith("node "):           # Kubernetes nodes (kube.py): admins only
+            if not is_admin:
+                continue
+            out.append({**r, "group": "cluster", "label": r["service"][5:], "role": "node", "order": 100})
+        elif r["service"].startswith("svc "):          # Kubernetes service Deployments (kube.py): admins only
+            if not is_admin:
+                continue
+            out.append({**r, "group": "cluster", "label": r["service"][4:], "role": "service", "order": 200})
+        elif r["service"].startswith("host "):
             if not is_admin or r["service"] not in roles:
                 continue
             out.append({**r, "group": "homelab", "label": r["service"][5:], "role": roles[r["service"]],

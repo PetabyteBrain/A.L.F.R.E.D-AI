@@ -87,7 +87,8 @@ async def lifespan(app: FastAPI):
     follow = asyncio.create_task(tasks.background_loop())
     lab = asyncio.create_task(homelab.background_loop())
     inbox = asyncio.create_task(mail_inbound.background_loop())
-    from . import crm_proactive
+    from . import crm_proactive, kube
+    kube_jobs = asyncio.create_task(kube.background_loop())     # Systems page: K3s node + service health
     crm_jobs = asyncio.create_task(crm_proactive.background_loop())
     log.info("%s up — telegram=%s phone=%s email=%s n8n=%s model=%s",
              settings.assistant_name, settings.telegram_enabled, settings.twilio_enabled and settings.speech_enabled,
@@ -95,7 +96,7 @@ async def lifespan(app: FastAPI):
     try:
         yield
     finally:
-        for task in (bg, sched, remind, brief, follow, lab, inbox, crm_jobs):
+        for task in (bg, sched, remind, brief, follow, lab, inbox, kube_jobs, crm_jobs):
             task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await task

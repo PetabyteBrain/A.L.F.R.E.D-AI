@@ -14,6 +14,7 @@ spec:
     spec:
       # No node pin needed: the data PVC is a node-local volume, so its node affinity already
       # keeps the pod on the node that holds the SQLite database.
+      serviceAccountName: alfred       # read-only cluster access for the Systems page (orchestrator/kube.py)
       enableServiceLinks: false        # Alfred reads its own env; don't let k8s inject *_PORT vars
       securityContext:
         fsGroup: 1000
