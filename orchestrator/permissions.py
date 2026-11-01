@@ -109,6 +109,28 @@ class PermissionError_(ValueError):
     """Message is safe to show."""
 
 
+# --- business features switch -----------------------------------------------------------------
+# An admin can turn the business side (CRM and pipeline, quotes and invoices, boards and teams, employees) off for
+# the whole household: its permissions then resolve for nobody, so tabs, tools, routes, briefing parts and the
+# proactive jobs that check them all go quiet. Roles keep their rules for when it is turned back on.
+
+BUSINESS_GROUPS = ("CRM", "Billing", "Boards", "Employees")
+BUSINESS = frozenset(k for k, g, *_ in _CATALOGUE if g in BUSINESS_GROUPS)
+FEATURES_KEY = "features"
+
+
+def business_enabled() -> bool:
+    return bool((db.get_setting(FEATURES_KEY, {}) or {}).get("business", True))
+
+
+def set_business_enabled(on: bool) -> None:
+    db.set_setting(FEATURES_KEY, {**(db.get_setting(FEATURES_KEY, {}) or {}), "business": bool(on)})
+
+
+def _available(perms: frozenset[str]) -> frozenset[str]:
+    return perms if business_enabled() else perms - BUSINESS
+
+
 # --- resolution ----------------------------------------------------------------------------
 
 def _parents() -> dict[str, str | None]:
@@ -131,14 +153,14 @@ def resolve(roles) -> frozenset[str]:
     """Permissions for a set of roles: allows add up, any deny wins; admin has everything."""
     names = expand(roles)
     if ADMIN in names:
-        return KEYS
+        return _available(KEYS)
     if not names:
         return frozenset()
     rows = db.query(f"SELECT permission, effect FROM role_permissions WHERE role IN ({','.join('?' * len(names))})",
                     names)
     allow = {r["permission"] for r in rows if r["effect"] == "allow"}
     deny = {r["permission"] for r in rows if r["effect"] == "deny"}
-    return frozenset((allow - deny) & KEYS)
+    return _available(frozenset((allow - deny) & KEYS))
 
 
 def roles_of(user_id: int) -> list[str]:
@@ -160,7 +182,7 @@ def for_person(person) -> frozenset[str]:
     if person is None:
         return frozenset()
     if getattr(person, "perms", None) is not None:      # "view as": a fixed, already-capped set
-        return person.perms
+        return _available(person.perms)
     roles = all_roles_of(person.id) or [person.role]
     return resolve(roles)
 
@@ -258,7 +280,7 @@ class Actor:
 
 def actor_for(person) -> Actor:
     perms = for_person(person)
-    return Actor(person.id, person.display_name, perms, perms == KEYS and is_admin_user(person.id))
+    return Actor(person.id, person.display_name, perms, perms == _available(KEYS) and is_admin_user(person.id))
 
 
 def _need(actor: Actor, permission: str) -> None:

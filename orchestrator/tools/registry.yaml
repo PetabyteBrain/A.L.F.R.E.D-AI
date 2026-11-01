@@ -325,19 +325,23 @@ tools:
     kind: builtin
     handler: get_briefing
     description: >-
-      Today's facts for the person: weather (if a town is set), today's calendar, reminders, planned
-      calls, recent call outcomes, open tasks (and failed n8n runs for people allowed to see n8n). Use it for "what's my
-      day like", "give me my briefing", "anything I should know today".
+      Today's facts for the person, as their briefing covers them (personal, business or both): weather (if a town is
+      set), the calendar, reminders, planned calls, recent call outcomes, their own tasks, lists and recent notes, and
+      for business company to-do, clients, boards, team (and failed n8n runs for people allowed to see n8n). Use it for
+      "what's my day like", "give me my briefing", "anything I should know today"; period "week" for the week ahead.
     input_schema:
       type: object
-      properties: {}
+      properties:
+        period: {type: string, enum: [today, week]}
 
   - name: configure_briefing
     kind: builtin
     handler: configure_briefing
     description: >-
       Turn the person's automatic daily briefing on or off, or change its time (HH:MM local),
-      days (daily or weekdays), delivery (telegram or call) or weather town. Only pass what changes.
+      days (daily or weekdays), delivery (telegram or call), weather town, what it covers (personal, business or
+      both) or whether days with nothing on are skipped. Only pass what changes. A plan per weekday (weekly overviews,
+      focus notes) is set on the dashboard's Profile page.
     input_schema:
       type: object
       properties:
@@ -346,6 +350,8 @@ tools:
         days: {type: string, enum: [daily, weekdays]}
         channel: {type: string, enum: [telegram, call]}
         location: {type: string, description: "Town for the weather, e.g. Lucerne; empty string removes it."}
+        content: {type: string, enum: [both, personal, business]}
+        skip_quiet_days: {type: boolean, description: "Don't send a daily briefing when nothing is on that day."}
 
   - name: search_conversations
     kind: builtin

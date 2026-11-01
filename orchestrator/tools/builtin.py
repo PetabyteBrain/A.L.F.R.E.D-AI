@@ -166,21 +166,44 @@ async def update_reminder(ctx, reminder_id: int, action: str, snooze_minutes: in
 
 
 @handler
-async def get_briefing(ctx) -> dict:
+async def get_briefing(ctx, period: str = "today") -> dict:
     from .. import briefing
-    return await briefing.gather(ctx.person)
+    plan = briefing.day_plan(briefing.get_settings(ctx.person.id), briefing._now_local().date(), ctx.person)
+    plan = {"content": "both", "note": "", **(plan or {})}
+    if not briefing.has_business(ctx.person):
+        plan["content"] = "personal"
+    return await briefing.gather(ctx.person, {**plan, "kind": "week" if period == "week" else "day"})
 
 
 @handler
 async def configure_briefing(ctx, enabled: bool | None = None, time: str | None = None, days: str | None = None,
-                             channel: str | None = None, location: str | None = None) -> dict:
+                             channel: str | None = None, location: str | None = None, content: str | None = None,
+                             skip_quiet_days: bool | None = None) -> dict:
     from .. import briefing
+    plan = None
+    if content is not None or skip_quiet_days is not None:
+        plan = briefing.get_settings(ctx.person.id)["plan"]
+        if content is not None:
+            if content != "personal" and not briefing.has_business(ctx.person):
+                return {"error": "Their briefing can only be personal: they have no business features."}
+            if plan["custom"]:
+                return {"error": "Their briefing has a plan per weekday; that is changed on the dashboard's Profile page."}
+            plan["content"] = content
+        if skip_quiet_days is not None:
+            plan["skip_empty"] = skip_quiet_days
     try:
         s = await briefing.update_settings(ctx.person.id, enabled=enabled, time_local=time, days=days,
-                                           channel=channel, location=location)
+                                           channel=channel, location=location, plan=plan)
     except briefing.BriefingError as e:
         return {"error": str(e)}
-    return {k: s[k] for k in ("enabled", "time_local", "days", "channel", "location")}
+    out = {k: s[k] for k in ("enabled", "time_local", "days", "channel", "location")}
+    p = s["plan"]
+    if p["custom"]:
+        out["per_weekday"] = {briefing.WEEKDAYS[i]: d for i, d in enumerate(p["days"])}
+    else:
+        out["content"] = p["content"]
+    out["skip_quiet_days"] = p["skip_empty"]
+    return out
 
 
 @handler

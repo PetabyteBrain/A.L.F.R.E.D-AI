@@ -629,6 +629,17 @@ input[type="datetime-local"] { color-scheme: dark; }
   color: var(--text-strong); font-size: 14px; }
 .gcal { margin-top: 8px; }
 .briefing, .quiet { margin-top: 18px; }
+.briefing-plan { display: grid; gap: 10px; padding: 8px 0; border-top: 1px dashed var(--line); border-bottom: 1px dashed var(--line); }
+.briefing-day { display: grid; grid-template-columns: 96px minmax(0, 1fr) minmax(0, 1fr); gap: 6px 8px; align-items: center; }
+.briefing-day.personal { grid-template-columns: 96px minmax(0, 1fr); }
+.briefing-day input { grid-column: 2 / -1; }
+.briefing-day.off .briefing-day-name { opacity: .5; }
+.briefing-day.off input { display: none; }
+.briefing-day input, .briefing-day select { min-width: 0; }
+@media (max-width: 520px) {
+  .briefing-day, .briefing-day.personal { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .briefing-day-name, .briefing-day.personal select, .briefing-day input { grid-column: 1 / -1; }
+}
 .quiet-default { margin-top: 12px; padding-top: 10px; border-top: 1px dashed var(--line); }
 .memory { margin-top: 18px; }
 .memo-list { display: grid; gap: 6px; }

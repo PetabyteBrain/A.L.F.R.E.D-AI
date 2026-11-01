@@ -574,8 +574,9 @@ def _log_event(person: Person, ev: dict) -> int:
 # --- the morning jobs -----------------------------------------------------------------------------------
 
 def _gets_briefing_today(user_id: int, today: date) -> bool:
-    row = db.query_one("SELECT enabled, days FROM briefings WHERE user_id = ?", (user_id,))
-    return bool(row and row["enabled"] and (row["days"] == "daily" or today.weekday() < 5))
+    """Their briefing today carries the business side (so the separate nudge would repeat it)."""
+    from . import briefing
+    return briefing.carries_business(user_id, today)
 
 
 async def _send(user_id: int, text: str, note: str) -> bool:
@@ -672,6 +673,9 @@ async def _safely(name: str, job, *args) -> None:
 
 
 async def tick(now: datetime | None = None) -> None:
+    from . import permissions
+    if not permissions.business_enabled():         # an admin switched the business side off
+        return
     now = now or _now()
     s = get_settings()
     today = now.date().isoformat()

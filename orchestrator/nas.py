@@ -513,6 +513,41 @@ def all_lists(person: Person, scope: str) -> dict:
     return {"scope": scope, "lists": _call(go)}
 
 
+def briefing_digest(person: Person, recent_days: int = 7) -> dict:
+    """For the personal briefing: open items on the person's own lists and the notes they changed lately."""
+    smb = _smb()
+    _ensure_root(person, "personal")
+    root = _root(person, "personal")
+    since = datetime.now().timestamp() - recent_days * 86400
+
+    def go():
+        out = {}
+        lists_dir = root + "\\" + LISTS
+        if _exists(smb, lists_dir):
+            todo = {}
+            for e in smb.scandir(lists_dir):
+                if e.is_file() and e.name.lower().endswith(".md") and not e.name.startswith("."):
+                    open_ = [i["text"] for i in _parse_list(_read_text(smb, lists_dir + "\\" + e.name)) if not i["done"]]
+                    if open_:
+                        todo[e.name[:-3]] = open_[:5] + ([f"and {len(open_) - 5} more"] if len(open_) > 5 else [])
+            if todo:
+                out["open_list_items"] = dict(sorted(todo.items(), key=lambda kv: kv[0].lower())[:6])
+        notes_dir = root + "\\" + NOTES
+        if _exists(smb, notes_dir):
+            recent = []
+            for dirpath, dirs, files in smb.walk(notes_dir):
+                dirs[:] = [d for d in dirs if not d.startswith(".")]
+                for f in files:
+                    if f.lower().endswith((".md", ".txt")) and not f.startswith("."):
+                        mtime = smb.stat(dirpath + "\\" + f).st_mtime
+                        if mtime >= since:
+                            recent.append((mtime, f.rsplit(".", 1)[0]))
+            if recent:
+                out["notes_changed_lately"] = [t for _, t in sorted(recent, reverse=True)[:5]]
+        return out
+    return _call(go)
+
+
 # --- health / privacy --------------------------------------------------------------------------
 
 def health() -> tuple[bool, str]:

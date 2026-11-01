@@ -95,7 +95,7 @@ Every morning (or weekdays only) at a time you choose, Alfred sends a short brie
 - the weather for your town,
 - today's calendar, reminders and planned calls,
 - what happened overnight (calls made for you and their outcome),
-- your open tasks,
+- your open tasks, the open items on your own lists and the notes you worked on lately,
 - for admins and cofounders: the most important company to-dos (and on Mondays, items that have been "in
   progress" for a long time), and failed automations for admins,
 - with the CRM: the clients and deals you should follow up on ([CRM](12-crm.md#follow-ups)),
@@ -106,7 +106,25 @@ Every morning (or weekdays only) at a time you choose, Alfred sends a short brie
 **Set it up:** **Profile → How Alfred serves you → Daily briefing** (time, every day or weekdays, Telegram or a
 call, weather town), or ask: "Send me a briefing every weekday at 7:30 by Telegram, weather for Bern."
 
-**Any time:** "What's my day like?" gives you the briefing on the spot.
+**Personal, business or both.** If you work with the CRM, the boards or the team, choose what the briefing
+**covers**: *personal & business* (the default), *personal only* (your calendar, reminders, calls, tasks, lists and
+notes) or *business only* (the company to-do, clients, boards and the team, plus your calendar).
+
+**A plan per weekday.** Pick **Days → Plan per weekday** to set each day on its own:
+
+- **Daily briefing**, **Week ahead** (an overview of the next seven days: calendar, reminders and calls, and on the
+  business side deadlines from the boards, the pipeline and invoices, and who's away) or **No briefing**;
+- what that day's briefing covers (personal, business or both);
+- an optional **focus**, e.g. "the administrative side" or "technical": Alfred leads with what fits it.
+
+For example: a business week-ahead on Tuesdays with the focus "administration", personal & business on the other
+weekdays, personal only at the weekend.
+
+**Skip quiet days.** Tick *Skip daily briefings on days with nothing on* and a daily briefing is only sent when
+something is happening that day (an event, a reminder, a call, something due or overdue). Weekly overviews are always
+sent, and **Send one now** always sends.
+
+**Any time:** "What's my day like?" gives you the briefing on the spot; "What's my week like?" the week ahead.
 
 ## Quiet hours
 

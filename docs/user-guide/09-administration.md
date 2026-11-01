@@ -68,6 +68,7 @@ yourself. A banner shows it's a preview; **Back to my view** ends it.
 
 | Card | What it does |
 |---|---|
+| **Business features** | Admins only: switch the business side (CRM and sales pipeline, quotes and invoices, work boards and teams, the employee directory) **off** for everyone, leaving Alfred a personal assistant (chat, calls, calendar, reminders, tasks, notes, mail, files). The tabs, Alfred's tools for them, their parts of the briefing and the proactive reminders and reports disappear; roles keep their settings and no data is deleted, so turning it back on restores everything. |
 | **AI model & billing** | Which API key pays, which Claude model answers chats (Haiku, Sonnet, Opus, Fable), how hard the bigger models think, and a separate model for phone calls (fast by default). |
 | **Household quiet hours** | The default quiet hours everyone follows unless they set their own (see [Quiet hours](03-your-day.md#quiet-hours)). |
 | **Email** | How Alfred answers mail from outside (*answer what public information covers*, *acknowledge only*, *no replies*), automatic filing of inquiry attachments, and how long mail is kept. See [Inquiries from outside](07-company.md#inquiries-from-outside). |

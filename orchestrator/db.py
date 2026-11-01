@@ -1109,6 +1109,7 @@ ADDED_COLUMNS = [
     ("roles", "label", "TEXT"),                                   # display name (renaming keeps the key)
     ("roles", "parent", "TEXT"),                                  # inherits that role's permissions
     ("roles", "archived", "INTEGER NOT NULL DEFAULT 0"),
+    ("briefings", "plan", "TEXT"),                 # briefing.py: per-weekday content, weekly overview, focus notes (JSON)
     ("crm_activities", "deal_id", "INTEGER REFERENCES crm_deals(id) ON DELETE CASCADE"),   # timeline of a deal
     ("crm_activities", "source_ref", "TEXT"),       # logged automatically, e.g. "gcal:<event id>" (no duplicates)
     ("crm_companies", "timetrack_tag", "TEXT NOT NULL DEFAULT ''"),   # its tag in the time-tracking app

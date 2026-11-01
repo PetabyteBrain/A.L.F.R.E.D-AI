@@ -14,11 +14,10 @@ docs and the real homelab map are git-ignored (`docs/PROJECT_PLAN.md`, `CLAUDE.l
 `orchestrator/homelab.yaml`); keep real phone numbers, IPs, names and hostnames out of tracked files.
 
 ## Where things run
-- The local checkout is the master; pushes to `main` deploy through GitHub Actions: the runner joins the tailnet
-  as `tag:ci` and uses Tailscale SSH into the server (tagged `tag:server`) to unpack `git archive HEAD` over
-  `~/jarvis`, rebuild and health-check (`.github/workflows/deploy.yml`, `infra/README-deploy.md`).
-  Markdown/docs-only pushes don't deploy. By hand it is `git archive HEAD` there + `docker compose up -d --build`
-  (details per machine in `CLAUDE.local.md`, if present).
+- The local checkout is the master; a push to `main` deploys (pull-based GitOps, `.github/workflows/build.yml`):
+  pytest, then an arm64 image to `ghcr.io/petabytebrain/alfred:<sha>`, then a bot commit writes that tag into
+  `deploy/kustomization.yaml` and Argo CD in the K3s cluster rolls the Deployment (`deploy/`). Markdown, `docs/**`
+  and `deploy/**` pushes don't build. So pushing = deploying: only when asked. Evals run inside the pod.
 - One container `alfred`, port 8000, data in `./data` (SQLite + recordings). `.env` only on the server.
 - Public exposure (when needed for Twilio) goes through a reverse proxy on another machine + a
   Cloudflare Tunnel; never add a Caddy/proxy service to this compose file.
@@ -88,6 +87,9 @@ docs and the real homelab map are git-ignored (`docs/PROJECT_PLAN.md`, `CLAUDE.l
   orchestrator.identity.mfa reset admin`).
 
 ## People & permissions
+- Business features switch (Settings, admins only, app_settings "features"): off = `permissions.BUSINESS` (the CRM,
+  Billing, Boards and Employees groups) resolve for nobody (`permissions._available` in `resolve`/`for_person`), so
+  tabs, tools, routes and briefing parts follow by themselves; `crm_proactive.tick` returns early. Roles keep rules.
 - Roles and permissions (roadmap #57): `orchestrator/permissions.py` is the one place that decides.
   Every ability is a named permission in `CATALOGUE`; roles (`role_permissions`: allow/deny per
   permission, `roles.parent` inheritance, `roles.archived`, `roles.label` as display name) are editable
@@ -211,6 +213,9 @@ docs and the real homelab map are git-ignored (`docs/PROJECT_PLAN.md`, `CLAUDE.l
 - Phone/Telegram connections only count once `verified_at` is set (`identity/verification.py`);
   anything that reaches a person (resolve, phone_for, telegram_for) must use verified ones.
 - Background loops in `main.lifespan`: health, scheduler (calls), reminders, briefing, tasks.
+- Briefing (`orchestrator/briefing.py`): `briefings.plan` JSON = content personal/business/both, optional plan per
+  weekday (day | week ahead | off, content, focus note) and skip_empty (quiet days); `day_plan` decides, `gather(person,
+  plan)` collects (business parts only with `has_business`), `carries_business` lets the morning nudges stay quiet.
 - Quiet hours (`orchestrator/quiet.py`): anything contacting a person on someone else's behalf
   must respect them (calls via `scheduler.request_call` do automatically; Telegram via
   `send_to_user` goes silent by default). Pass `silent=False` only for things the person set up.

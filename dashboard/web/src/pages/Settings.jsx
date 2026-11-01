@@ -7,6 +7,7 @@ import RolesManager from "../components/RolesManager.jsx";
 import ScreeningCard from "../components/ScreeningCard.jsx";
 import MailSettingsCard from "../components/MailSettingsCard.jsx";
 import ViewAsCard from "../components/ViewAsCard.jsx";
+import BusinessFeaturesCard from "../components/BusinessFeaturesCard.jsx";
 
 /* Settings that apply to everyone (settings.manage) and the role editor (roles.manage), one section at a time like
    the profile; personal settings stay on each person's profile. */
@@ -14,6 +15,8 @@ import ViewAsCard from "../components/ViewAsCard.jsx";
 const SECTIONS = [
   { id: "ai", perm: "settings.manage", label: "AI model", hint: () => "Model and billing key",
     intro: (a) => `Which Claude model ${a} thinks with, for conversations and for calls, and which API key pays.` },
+  { id: "features", perm: "settings.manage", label: "Business features", hint: () => "CRM, pipeline, boards, team",
+    intro: (a) => `Whether ${a} runs the business side too, or is a personal assistant only.` },
   { id: "quiet", perm: "settings.manage", label: "Quiet hours", hint: () => "The household default",
     intro: (a) => `When ${a} doesn't disturb anyone on someone else's behalf, unless they set their own hours.` },
   { id: "mail", perm: "settings.manage", label: "Email", hint: () => "Mailbox and inquiries",
@@ -33,6 +36,7 @@ export default function Settings({ me, assistant, refreshMe }) {
   const card = (children) => <div className="setting-card">{children}</div>;
   const body = {
     ai: card(<AiModelCard assistant={assistant} />),
+    features: card(<BusinessFeaturesCard assistant={assistant} onChanged={refreshMe} />),
     quiet: card(<QuietDefaultCard assistant={assistant} />),
     mail: card(<MailSettingsCard assistant={assistant} />),
     screening: card(<ScreeningCard assistant={assistant} />),

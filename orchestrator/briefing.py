@@ -1,8 +1,9 @@
 """Daily briefing: a short morning summary per person, by Telegram or phone, at a time they choose.
 
-The facts are gathered here in Python (weather, today's calendar, reminders, calls, tasks and,
-for admins, failed n8n runs) and Claude only turns them into a few lines in Alfred's voice, so
-the briefing never invents anything and costs one small model call.
+The facts are gathered here in Python (weather, the calendar, reminders, calls, own tasks, lists and notes, and the
+business side: company to-do, clients, boards, team, failed n8n runs) and Claude only turns them into a few lines in
+Alfred's voice, so the briefing never invents anything and costs one small model call. A per-weekday plan can make a
+day's briefing personal, business or both, a weekly overview instead, with a focus note, or skip quiet days.
 """
 from __future__ import annotations
 
@@ -54,13 +55,88 @@ def _now_local() -> datetime:
 DEFAULTS = {"enabled": False, "time_local": "07:30", "days": "daily", "channel": "telegram",
             "location": None, "lat": None, "lon": None, "last_sent_on": None}
 
+# What a briefing covers and when. "content": personal (weather, own calendar, reminders, calls, tasks, lists and
+# notes) | business (company to-do, clients, boards, team) | both. Without "custom", `days` (daily / weekdays) decides
+# and every briefing is a daily one with the default content. With "custom", each weekday (Monday first) says
+# send: off | day (today's briefing) | week (an overview of the week ahead), its content and an optional focus note.
+# "skip_empty": a daily briefing with nothing time-relevant in it isn't sent (weekly overviews always are).
+CONTENTS = ("both", "personal", "business")
+SENDS = ("off", "day", "week")
+NOTE_MAX = 120
+WEEKDAYS = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
+
+
+def _default_plan() -> dict:
+    return {"custom": False, "content": "both", "skip_empty": False,
+            "days": [{"send": "day", "content": "both", "note": ""} for _ in WEEKDAYS]}
+
+
+def _clean_plan(raw) -> dict:
+    """A complete, valid plan from whatever was stored or sent (unknown values fall back to the defaults)."""
+    import json
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw)
+        except ValueError:
+            raw = None
+    raw = raw if isinstance(raw, dict) else {}
+    out = _default_plan()
+    out["custom"] = bool(raw.get("custom", False))
+    out["skip_empty"] = bool(raw.get("skip_empty", False))
+    if raw.get("content") in CONTENTS:
+        out["content"] = raw["content"]
+    days = raw.get("days") if isinstance(raw.get("days"), list) else []
+    for i, d in enumerate(days[:7]):
+        if not isinstance(d, dict):
+            continue
+        if d.get("send") in SENDS:
+            out["days"][i]["send"] = d["send"]
+        if d.get("content") in CONTENTS:
+            out["days"][i]["content"] = d["content"]
+        out["days"][i]["note"] = " ".join(str(d.get("note") or "").split())[:NOTE_MAX]
+    return out
+
 
 def get_settings(user_id: int) -> dict:
-    row = db.query_one("SELECT enabled, time_local, days, channel, location, lat, lon, last_sent_on "
+    row = db.query_one("SELECT enabled, time_local, days, channel, location, lat, lon, last_sent_on, plan "
                        "FROM briefings WHERE user_id = ?", (user_id,))
     out = {**DEFAULTS, **(row or {})}
     out["enabled"] = bool(out["enabled"])
+    out["plan"] = _clean_plan(out.get("plan"))
     return out
+
+
+def has_business(person: Person) -> bool:
+    """Whether business content can be part of this person's briefing at all (never while an admin has switched
+    the business features off)."""
+    from . import permissions
+    if not permissions.business_enabled():
+        return False
+    return person.can("files.company") or bool(permissions.for_person(person) & permissions.BUSINESS)
+
+
+def day_plan(cfg: dict, day, person: Person | None = None) -> dict | None:
+    """What the briefing on that date is: {"kind": day|week, "content", "note"}, or None when there's none that day."""
+    plan, wd = cfg["plan"], day.weekday()
+    if plan["custom"]:
+        d = plan["days"][wd]
+        if d["send"] == "off":
+            return None
+        out = {"kind": d["send"], "content": d["content"], "note": d["note"]}
+    else:
+        if cfg["days"] == "weekdays" and wd >= 5:
+            return None
+        out = {"kind": "day", "content": plan["content"], "note": ""}
+    if person is not None and not has_business(person):
+        out["content"] = "personal"
+    return out
+
+
+def carries_business(user_id: int, day) -> bool:
+    """Does today's briefing bring this person's business news (so separate morning nudges can stay quiet)?"""
+    cfg = get_settings(user_id)
+    p = day_plan(cfg, day) if cfg["enabled"] else None
+    return bool(p and p["content"] != "personal")
 
 
 async def geocode(place: str) -> dict:
@@ -84,7 +160,8 @@ async def geocode(place: str) -> dict:
 
 async def update_settings(user_id: int, *, enabled: bool | None = None, time_local: str | None = None,
                           days: str | None = None, channel: str | None = None,
-                          location: str | None = None) -> dict:
+                          location: str | None = None, plan: dict | None = None) -> dict:
+    import json
     cur = get_settings(user_id)
     new = dict(cur)
     if enabled is not None:
@@ -104,6 +181,10 @@ async def update_settings(user_id: int, *, enabled: bool | None = None, time_loc
         if channel not in ("telegram", "call"):
             raise BriefingError("Channel must be telegram or call.")
         new["channel"] = channel
+    if plan is not None:
+        new["plan"] = _clean_plan(plan)
+        if new["plan"]["custom"] and all(d["send"] == "off" for d in new["plan"]["days"]):
+            raise BriefingError("Pick at least one day for the briefing, or switch it off.")
     if location is not None:
         if location.strip():
             new.update(await geocode(location))
@@ -118,13 +199,13 @@ async def update_settings(user_id: int, *, enabled: bool | None = None, time_loc
     if new["time_local"] != cur["time_local"] or (new["enabled"] and not cur["enabled"]):
         new["last_sent_on"] = None if _due_time(new["time_local"]) > _now_local() else _now_local().date().isoformat()
     db.execute(
-        "INSERT INTO briefings(user_id, enabled, time_local, days, channel, location, lat, lon, last_sent_on, updated_at) "
-        "VALUES (?,?,?,?,?,?,?,?,?,?) ON CONFLICT(user_id) DO UPDATE SET enabled = excluded.enabled, "
+        "INSERT INTO briefings(user_id, enabled, time_local, days, channel, location, lat, lon, last_sent_on, plan, "
+        "updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(user_id) DO UPDATE SET enabled = excluded.enabled, "
         "time_local = excluded.time_local, days = excluded.days, channel = excluded.channel, "
         "location = excluded.location, lat = excluded.lat, lon = excluded.lon, "
-        "last_sent_on = excluded.last_sent_on, updated_at = excluded.updated_at",
+        "last_sent_on = excluded.last_sent_on, plan = excluded.plan, updated_at = excluded.updated_at",
         (user_id, int(new["enabled"]), new["time_local"], new["days"], new["channel"], new["location"],
-         new["lat"], new["lon"], new["last_sent_on"], db.now_iso()))
+         new["lat"], new["lon"], new["last_sent_on"], json.dumps(new["plan"]), db.now_iso()))
     return get_settings(user_id)
 
 
@@ -156,15 +237,25 @@ def _uses_tool(person: Person, tool: str) -> bool:
     return bool(spec and spec.allowed_for(person))
 
 
-async def gather(person: Person) -> dict:
-    """Everything for today's briefing. Each part is optional and fails soft."""
+async def gather(person: Person, plan: dict | None = None) -> dict:
+    """Everything for one briefing. `plan` (from day_plan) picks the content and today vs. the week ahead;
+    without one it is today's briefing with everything the person may see. Each part is optional and fails soft."""
+    plan = plan or {"kind": "day", "content": "both" if has_business(person) else "personal", "note": ""}
+    personal, business, week = plan["content"] != "business", plan["content"] != "personal", plan["kind"] == "week"
     now = _now_local()
-    start, end = now.replace(hour=0, minute=0, second=0, microsecond=0), now.replace(hour=23, minute=59, second=59)
+    start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    end = (start + timedelta(days=7 if week else 1)) - timedelta(seconds=1)
     utc = lambda dt: dt.astimezone(timezone.utc).isoformat(timespec="seconds")  # noqa: E731
+    when = (lambda dt: dt.strftime("%a %H:%M")) if week else (lambda dt: dt.strftime("%H:%M"))  # noqa: E731
     cfg = get_settings(person.id)
-    out: dict = {"date": now.strftime("%A %d %B %Y"), "time": now.strftime("%H:%M"), "person": person.display_name}
+    out: dict = {"date": now.strftime("%A %d %B %Y"), "time": now.strftime("%H:%M"), "person": person.display_name,
+                 "briefing": "the week ahead (today and the next 6 days)" if week else "today",
+                 "covers": {"both": "personal and business", "personal": "personal only",
+                            "business": "business only"}[plan["content"]]}
+    if plan.get("note"):
+        out["focus"] = plan["note"]
 
-    if cfg["lat"] is not None:
+    if personal and cfg["lat"] is not None and not week:
         try:
             out["weather"] = {"place": cfg["location"], **await _weather(cfg["lat"], cfg["lon"])}
         except Exception as e:  # noqa: BLE001
@@ -172,36 +263,54 @@ async def gather(person: Person) -> dict:
             out["weather"] = "unavailable right now"
 
     from . import google_calendar
-    if google_calendar.is_linked(person.id):
+    if google_calendar.is_linked(person.id):     # one calendar for both: business-only briefings still show the day
+        key = "calendar_week" if week else "calendar_today"
         try:
-            events = await google_calendar.list_events(person.id, start.isoformat(), end.isoformat(), max_results=20)
-            out["calendar_today"] = [{"time": "all day" if e["all_day"] else e["start"][11:16], "title": e["summary"],
-                                      **({"where": e["location"]} if e["location"] else {})} for e in events]
+            events = await google_calendar.list_events(person.id, start.isoformat(), end.isoformat(),
+                                                       max_results=40 if week else 20)
+            out[key] = [{"time": (e["start"][:10] + " " if week else "") + ("all day" if e["all_day"] else e["start"][11:16]),
+                         "title": e["summary"], **({"where": e["location"]} if e["location"] else {})} for e in events]
         except Exception as e:  # noqa: BLE001
             log.warning("Briefing calendar failed: %s", e)
-            out["calendar_today"] = "unavailable right now"
+            out[key] = "unavailable right now"
 
-    rem = db.query("SELECT text, due_at FROM reminders WHERE user_id = ? AND status = 'pending' AND due_at <= ? "
-                   "ORDER BY due_at", (person.id, utc(end)))
-    out["reminders_today"] = [{"time": datetime.fromisoformat(r["due_at"]).astimezone(_tz()).strftime("%H:%M"),
-                               "text": r["text"]} for r in rem]
+    if personal:
+        rem = db.query("SELECT text, due_at FROM reminders WHERE user_id = ? AND status = 'pending' AND due_at <= ? "
+                       "ORDER BY due_at", (person.id, utc(end)))
+        out["reminders"] = [{"time": when(datetime.fromisoformat(r["due_at"]).astimezone(_tz())), "text": r["text"]}
+                            for r in rem]
+        calls = db.query(
+            "SELECT c.run_at, c.purpose, t.display_name AS target FROM scheduled_calls c JOIN users t ON t.id = c.target_user_id "
+            "WHERE c.status = 'pending' AND c.run_at <= ? AND (c.requested_by = ? OR c.target_user_id = ?) ORDER BY c.run_at",
+            (utc(end), person.id, person.id))
+        out["calls_planned"] = [{"time": when(datetime.fromisoformat(c["run_at"]).astimezone(_tz())),
+                                 "to": c["target"], "purpose": c["purpose"]} for c in calls]
+        done = db.query(
+            "SELECT c.status, c.result, t.display_name AS target FROM scheduled_calls c JOIN users t ON t.id = c.target_user_id "
+            "WHERE c.requested_by = ? AND c.target_user_id != ? AND c.status IN ('done','no_answer','failed') "
+            "AND c.updated_at >= ? ORDER BY c.updated_at", (person.id, person.id, utc(now - timedelta(hours=24))))
+        if done:
+            out["call_outcomes_last_24h"] = [{"to": c["target"], "status": c["status"], "result": c["result"]} for c in done]
+        if _uses_tool(person, "list_tasks"):      # their own tasks only (ones they hold, or asked for and nobody holds)
+            tasks = db.query("SELECT title, due_at FROM tasks WHERE status = 'active' AND (owner_user_id = ? OR "
+                             "(owner_user_id IS NULL AND requested_by = ?)) ORDER BY COALESCE(due_at, created_at) LIMIT 15",
+                             (person.id, person.id))
+            if tasks:
+                out["open_tasks"] = [t["title"] + (f" (due {t['due_at'][:10]})" if t["due_at"] else "") for t in tasks]
+        if person.can("files.own"):
+            from . import nas
+            if nas.enabled():
+                try:
+                    out.update(await asyncio.to_thread(nas.briefing_digest, person))
+                except Exception as e:  # noqa: BLE001
+                    log.warning("Briefing lists/notes failed: %s", e)
 
-    calls = db.query(
-        "SELECT c.run_at, c.purpose, t.display_name AS target FROM scheduled_calls c JOIN users t ON t.id = c.target_user_id "
-        "WHERE c.status = 'pending' AND c.run_at <= ? AND (c.requested_by = ? OR c.target_user_id = ?) ORDER BY c.run_at",
-        (utc(end), person.id, person.id))
-    out["calls_planned_today"] = [{"time": datetime.fromisoformat(c["run_at"]).astimezone(_tz()).strftime("%H:%M"),
-                                   "to": c["target"], "purpose": c["purpose"]} for c in calls]
-    done = db.query(
-        "SELECT c.status, c.result, t.display_name AS target FROM scheduled_calls c JOIN users t ON t.id = c.target_user_id "
-        "WHERE c.requested_by = ? AND c.target_user_id != ? AND c.status IN ('done','no_answer','failed') "
-        "AND c.updated_at >= ? ORDER BY c.updated_at", (person.id, person.id, utc(now - timedelta(hours=24))))
-    if done:
-        out["call_outcomes_last_24h"] = [{"to": c["target"], "status": c["status"], "result": c["result"]} for c in done]
+    if business:
+        await _business(person, out, now, week)
+    return out
 
-    if _uses_tool(person, "list_tasks"):
-        out["open_tasks"] = [t["title"] for t in db.query("SELECT title FROM tasks WHERE status = 'active' ORDER BY id LIMIT 15")]
 
+async def _business(person: Person, out: dict, now: datetime, week: bool) -> None:
     company = await _company_todo(person, now)
     if company:
         out["company_todo"] = company
@@ -217,9 +326,17 @@ async def gather(person: Person) -> dict:
                     + f": {i['detail']}" for i in items[:5]]}
         from . import employees
         if person.can("employees.view"):
-            away = employees.away_today(now.date())
+            if week:
+                away = {}
+                for n in range(7):
+                    d = now.date() + timedelta(days=n)
+                    names = [a["name"] for a in employees.away_today(d)]
+                    if names:
+                        away[d.strftime("%a %d %b")] = names
+            else:
+                away = employees.away_today(now.date())
             if away:
-                out["team_away_today"] = away
+                out["team_away_this_week" if week else "team_away_today"] = away
         steps = [t for t in employees.due_tasks(now.date(), unreminded_only=False) if t["assignee_id"] == person.id]
         if steps:
             out["checklist_steps_due"] = [f"{t['employee_name']} ({t['kind']}): {t['title']}" for t in steps[:6]]
@@ -233,18 +350,43 @@ async def gather(person: Person) -> dict:
             out["work_items"] = work
     except Exception as e:  # noqa: BLE001
         log.warning("Briefing boards part failed: %s", e)
+    if week:
+        try:                                      # board items, deals and invoices falling due this week
+            from . import deadlines
+            first, last = now.date().isoformat(), (now.date() + timedelta(days=6)).isoformat()
+            due = sorted(deadlines.items(person, first, last), key=lambda d: d["start"])
+            if due:
+                out["deadlines_this_week"] = [f"{d['start']} {d['title']}" + (" (overdue)" if d["overdue"] else "")
+                                              for d in due[:12]]
+        except Exception as e:  # noqa: BLE001
+            log.warning("Briefing deadlines part failed: %s", e)
 
     if settings.n8n_enabled and person.can("automations.view"):
         try:
             from .tools import n8n_tool
             runs = await n8n_tool.run_action("list_executions", {"status": "error", "limit": 20})
-            since = utc(now - timedelta(hours=24))
+            since = (now - timedelta(hours=24)).astimezone(timezone.utc).isoformat(timespec="seconds")
             failed = [r for r in runs if (r.get("startedAt") or "") >= since[:19]]
             if failed:
                 out["n8n_failed_runs_last_24h"] = len(failed)
         except Exception as e:  # noqa: BLE001
             log.warning("Briefing n8n check failed: %s", e)
-    return out
+
+
+# Parts that make a daily briefing worth sending when "skip_empty" is on (weather and plain counts don't).
+_TIME_RELEVANT = ("calendar_today", "reminders", "calls_planned", "call_outcomes_last_24h", "checklist_steps_due",
+                  "crm_follow_ups", "team_away_today", "n8n_failed_runs_last_24h")
+
+
+def has_news(data: dict) -> bool:
+    """Anything time-relevant for today: events, reminders, calls, things due or overdue."""
+    if any(isinstance(data.get(k), (list, dict, int)) and data.get(k) for k in _TIME_RELEVANT):
+        return True
+    work = data.get("work_items") or {}
+    if work.get("due_today_or_overdue") or work.get("task_requests_to_decide"):
+        return True
+    today = _now_local().date().isoformat()
+    return any(t.endswith(")") and "(due " in t and t[-11:-1] <= today for t in data.get("open_tasks") or [])
 
 
 STALE_DAYS = 14
@@ -287,47 +429,62 @@ async def compose(person: Person, data: dict, channel: str) -> str:
     import json
     from .agent_core import client
     who = "sir" if person.is_admin else person.display_name.split()[0]
+    week = "calendar_week" in data or data.get("briefing", "").startswith("the week")
+    what = "weekly briefing (the week ahead)" if week else "daily briefing"
     style = ("It will be read aloud on a phone call: 4-7 short spoken sentences, no lists, no symbols, "
              "no emoji, times said naturally." if channel == "call" else
              "It is a Telegram message: a greeting line, then short lines grouped as needed (weather, "
-             "calendar, reminders, calls, tasks, company to-do, clients, team), plain text with at most a few emoji as markers, no "
-             "headings, no Markdown tables. Under 900 characters.")
+             "calendar, reminders, calls, tasks, lists and notes, company to-do, clients, team), plain text with at most a "
+             f"few emoji as markers, no headings, no Markdown tables. Under {1400 if week else 900} characters.")
     system = (f"You are {settings.assistant_name}, a discreet, warm British butler (Alfred Pennyworth's manner) "
-              f"writing {who}'s daily briefing. Use ONLY the facts in the JSON; never invent events or details. "
-              f"Skip sections that are empty or missing; say 'a clear calendar' if calendar_today is an empty "
-              f"list. For company_todo give the top few items briefly; if in_progress_for_2_weeks_or_more is "
-              f"present, add a gentle nudge about those. crm_follow_ups are clients and deals to follow up on: name the top "
-              f"one or two briefly and the count. team_away_today: who's away. checklist_steps_due: onboarding or "
-              f"offboarding steps that are theirs today. work_items: their board items due today or overdue (name them) "
-              f"and task requests waiting for their decision. Mention anything 'unavailable' in a few words. {style} "
-              f"Address them as {who}. End with one "
-              f"brief, dry, kind remark, not a question.")
+              f"writing {who}'s {what}. Use ONLY the facts in the JSON; never invent events or details. "
+              f"Skip sections that are empty or missing; say 'a clear calendar' if calendar_today or calendar_week is an "
+              f"empty list. 'covers' says whether this briefing is personal, business or both: stay within it. "
+              f"If 'focus' is present, it is what they want this briefing to concentrate on: lead with the facts that "
+              f"fit it and keep the rest short (if nothing fits, say so in a few words). For a week ahead, group "
+              f"events and deadlines by day. open_list_items are open entries on their own lists; notes_changed_lately "
+              f"are their notes worked on this week (titles only). For company_todo give the top few items briefly; if "
+              f"in_progress_for_2_weeks_or_more is present, add a gentle nudge about those. crm_follow_ups are clients "
+              f"and deals to follow up on: name the top one or two briefly and the count. team_away_today / "
+              f"team_away_this_week: who's away. checklist_steps_due: onboarding or offboarding steps that are theirs "
+              f"today. work_items: their board items due today or overdue (name them) and task requests waiting for "
+              f"their decision. deadlines_this_week: board items, deals and invoices falling due. Mention anything "
+              f"'unavailable' in a few words. {style} Address them as {who}. End with one brief, dry, kind remark, "
+              f"not a question.")
     if not ai_config.configured():
         return f"Good morning, {who}. (Briefing text needs the language model, which isn't configured.)"
-    resp = await client().messages.create(model=settings.claude_model, max_tokens=500, system=system,
+    resp = await client().messages.create(model=settings.claude_model, max_tokens=700 if week else 500, system=system,
                                           messages=[{"role": "user", "content": json.dumps(data, ensure_ascii=False)}])
     usage.record_claude(getattr(resp, "usage", None), kind="briefing", user_id=person.id)
     return "".join(b.text for b in resp.content if getattr(b, "type", None) == "text").strip()
 
 
-async def send(person: Person, channel: str | None = None) -> str:
-    """Build and deliver a briefing now. Returns the channel used."""
-    channel = channel or get_settings(person.id)["channel"]
-    data = await gather(person)
+async def send(person: Person, channel: str | None = None, *, scheduled: bool = False) -> str | None:
+    """Build and deliver a briefing now, as today's plan says (a day without one gets the daily briefing when
+    asked for by hand). Returns the channel used, or None when a scheduled daily briefing had nothing to say."""
+    cfg = get_settings(person.id)
+    channel = channel or cfg["channel"]
+    plan = day_plan(cfg, _now_local().date(), person)
+    data = await gather(person, plan)
+    if scheduled and plan and plan["kind"] == "day" and cfg["plan"]["skip_empty"] and not has_news(data):
+        db.log_activity("message", f"Daily briefing for {person.display_name} skipped: nothing on today",
+                        user_id=person.id)
+        return None
+    label = "weekly briefing" if plan and plan["kind"] == "week" else "daily briefing"
     if channel == "call":
         if not registry.phone_for(person.id):
             raise BriefingError("No verified phone number to call.")
         from . import scheduler
         text = await compose(person, data, "call")
         await scheduler.request_call(person.id, requested_by=person,
-                                     purpose=f"Read them their daily briefing, then offer help: {text}",
-                                     opening_line=f"{_short_greeting(person)} Your daily briefing.")
+                                     purpose=f"Read them their {label}, then offer help: {text}",
+                                     opening_line=f"{_short_greeting(person)} Your {label}.")
     else:
         if not (settings.telegram_enabled and registry.telegram_for(person.id)):
             raise BriefingError("No verified Telegram account to send it to.")
         from .telegram_handler import send_to_user
-        await send_to_user(person.id, await compose(person, data, "telegram"), note="daily briefing", silent=False)
-    db.log_activity("message", f"Daily briefing sent to {person.display_name} by {channel}", user_id=person.id)
+        await send_to_user(person.id, await compose(person, data, "telegram"), note=label, silent=False)
+    db.log_activity("message", f"{label.capitalize()} sent to {person.display_name} by {channel}", user_id=person.id)
     return channel
 
 
@@ -340,7 +497,7 @@ def _short_greeting(person: Person) -> str:
 
 async def _send_scheduled(person: Person) -> None:
     try:
-        await send(person)
+        await send(person, scheduled=True)
     except Exception as e:  # noqa: BLE001
         log.exception("Scheduled briefing for %s failed", person.display_name)
         db.log_activity("error", f"Daily briefing for {person.display_name} failed: {str(e)[:200]}", user_id=person.id)
@@ -349,10 +506,10 @@ async def _send_scheduled(person: Person) -> None:
 async def tick() -> None:
     now = _now_local()
     today = now.date().isoformat()
-    for row in db.query("SELECT b.user_id, b.time_local, b.days FROM briefings b JOIN users u ON u.id = b.user_id "
+    for row in db.query("SELECT b.user_id, b.time_local FROM briefings b JOIN users u ON u.id = b.user_id "
                         "WHERE b.enabled = 1 AND u.active = 1 AND (b.last_sent_on IS NULL OR b.last_sent_on != ?)",
                         (today,)):
-        if row["days"] == "weekdays" and now.weekday() >= 5:
+        if day_plan(get_settings(row["user_id"]), now.date()) is None:
             continue
         due = _due_time(row["time_local"], now)
         if not (due <= now < due + LATE_LIMIT):

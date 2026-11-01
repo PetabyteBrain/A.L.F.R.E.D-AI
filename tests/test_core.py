@@ -1192,6 +1192,105 @@ def test_briefing_api():
         assert r["time_local"] == "06:45" and r["days"] == "weekdays" and not r["enabled"]
         assert c.put("/api/briefing", json={"time_local": "25:00"}, headers=CSRF).status_code == 400
         assert c.put("/api/briefing", json={"channel": "fax"}, headers=CSRF).status_code == 422
+        plan = c.get("/api/briefing").json()["plan"]
+        assert plan["custom"] is False and len(plan["days"]) == 7
+        plan["custom"] = True
+        plan["days"][1] = {"send": "week", "content": "business", "note": "  the   administrative stuff "}
+        r = c.put("/api/briefing", json={"plan": plan}, headers=CSRF).json()
+        assert r["plan"]["days"][1] == {"send": "week", "content": "business", "note": "the administrative stuff"}
+        assert r["business"] is True
+        plan["days"] = [{"send": "off", "content": "both", "note": ""}] * 7
+        assert c.put("/api/briefing", json={"plan": plan}, headers=CSRF).status_code == 400   # at least one day
+        plan["days"] = plan["days"][:6]
+        assert c.put("/api/briefing", json={"plan": plan}, headers=CSRF).status_code == 422   # all seven
+        c.put("/api/briefing", json={"plan": {"custom": False}}, headers=CSRF)
+
+
+def test_briefing_plan_and_quiet_days(monkeypatch):
+    import asyncio
+    from datetime import date
+    from orchestrator import briefing, telegram_handler
+    from orchestrator.config import settings
+    admin = registry.lookup("telegram", "111")
+    cfg = briefing.get_settings(admin.id)
+    cfg["plan"] = briefing._clean_plan({"custom": True, "days": [
+        {"send": "day", "content": "both"}, {"send": "week", "content": "business", "note": "admin"},
+        {"send": "off"}, {"send": "bogus"}, {"send": "day", "content": "nonsense", "note": "x" * 500},
+        {"send": "day", "content": "personal"}, {}]})
+    monday, tuesday, wednesday = date(2026, 11, 2), date(2026, 11, 3), date(2026, 11, 4)
+    assert briefing.day_plan(cfg, monday) == {"kind": "day", "content": "both", "note": ""}
+    assert briefing.day_plan(cfg, tuesday) == {"kind": "week", "content": "business", "note": "admin"}
+    assert briefing.day_plan(cfg, wednesday) is None
+    assert briefing.day_plan(cfg, date(2026, 11, 5))["kind"] == "day"                        # unknown -> default
+    friday = briefing.day_plan(cfg, date(2026, 11, 6))
+    assert friday["content"] == "both" and len(friday["note"]) == briefing.NOTE_MAX
+    cfg["plan"]["custom"] = False
+    cfg["days"] = "weekdays"
+    assert briefing.day_plan(cfg, date(2026, 11, 7)) is None                                  # Saturday
+
+    # Quiet days: a scheduled daily briefing with nothing time-relevant isn't sent; asked for by hand it is.
+    assert not briefing.has_news({"reminders": [], "calls_planned": [], "calendar_today": [], "open_tasks": ["Tidy"]})
+    assert briefing.has_news({"reminders": [{"time": "09:00", "text": "Dentist"}]})
+    assert briefing.has_news({"work_items": {"open_items_assigned": 2, "due_today_or_overdue": ["W-1 Fix"]}})
+    friend = registry.lookup("telegram", "22222222")
+    asyncio.run(briefing.update_settings(friend.id, plan={"skip_empty": True}))
+    sent = []
+
+    async def quiet_day(person, plan=None):
+        return {"date": "today", "reminders": [], "covers": plan["content"]}
+
+    async def fake_send(user_id, text, **kw):
+        sent.append(text)
+
+    async def fake_compose(person, data, channel):
+        return "Briefing"
+    monkeypatch.setattr(briefing, "gather", quiet_day)
+    monkeypatch.setattr(briefing, "compose", fake_compose)
+    monkeypatch.setattr(telegram_handler, "send_to_user", fake_send)
+    monkeypatch.setattr(type(settings), "telegram_enabled", property(lambda s: True))
+    friend = registry.get_person(friend.id)
+    if briefing.day_plan(briefing.get_settings(friend.id), briefing._now_local().date(), friend):
+        assert asyncio.run(briefing.send(friend, scheduled=True)) is None and not sent
+    assert asyncio.run(briefing.send(friend)) == "telegram" and sent == ["Briefing"]
+    assert briefing.day_plan(briefing.get_settings(friend.id), monday, friend)["content"] == "personal"  # no business
+    asyncio.run(briefing.update_settings(friend.id, plan={"skip_empty": False}))
+
+
+def test_business_features_switch():
+    import asyncio
+    from fastapi.testclient import TestClient
+    from orchestrator import briefing, crm_proactive, permissions
+    from orchestrator.main import app
+    from orchestrator.tools import registry as tools
+    admin = registry.lookup("telegram", "111")
+    assert permissions.business_enabled() and admin.can("crm.use")
+    try:
+        permissions.set_business_enabled(False)
+        perms = permissions.for_person(admin)
+        assert not perms & permissions.BUSINESS and "files.own" in perms and "settings.manage" in perms
+        assert permissions.actor_for(admin).admin                     # still a full admin for the role editor
+        names = {t["name"] for t in tools.tools_for(admin)}
+        assert "set_reminder" in names and not {n for n in names if n.startswith(("crm_", "board_"))}
+        assert not briefing.has_business(admin)
+        assert not permissions.people_with("crm.reports")
+        claimed = []
+        orig = crm_proactive._claim
+        crm_proactive._claim = lambda job, mark: claimed.append(job) or False
+        try:
+            asyncio.run(crm_proactive.tick())
+        finally:
+            crm_proactive._claim = orig
+        assert claimed == []                                          # the proactive loop stays quiet
+        with TestClient(app) as c:
+            c.post("/api/login", json={"username": "admin", "password": "correct horse battery"}, headers=CSRF)
+            me = c.get("/api/me").json()
+            assert me["business_enabled"] is False and "crm.use" not in me["permissions"]
+            assert c.get("/api/crm/companies").status_code == 403
+            assert c.get("/api/settings/features").json() == {"business": False, "can_change": True}
+            assert c.put("/api/settings/features", json={"business": True}, headers=CSRF).json()["business"] is True
+            assert "crm.use" in c.get("/api/me").json()["permissions"]
+    finally:
+        permissions.set_business_enabled(True)
 
 
 def test_telegram_voice_note_round_trip(monkeypatch):

@@ -125,6 +125,7 @@ def _me_view(person: Person) -> dict:
     return {"id": person.id, "display_name": person.display_name, "role": person.role,
             "roles": [{"name": r, "label": permissions.label_of(r)} for r in roles],
             "permissions": sorted(permissions.for_person(person)), "is_admin": person.is_admin,
+            "business_enabled": permissions.business_enabled(),
             "assistant_name": settings.assistant_name, "can_request_calls": _may_request_calls(person),
             "mfa_setup_required": mfa.required_for(person) and not mfa.enabled(person.id)}
 
