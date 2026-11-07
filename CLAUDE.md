@@ -36,10 +36,18 @@ docs and the real homelab map are git-ignored (`docs/PROJECT_PLAN.md`, `CLAUDE.l
   New n8n-backed features = n8n workflow + one yaml entry, no Python changes.
 - `orchestrator/stt_tts/base.py` is the STT/TTS swap point; audio is 8 kHz mu-law end to end.
   Production uses a Jetson (`speech_server/`, deployed to `~/alfred-speech` there, `SPEECH_BIND` in its
-  `.env`, `docker compose up -d --build`) with automatic ElevenLabs fallback. English only.
+  `.env`, `docker compose up -d --build`) with automatic ElevenLabs fallback.
   Gate telephony on `settings.speech_enabled`, never on `elevenlabs_enabled`.
+  Alfred is English only: its client (`stt_tts/jetson.py`) sends no `language`, so the server defaults
+  to English for both STT and TTS. Keep it that way unless the roadmap says otherwise.
   Voice: Kokoro `bm_george` for now; another voice may come later (roadmap #24): change
   `KOKORO_VOICE` in the Jetson's `~/alfred-speech/.env` and `docker compose up -d`.
+  The speech server is multilingual-capable for a *separate* project (not Alfred): Whisper
+  large-v3-turbo already does multilingual STT (pass `language=<code>` or `auto`), and non-English TTS
+  uses Meta MMS-TTS (`facebook/mms-tts-<iso3>`, e.g. Greek `ell`), one VITS checkpoint per language
+  loaded on first use via the existing transformers stack — Kokoro stays English-only. A client picks a
+  language with the `language` field on `/v1/tts`, the `language` form field on `/v1/stt`, and
+  `?language=` on the `/v1/stt/stream` websocket.
 - NAS (TrueNAS, SMB from inside the container): `orchestrator/nas.py` (scopes personal/company, notes,
   lists, files) and `orchestrator/company_todo.py` (cell-level xlsx edits + backups; never save the
   workbook with openpyxl). Telegram files: `orchestrator/uploads.py`; search by meaning:
