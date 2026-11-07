@@ -1,14 +1,20 @@
-"""Alfred's speech server for the Jetson Orin Nano: English speech recognition and synthesis.
+"""Alfred's speech server for the Jetson Orin Nano: speech recognition and synthesis.
 
 - STT: Whisper (Hugging Face transformers, fp16 on the GPU) + Silero VAD for end-of-speech.
-- TTS: Kokoro-82M with a British male voice (default `bm_george`), GPU.
+       whisper-large-v3-turbo is multilingual; requests default to English (Alfred) and may pass
+       another `language` (e.g. `el` for Greek) or `auto` to let Whisper detect.
+- TTS: Kokoro-82M with a British male voice (default `bm_george`), GPU — used for English (Alfred).
+       Kokoro has no Greek; for any non-English `language` the server uses Meta MMS-TTS (VITS, via the
+       same transformers stack), loaded on first use so Alfred's English path is untouched. e.g. Greek
+       = `facebook/mms-tts-ell`. English requests always go to Kokoro, so Alfred stays English-only.
 
 Endpoints (all need `Authorization: Bearer $SPEECH_TOKEN`):
-  WS   /v1/stt/stream      binary 8 kHz mu-law frames in (phone audio);
+  WS   /v1/stt/stream[?language=en]   binary 8 kHz mu-law frames in (phone audio);
                            JSON out: {"type":"speech_start"} once speech is clearly under way,
                            {"type":"final","text":...} after the caller pauses.
-  POST /v1/stt             multipart `file` (any format ffmpeg reads) -> {"text": ...}
-  POST /v1/tts             {"text", "format": "ulaw_8000"|"ogg_opus"|"wav"} -> audio (ulaw streamed per sentence)
+  POST /v1/stt             multipart `file` (any format ffmpeg reads) [+ form `language`] -> {"text": ...}
+  POST /v1/tts             {"text", "format": "ulaw_8000"|"ogg_opus"|"wav", "language": "en"} -> audio
+                           (ulaw streamed per sentence)
   GET  /health             models, device, timings (no auth: no content, tailnet only)
 """
 from __future__ import annotations
@@ -26,7 +32,7 @@ import wave
 
 import numpy as np
 import torch
-from fastapi import FastAPI, File, Header, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, File, Form, Header, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 from pydantic import BaseModel, Field
 from scipy.signal import resample_poly
@@ -36,7 +42,11 @@ log = logging.getLogger("speech")
 
 TOKEN = os.environ.get("SPEECH_TOKEN", "")
 WHISPER_MODEL = os.environ.get("WHISPER_MODEL", "openai/whisper-large-v3-turbo")
+DEFAULT_LANG = os.environ.get("SPEECH_DEFAULT_LANG", "en")  # Alfred; clients may override per request
 KOKORO_VOICE = os.environ.get("KOKORO_VOICE", "bm_george")
+# Non-English TTS (e.g. Greek) uses Meta MMS-TTS, one VITS checkpoint per language, loaded on demand.
+MMS_MODEL_PREFIX = os.environ.get("MMS_MODEL_PREFIX", "facebook/mms-tts-")
+MMS_ISO3 = {"el": "ell", "gr": "ell", "en": "eng"}   # 2-letter request code -> MMS ISO 639-3 suffix
 KOKORO_SPEED = float(os.environ.get("KOKORO_SPEED", "1.0"))
 LONG_PIECE = int(os.environ.get("TTS_LONG_PIECE", "60"))       # split sentences longer than this at a comma
 SILENCE_MS = int(os.environ.get("VAD_SILENCE_MS", "500"))       # pause that ends an utterance
@@ -77,11 +87,16 @@ class Whisper:
         gc.collect()
         self.multilingual = getattr(self.model.generation_config, "is_multilingual", False)
 
-    def __call__(self, audio16k: np.ndarray) -> str:
+    def __call__(self, audio16k: np.ndarray, language: str = "en") -> str:
         if audio16k.size < 1600:                               # < 0.1 s
             return ""
         feats = self.processor(audio16k, sampling_rate=16000, return_tensors="pt").input_features
-        kw = {"language": "en", "task": "transcribe"} if self.multilingual else {}
+        if self.multilingual:
+            kw = {"task": "transcribe"}
+            if language and language != "auto":                # else let Whisper detect the language
+                kw["language"] = language
+        else:
+            kw = {}
         with _gpu, torch.inference_mode():
             ids = self.model.generate(feats.to(DEVICE, DTYPE), max_new_tokens=160, num_beams=1, **kw)
         return self.processor.batch_decode(ids, skip_special_tokens=True)[0].strip()
@@ -92,9 +107,15 @@ class Kokoro:
 
     def __init__(self, voice: str):
         from kokoro import KModel, KPipeline
+        from misaki import espeak
         self.model = KModel(repo_id="hexgrad/Kokoro-82M").to(DEVICE).eval()
-        # lang 'b' = British English pronunciation (misaki G2P)
-        self.pipe = KPipeline(lang_code="b", repo_id="hexgrad/Kokoro-82M", model=self.model)
+        # British English. The default misaki G2P (lang 'b') loads a spaCy model, whose compiled
+        # tokenizer raises OverflowError on this Jetson/L4T base image (its Cython toolchain
+        # mishandles spaCy's hash-keyed cache). lang_code 'p' selects misaki's EspeakG2P path
+        # (espeak-ng phonemiser, no spaCy); we then point it at British English. EspeakG2P emits
+        # the same misaki phoneme set Kokoro's vocab expects, so bm_george speaks correctly.
+        self.pipe = KPipeline(lang_code="p", repo_id="hexgrad/Kokoro-82M", model=self.model)
+        self.pipe.g2p = espeak.EspeakG2P(language="en-gb")
         self.voice = voice
 
     @staticmethod
@@ -133,6 +154,43 @@ class Kokoro:
                 except StopIteration:
                     return
             yield chunk
+
+
+class Mms:
+    """Meta MMS-TTS (VITS) for a language Kokoro can't do (e.g. Greek).
+
+    One checkpoint per language (`facebook/mms-tts-<iso3>`), loaded on first use through the same
+    transformers stack already used for Whisper — so it adds no dependency and doesn't touch Alfred's
+    English path. float32 on the GPU (VITS can produce NaNs in fp16; the model is tiny).
+    """
+    _cache: dict[str, "Mms"] = {}
+
+    def __init__(self, language: str):
+        from transformers import AutoTokenizer, VitsModel
+        iso3 = MMS_ISO3.get(language, language)
+        name = f"{MMS_MODEL_PREFIX}{iso3}"
+        self.tokenizer = AutoTokenizer.from_pretrained(name)
+        self.model = VitsModel.from_pretrained(name, torch_dtype=torch.float32).to(DEVICE).eval()
+        self.sr = int(self.model.config.sampling_rate)
+        self.language = language
+        log.info("MMS-TTS loaded: %s (%d Hz) on %s", name, self.sr, DEVICE)
+
+    def synth_iter(self, text: str):
+        """Yield float32 audio (self.sr) per sentence, mirroring Kokoro.synth_iter."""
+        for piece in Kokoro.pieces(text):
+            inputs = {k: v.to(DEVICE) for k, v in self.tokenizer(piece, return_tensors="pt").items()}
+            with _gpu, torch.inference_mode():
+                wave = self.model(**inputs).waveform
+            yield wave[0].detach().float().cpu().numpy()
+
+
+def get_mms(language: str) -> Mms:
+    m = Mms._cache.get(language)
+    if m is None:
+        log.info("Loading MMS-TTS for '%s' on first use", language)
+        m = Mms(language)
+        Mms._cache[language] = m
+    return m
 
 
 class Vad:
@@ -175,8 +233,8 @@ def ulaw8k_to_f32_16k(data: bytes) -> np.ndarray:
     return resample_poly(pcm, 2, 1).astype(np.float32)
 
 
-def f32_24k_to_ulaw8k(audio: np.ndarray) -> bytes:
-    pcm = np.clip(resample_poly(audio, 1, 3), -1.0, 1.0)
+def f32_to_ulaw8k(audio: np.ndarray, sr: int) -> bytes:
+    pcm = np.clip(resample_poly(audio, 1, sr // 8000), -1.0, 1.0)   # sr is a multiple of 8 kHz (24k/16k)
     return audioop.lin2ulaw((pcm * 32767).astype(np.int16).tobytes(), 2)
 
 
@@ -204,31 +262,45 @@ def wav_bytes(audio: np.ndarray, sr: int) -> bytes:
 def health() -> dict:
     med = lambda xs: sorted(xs)[len(xs) // 2] if xs else None  # noqa: E731
     return {"ok": WHISPER is not None and KOKORO is not None, "device": DEVICE, "stt_model": WHISPER_MODEL,
-            "voice": KOKORO_VOICE, "stt_median_ms": med(_stats["stt_ms"]),
-            "tts_first_median_ms": med(_stats["tts_first_ms"])}
+            "voice": KOKORO_VOICE, "tts_en": "kokoro", "tts_loaded_langs": sorted(Mms._cache),
+            "stt_median_ms": med(_stats["stt_ms"]), "tts_first_median_ms": med(_stats["tts_first_ms"])}
 
 
 class TtsBody(BaseModel):
     text: str = Field(min_length=1, max_length=5000)
     format: str = Field(default="ulaw_8000", pattern="^(ulaw_8000|ogg_opus|wav)$")
+    language: str = Field(default=DEFAULT_LANG, pattern="^[a-z]{2,3}$")
+
+
+def _tts_engine(language: str):
+    """(synth_iter callable, sample rate) for `language`. English -> Kokoro (Alfred, unchanged);
+    anything else -> MMS-TTS, loaded on first use."""
+    if language == "en":
+        return (lambda text: KOKORO.synth_iter(text)), Kokoro.SR
+    try:
+        mms = get_mms(language)
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(status_code=503, detail=f"TTS for '{language}' unavailable: {str(e)[:200]}")
+    return (lambda text: mms.synth_iter(text)), mms.sr
 
 
 @app.post("/v1/tts")
 async def tts(body: TtsBody, authorization: str | None = Header(default=None)):
     _auth(authorization)
     text = " ".join(body.text.split())
+    synth, sr = _tts_engine(body.language.lower())
     if body.format == "ulaw_8000":
         def gen():
             t = time.monotonic()
             first = True
-            for chunk in KOKORO.synth_iter(text):
+            for chunk in synth(text):
                 if first:
                     _track("tts_first_ms", (time.monotonic() - t) * 1000)
                     first = False
-                yield f32_24k_to_ulaw8k(chunk)
+                yield f32_to_ulaw8k(chunk, sr)
         return StreamingResponse(gen(), media_type="audio/basic")
-    audio = await asyncio.to_thread(lambda: np.concatenate(list(KOKORO.synth_iter(text)) or [np.zeros(1, np.float32)]))
-    wav = wav_bytes(audio, Kokoro.SR)
+    audio = await asyncio.to_thread(lambda: np.concatenate(list(synth(text)) or [np.zeros(1, np.float32)]))
+    wav = wav_bytes(audio, sr)
     if body.format == "wav":
         return Response(wav, media_type="audio/wav")
     ogg = await asyncio.to_thread(ffmpeg, ["-f", "wav", "-i", "pipe:0", "-c:a", "libopus", "-b:a", "48k",
@@ -237,8 +309,10 @@ async def tts(body: TtsBody, authorization: str | None = Header(default=None)):
 
 
 @app.post("/v1/stt")
-async def stt_file(file: UploadFile = File(...), authorization: str | None = Header(default=None)) -> dict:
+async def stt_file(file: UploadFile = File(...), language: str = Form(DEFAULT_LANG),
+                   authorization: str | None = Header(default=None)) -> dict:
     _auth(authorization)
+    lang = (language or "en").lower()
     data = await file.read()
     if len(data) > 25_000_000:
         raise HTTPException(status_code=413, detail="file too large")
@@ -246,9 +320,9 @@ async def stt_file(file: UploadFile = File(...), authorization: str | None = Hea
     audio = np.frombuffer(pcm, dtype=np.float32)
     t = time.monotonic()
     # Long clips: transcribe in 30 s windows.
-    parts = [await asyncio.to_thread(WHISPER, audio[i:i + 16000 * 30]) for i in range(0, len(audio), 16000 * 30)]
+    parts = [await asyncio.to_thread(WHISPER, audio[i:i + 16000 * 30], lang) for i in range(0, len(audio), 16000 * 30)]
     _track("stt_ms", (time.monotonic() - t) * 1000)
-    return {"text": " ".join(p for p in parts if p).strip(), "language": "en", "seconds": round(len(audio) / 16000, 1)}
+    return {"text": " ".join(p for p in parts if p).strip(), "language": lang, "seconds": round(len(audio) / 16000, 1)}
 
 
 @app.websocket("/v1/stt/stream")
@@ -257,6 +331,7 @@ async def stt_stream(ws: WebSocket) -> None:
         await ws.close(code=1008)
         return
     await ws.accept()
+    lang = (ws.query_params.get("language") or DEFAULT_LANG).lower()
     vad = Vad()
     frame = 512                                   # 32 ms at 16 kHz
     pending = np.zeros(0, np.float32)             # not yet VAD-checked
@@ -270,7 +345,7 @@ async def stt_stream(ws: WebSocket) -> None:
     def transcribe_task(audio: np.ndarray) -> asyncio.Task:
         async def run() -> tuple[str, float]:
             t = time.monotonic()
-            text = await asyncio.to_thread(WHISPER, audio)
+            text = await asyncio.to_thread(WHISPER, audio, lang)
             return text, (time.monotonic() - t) * 1000
         return asyncio.create_task(run())
 
