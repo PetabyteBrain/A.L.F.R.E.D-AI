@@ -6517,3 +6517,30 @@ def test_deadlines_in_the_agenda_and_their_google_sync(monkeypatch):
     assert events == {} and not db.query_one("SELECT 1 FROM calendar_links WHERE user_id = ?", (p.id,))
     with pytest.raises(deadlines.DeadlineError):
         asyncio.run(deadlines.follow(p, "nonsense", True))
+
+
+async def test_health_confirms_a_failure_before_reporting_down(monkeypatch):
+    """A one-off network hiccup must not mark a watched component down (the watchdog would alert)."""
+    from orchestrator import health
+    calls = {"telegram": 0, "jetson_speech": 0}
+
+    async def flaky_telegram():
+        calls["telegram"] += 1
+        return (calls["telegram"] > 1, "polling" if calls["telegram"] > 1 else "httpx.ConnectError")
+
+    async def dead_jetson():
+        calls["jetson_speech"] += 1
+        return False, "unreachable: timed out"
+
+    async def fine():
+        return True, "ok"
+
+    monkeypatch.setattr(health, "PROBES", {"telegram": flaky_telegram, "jetson_speech": dead_jetson, "nas": fine})
+    monkeypatch.setattr(health, "RECHECK_S", (0, 0))
+    recorded = {}
+    monkeypatch.setattr(health.db, "set_health", lambda name, ok, detail="": recorded.__setitem__(name, (ok, detail)))
+    await health.check_all()
+    assert recorded["telegram"] == (True, "polling")          # recovered on the first re-check
+    assert recorded["jetson_speech"][0] is False                # still down after both re-checks
+    assert calls == {"telegram": 2, "jetson_speech": 3}
+    assert recorded["nas"] == (True, "ok")
