@@ -9,4 +9,4 @@ resources:
   - service.yaml
 images:
   - name: ghcr.io/petabytebrain/alfred
-    newTag: bb61eb6711541f48adba57698082b967f8842731
+    newTag: 5649a68701e8916734aee168540bc5a66cb67615
